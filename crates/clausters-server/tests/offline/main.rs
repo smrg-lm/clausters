@@ -54,6 +54,7 @@ mod pan;
 mod pv_reference;
 mod rates;
 mod registry;
+mod sc_reference;
 mod schema;
 mod signal_asserts;
 mod soundfile;

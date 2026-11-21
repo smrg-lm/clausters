@@ -293,8 +293,13 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "lagud",
+            json!([input(), {"kind": "LagUD", "inputs": [u(0), c(0.004), c(0.02)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
             "varlag",
-            json!([input(), {"kind": "VarLag", "inputs": [u(0), c(0.004), c(0.02)]}, out(1)]),
+            json!([input(), {"kind": "VarLag", "inputs": [u(0), c(0.004), c(0.0)]}, out(1)]),
         )
         .source("noise"),
         gated(Case::new("envgen", json!([envgen(0.0), out(0)]))),

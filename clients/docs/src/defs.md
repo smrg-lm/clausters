@@ -394,8 +394,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 <!-- python -->
 | Group | Callable | Does |
 | --- | --- | --- |
-| Sources | `sine(freq=440.0)` | sine by f64 phase accumulation, starting at phase 0 |
-| | `impulse(freq=1.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence) |
+| Sources | `sine(freq=440.0, phase=0.0)` | sine by f64 phase accumulation, starting at phase 0; `phase` is a running offset in cycles |
+| | `impulse(freq=1.0, phase=0.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence); `phase` offsets the train in cycles |
 | | `white_noise()` | uniform white noise in ±1 |
 | | `saw(freq=440.0)` | **band-limited** sawtooth: the harmonics that belong there, not aliases folded down from above Nyquist |
 | | `pulse(freq=440.0, width=0.5)` | band-limited pulse; `width` is the duty cycle |
@@ -450,7 +450,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
 | | `replace_out(bus, signal)` | **overwrites** an audio bus instead of summing |
 | Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0, trigger=0.0, start_pos=0.0, done_action=0)` | mono buffer player, linear interpolation; `rate` in frames per output sample. A pass begins at `start_pos` and a rising `trigger` re-cues there; without `loop`, the end fires `done_action` (2 frees the synth) |
-| | `buf_rd(bufnum, chan, phase, loop=0.0)` | reads a buffer at a `phase` signal in frames |
+| | `buf_rd(bufnum, chan, phase, loop=0.0, interpolation=2.0)` | reads a buffer at a `phase` signal in frames; `interpolation` 1 none, 2 linear, 4 cubic |
 | Buffer info | `buf_sample_rate(bufnum)` / `buf_frames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
 | | `buf_rate_scale(bufnum)` | `file_sr / server_sr` — feed `play_buf`'s `rate` to play at the file's true pitch |
 | | `buf_channels(bufnum)` / `buf_dur(bufnum)` | channel count / duration in seconds, block-constant (`kr`) |
@@ -463,7 +463,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time=0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
-| | `var_lag(signal, up=0.1, down=0.1)` | one-pole smoother with separate rise / fall times |
+| | `lag_ud(signal, up=0.1, down=0.1)` | one-pole smoother with separate rise / fall times |
+| | `var_lag(signal, time=0.1, start=None)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
 | Demand (`dr`) | `dseq(values, repeats=0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
@@ -503,8 +504,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 <!-- web -->
 | Group | Callable | Does |
 | --- | --- | --- |
-| Sources | `sine(freq = 440.0)` | sine by f64 phase accumulation, starting at phase 0 |
-| | `impulse(freq = 1.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence) |
+| Sources | `sine(freq = 440.0, phase = 0.0)` | sine by f64 phase accumulation, starting at phase 0; `phase` is a running offset in cycles |
+| | `impulse(freq = 1.0, phase = 0.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence); `phase` offsets the train in cycles |
 | | `whiteNoise()` | uniform white noise in ±1 |
 | | `saw(freq = 440.0)` | **band-limited** sawtooth: the harmonics that belong there, not aliases folded down from above Nyquist |
 | | `pulse(freq = 440.0, width = 0.5)` | band-limited pulse; `width` is the duty cycle |
@@ -559,7 +560,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
 | | `replaceOut(bus, signal)` | **overwrites** an audio bus instead of summing |
 | Buffers | `playBuf(bufnum, chan = 0.0, rate = 1.0, loop = 0.0, trigger = 0.0, startPos = 0.0, doneAction = 0)` | mono buffer player, linear interpolation; `rate` in frames per output sample. A pass begins at `startPos` and a rising `trigger` re-cues there; without `loop`, the end fires `doneAction` (2 frees the synth) |
-| | `bufRd(bufnum, chan, phase, loop = 0.0)` | reads a buffer at a `phase` signal in frames |
+| | `bufRd(bufnum, chan, phase, loop = 0.0, interpolation = 2.0)` | reads a buffer at a `phase` signal in frames; `interpolation` 1 none, 2 linear, 4 cubic |
 | Buffer info | `bufSampleRate(bufnum)` / `bufFrames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
 | | `bufRateScale(bufnum)` | `file_sr / server_sr` — feed `playBuf`'s `rate` to play at the file's true pitch |
 | | `bufChannels(bufnum)` / `bufDur(bufnum)` | channel count / duration in seconds, block-constant (`kr`) |
@@ -572,7 +573,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Feedback | `localIn(channel = 0.0)` | reads a synth-private feedback channel |
 | | `localOut(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time = 0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
-| | `varLag(signal, up = 0.1, down = 0.1)` | one-pole smoother with separate rise / fall times |
+| | `lagUd(signal, up = 0.1, down = 0.1)` | one-pole smoother with separate rise / fall times |
+| | `varLag(signal, time = 0.1, start?)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sampleRate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo = 0.0, hi = 1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
 | Demand (`dr`) | `dseq(values, repeats = 0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |

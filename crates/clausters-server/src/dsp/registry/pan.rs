@@ -107,7 +107,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(PanAz),
+        |_, _| Box::new(PanAz::default()),
     ),
     desc(
         "Select",

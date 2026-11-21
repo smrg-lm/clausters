@@ -432,7 +432,7 @@ fn ring(pos: f32, chans: usize, width: f32, orientation: f32) -> Vec<f32> {
     (0..chans)
         .map(|c| {
             run1(
-                &mut PanAz,
+                &mut PanAz::default(),
                 &[
                     &[1.0],
                     &[pos],
@@ -824,7 +824,7 @@ fn no_input_produces_a_non_finite_sample() {
             check(
                 &format!("PanAz width {width:?} chan {chan}"),
                 run(
-                    &mut PanAz,
+                    &mut PanAz::default(),
                     &[
                         &sig,
                         &wild,
@@ -946,7 +946,7 @@ fn pan_az_is_wired_around_the_ring_through_the_def() {
         let got = def_chans("PanAz", &[1.0, pos, 1.0, 2.0, 0.5, 4.0], 4);
         for (c, g) in got.iter().enumerate() {
             let want = run1(
-                &mut PanAz,
+                &mut PanAz::default(),
                 &[&[1.0], &[pos], &[1.0], &[2.0], &[0.5], &[4.0], &[c as f32]],
             );
             close(*g, want, 1e-6, &format!("PanAz chan {c} at pos {pos}"));

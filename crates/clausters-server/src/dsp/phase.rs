@@ -338,6 +338,12 @@ pub enum LfShape {
 pub struct Lf {
     shape: LfShape,
     phase: Phase,
+    /// The raw phase of the two shapes with a duty cycle, which wrap the way
+    /// scsynth's do: at the sample where the phase reaches a cycle, so the
+    /// width can be taken there.
+    cycle: f64,
+    /// The width in force this cycle (`LFPulse`, `VarSaw`).
+    duty: f64,
     started: bool,
 }
 
@@ -346,24 +352,29 @@ impl Lf {
         Self {
             shape,
             phase: Phase(0.0),
+            cycle: 0.0,
+            duty: 0.5,
             started: false,
         }
     }
 
+    /// The width a cycle takes: `VarSaw` keeps scsynth's margins, so the
+    /// ramp's two slopes stay finite.
     #[inline]
-    fn value(&self, t: f64, width: f64) -> f64 {
+    fn duty_of(&self, w: f32) -> f64 {
+        match self.shape {
+            LfShape::VarSaw => (w as f64).clamp(0.001, 0.999),
+            _ => w as f64,
+        }
+    }
+
+    #[inline]
+    fn value(&self, t: f64) -> f64 {
         match self.shape {
             // Half a cycle in, so an initial phase of 0 emits 0 and rises.
             LfShape::Saw => {
                 let u = t + 0.5;
                 2.0 * (u - u.floor()) - 1.0
-            }
-            LfShape::Pulse => {
-                if t < width {
-                    1.0
-                } else {
-                    0.0
-                }
             }
             LfShape::Tri => {
                 // Starts at 0, up to 1 by a quarter cycle, down to -1 by three
@@ -375,10 +386,17 @@ impl Lf {
                     u => u - 4.0,
                 }
             }
+            LfShape::Pulse => {
+                if t < self.duty {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             LfShape::VarSaw => {
                 // Rises over the first `width` of the cycle, falls over the
-                // rest; both limits degenerate to a plain ramp.
-                let w = width.clamp(1e-4, 1.0 - 1e-4);
+                // rest.
+                let w = self.duty;
                 if t < w {
                     2.0 * t / w - 1.0
                 } else {
@@ -403,14 +421,42 @@ impl UGen for Lf {
         if !self.started {
             let p = at(iphase, 0) as f64;
             self.phase = Phase(p - p.floor());
+            self.cycle = p - p.floor();
+            self.duty = self.duty_of(at(width, 0));
             self.started = true;
         }
         let const_dt = block_dt(freq, sr);
-        for (i, s) in output.iter_mut().enumerate() {
-            let dt = const_dt.unwrap_or_else(|| at(freq, i) as f64 / sr as f64);
-            let w = at(width, i) as f64;
-            let t = self.phase.advance(dt);
-            *s = self.value(t, w) as f32;
+        match self.shape {
+            LfShape::Saw | LfShape::Tri => {
+                for (i, s) in output.iter_mut().enumerate() {
+                    let dt = const_dt.unwrap_or_else(|| at(freq, i) as f64 / sr as f64);
+                    let t = self.phase.advance(dt);
+                    *s = self.value(t) as f32;
+                }
+            }
+            LfShape::Pulse | LfShape::VarSaw => {
+                // scsynth's: the width is taken once per cycle, at the sample
+                // the phase wraps on, so modulating it never cuts a cycle
+                // short; and a pulse's wrap sample is always the polarity
+                // that would otherwise be missing, so a duty narrower than a
+                // sample still pulses.
+                for (i, s) in output.iter_mut().enumerate() {
+                    let dt = const_dt.unwrap_or_else(|| at(freq, i) as f64 / sr as f64);
+                    let z = if self.cycle >= 1.0 || self.cycle < 0.0 {
+                        self.cycle -= self.cycle.floor();
+                        self.duty = self.duty_of(at(width, i));
+                        match self.shape {
+                            LfShape::Pulse if self.duty <= 0.5 => 1.0,
+                            LfShape::Pulse => 0.0,
+                            _ => self.value(self.cycle),
+                        }
+                    } else {
+                        self.value(self.cycle)
+                    };
+                    *s = z as f32;
+                    self.cycle += dt;
+                }
+            }
         }
     }
 }
@@ -454,31 +500,63 @@ impl UGen for Phasor {
         let _ = ctx;
         let (trig, rate) = (inputs[0], inputs[1]);
         let (start, end, reset) = (inputs[2], inputs[3], inputs[4]);
-        for (i, s) in output.iter_mut().enumerate() {
-            let lo = at(start, i) as f64;
-            let hi = at(end, i) as f64;
-            if !self.started {
-                self.pos = lo;
-                self.started = true;
-            }
-            // Rising edge, the trigger convention the whole catalog shares.
-            let t = at(trig, i);
+        if !self.started {
+            self.pos = start[0] as f64;
+            self.started = true;
+        }
+        if trig.len() == 1 && output.len() > 1 {
+            // A control-rate trigger on an audio-rate ramp resets at the
+            // slice's first sample.
+            let t = trig[0];
             if t > 0.0 && self.prev_trig <= 0.0 {
-                self.pos = at(reset, i) as f64;
+                self.pos = reset[0] as f64;
             }
             self.prev_trig = t;
-
-            *s = self.pos as f32;
-            self.pos += at(rate, i) as f64;
-            // One wrap expression covers both ends; the test that it is needed
-            // at all keeps the `floor` off the common in-range sample. A
-            // non-positive range (start >= end) simply holds.
-            let range = hi - lo;
-            if range > 0.0 && !(lo..hi).contains(&self.pos) {
-                self.pos -= range * ((self.pos - lo) / range).floor();
+            for (i, s) in output.iter_mut().enumerate() {
+                self.pos = sc_wrap(self.pos, at(start, i) as f64, at(end, i) as f64);
+                *s = self.pos as f32;
+                self.pos += at(rate, i) as f64;
             }
+            return;
+        }
+        for (i, s) in output.iter_mut().enumerate() {
+            let r = at(rate, i) as f64;
+            // Rising edge, the trigger convention the whole catalog shares,
+            // placed between the two samples it crossed between: the ramp
+            // has already run the part of a sample since the crossing, as
+            // scsynth's does.
+            let t = at(trig, i);
+            if t > 0.0 && self.prev_trig <= 0.0 {
+                let frac = 1.0 - self.prev_trig / (t - self.prev_trig);
+                self.pos = at(reset, i) as f64 + frac as f64 * r;
+            }
+            self.prev_trig = t;
+            *s = self.pos as f32;
+            self.pos = sc_wrap(self.pos + r, at(start, i) as f64, at(end, i) as f64);
         }
     }
+}
+
+/// scsynth's `sc_wrap`: `x` wrapped into `[lo, hi)`, with a single
+/// subtraction for the common case of one range out, and `lo` when the range
+/// is empty.
+#[inline]
+pub(crate) fn sc_wrap(x: f64, lo: f64, hi: f64) -> f64 {
+    let range = hi - lo;
+    let y = if x >= hi {
+        x - range
+    } else if x < lo {
+        x + range
+    } else {
+        return x;
+    };
+    if (lo..hi).contains(&y) {
+        return y;
+    }
+    if hi == lo {
+        return lo;
+    }
+    y - range * ((y - lo) / range).floor()
 }
 
 /// The **transport's position**, as a signal -- what a buffer

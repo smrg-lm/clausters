@@ -83,6 +83,11 @@
        "rate": "audio"
       },
       {
+       "name": "phase",
+       "dir": "in",
+       "rate": "init"
+      },
+      {
        "name": "",
        "dir": "out",
        "rate": "audio"
@@ -120,6 +125,11 @@
        "name": "freq",
        "dir": "in",
        "rate": "control"
+      },
+      {
+       "name": "phase",
+       "dir": "in",
+       "rate": "init"
       },
       {
        "name": "",
@@ -239,6 +249,30 @@
      ]
     },
     {
+     "def": "0",
+     "kind": "const",
+     "role": "const",
+     "ports": [
+      {
+       "name": "",
+       "dir": "out",
+       "rate": "init"
+      }
+     ]
+    },
+    {
+     "def": "0",
+     "kind": "const",
+     "role": "const",
+     "ports": [
+      {
+       "name": "",
+       "dir": "out",
+       "rate": "init"
+      }
+     ]
+    },
+    {
      "def": "0.5",
      "kind": "const",
      "role": "const",
@@ -307,8 +341,14 @@
      "to_port": 0
     },
     {
+     "from_box": 13,
+     "from_port": 0,
+     "to_box": 5,
+     "to_port": 1
+    },
+    {
      "from_box": 5,
-     "from_port": 1,
+     "from_port": 2,
      "to_box": 6,
      "to_port": 0
     },
@@ -325,13 +365,19 @@
      "to_port": 0
     },
     {
+     "from_box": 14,
+     "from_port": 0,
+     "to_box": 7,
+     "to_port": 1
+    },
+    {
      "from_box": 7,
-     "from_port": 1,
+     "from_port": 2,
      "to_box": 8,
      "to_port": 0
     },
     {
-     "from_box": 13,
+     "from_box": 15,
      "from_port": 0,
      "to_box": 8,
      "to_port": 1
@@ -343,7 +389,7 @@
      "to_port": 0
     },
     {
-     "from_box": 14,
+     "from_box": 16,
      "from_port": 0,
      "to_box": 9,
      "to_port": 1
@@ -361,7 +407,7 @@
      "to_port": 1
     },
     {
-     "from_box": 15,
+     "from_box": 17,
      "from_port": 0,
      "to_box": 11,
      "to_port": 0
@@ -373,7 +419,7 @@
      "to_port": 1
     },
     {
-     "from_box": 16,
+     "from_box": 18,
      "from_port": 0,
      "to_box": 12,
      "to_port": 0
@@ -450,7 +496,11 @@
      {
       "def": "Sine",
       "inlets": [
-       "freq"
+       "freq",
+       {
+        "name": "phase",
+        "rate": "init"
+       }
       ],
       "outlets": [
        ""
@@ -475,6 +525,10 @@
        {
         "name": "freq",
         "rate": "control"
+       },
+       {
+        "name": "phase",
+        "rate": "init"
        }
       ],
       "outlets": [
@@ -550,6 +604,28 @@
       ]
      },
      {
+      "def": "0",
+      "inlets": [],
+      "outlets": [
+       {
+        "name": "",
+        "rate": "init"
+       }
+      ],
+      "role": "const"
+     },
+     {
+      "def": "0",
+      "inlets": [],
+      "outlets": [
+       {
+        "name": "",
+        "rate": "init"
+       }
+      ],
+      "role": "const"
+     },
+     {
       "def": "0.5",
       "inlets": [],
       "outlets": [
@@ -607,6 +683,10 @@
      0,
      5,
      0,
+     13,
+     0,
+     5,
+     1,
      5,
      0,
      6,
@@ -619,11 +699,15 @@
      0,
      7,
      0,
+     14,
+     0,
+     7,
+     1,
      7,
      0,
      8,
      0,
-     13,
+     15,
      0,
      8,
      1,
@@ -631,7 +715,7 @@
      0,
      9,
      0,
-     14,
+     16,
      0,
      9,
      1,
@@ -643,7 +727,7 @@
      0,
      10,
      1,
-     15,
+     17,
      0,
      11,
      0,
@@ -651,7 +735,7 @@
      0,
      11,
      1,
-     16,
+     18,
      0,
      12,
      0,
@@ -699,6 +783,9 @@
       "inputs": [
        {
         "ugen": 0
+       },
+       {
+        "const": 0.0
        }
       ]
      },
@@ -718,6 +805,9 @@
       "inputs": [
        {
         "control": 3
+       },
+       {
+        "const": 0.0
        }
       ],
       "rate": "kr"
@@ -805,6 +895,11 @@
        "rate": "control"
       },
       {
+       "name": "phase",
+       "dir": "in",
+       "rate": "init"
+      },
+      {
        "name": "",
        "dir": "out",
        "rate": "audio"
@@ -866,6 +961,18 @@
        "rate": "init"
       }
      ]
+    },
+    {
+     "def": "0",
+     "kind": "const",
+     "role": "const",
+     "ports": [
+      {
+       "name": "",
+       "dir": "out",
+       "rate": "init"
+      }
+     ]
     }
    ],
    "cords": [
@@ -876,19 +983,25 @@
      "to_port": 0
     },
     {
+     "from_box": 4,
+     "from_port": 0,
+     "to_box": 1,
+     "to_port": 1
+    },
+    {
      "from_box": 1,
-     "from_port": 1,
+     "from_port": 2,
      "to_box": 2,
      "to_port": 0
     },
     {
      "from_box": 1,
-     "from_port": 1,
+     "from_port": 2,
      "to_box": 2,
      "to_port": 1
     },
     {
-     "from_box": 4,
+     "from_box": 5,
      "from_port": 0,
      "to_box": 3,
      "to_port": 0
@@ -919,6 +1032,10 @@
        {
         "name": "freq",
         "rate": "control"
+       },
+       {
+        "name": "phase",
+        "rate": "init"
        }
       ],
       "outlets": [
@@ -958,6 +1075,17 @@
        }
       ],
       "role": "const"
+     },
+     {
+      "def": "0",
+      "inlets": [],
+      "outlets": [
+       {
+        "name": "",
+        "rate": "init"
+       }
+      ],
+      "role": "const"
      }
     ],
     "cords": [
@@ -965,15 +1093,19 @@
      0,
      1,
      0,
-     1,
-     0,
-     2,
-     0,
-     1,
-     0,
-     2,
-     1,
      4,
+     0,
+     1,
+     1,
+     1,
+     0,
+     2,
+     0,
+     1,
+     0,
+     2,
+     1,
+     5,
      0,
      3,
      0,
@@ -997,6 +1129,9 @@
       "inputs": [
        {
         "control": 0
+       },
+       {
+        "const": 0.0
        }
       ]
      },

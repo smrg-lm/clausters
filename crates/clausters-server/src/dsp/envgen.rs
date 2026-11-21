@@ -23,8 +23,26 @@ const HEADER_INPUTS: usize = 9;
 const SEGMENT_INPUTS: usize = 4;
 
 pub struct EnvGen {
-    current_segment: usize,
-    segment_phase: usize,
+    /// The segment playing, or `None` before the first gate.
+    stage: Option<i64>,
+    /// Samples left in the stage.
+    counter: i64,
+    /// The stage's length in samples, fractional: the shape is read at
+    /// `n / length` while only the whole part is played, and what is left
+    /// over carries into the next stage (`residual`), so an envelope keeps
+    /// time over many short stages.
+    length: f64,
+    residual: f64,
+    /// Samples into the stage.
+    n: i64,
+    /// The output level, and the level the stage started from and aims at.
+    level: f64,
+    end_level: f64,
+    segment: Segment,
+    /// The stage's shape as played: scsynth turns a one-sample stage and a
+    /// curve of no curvature into a line.
+    shape: i32,
+    sustaining: bool,
     gate_prev: f32,
     /// Whether any sample has been processed yet. The gate's state at birth is
     /// only knowable on the first sample, and a gate *already* closed there
@@ -34,20 +52,14 @@ pub struct EnvGen {
     /// "sustaining, waiting for release" from "released, playing out".
     released: bool,
     finished: bool,
-    start_level: f32,
-    last_val: f32,
     done_action: DoneAction,
-    /// The segment being played, prepared once ([`Segment::new`]) with what it
-    /// was prepared from. A segment's inputs may be signals, so the key is
-    /// compared every sample and the segment rebuilt only when one moved --
-    /// which is what keeps the exponential and bent shapes from paying a
-    /// logarithm per sample.
-    prepared: Option<(SegmentKey, Segment)>,
 }
 
-/// What a prepared [`Segment`] was built from: the segment's index, its start
-/// level and its target, shape and curvature.
-type SegmentKey = (usize, f32, f32, i32, f32);
+/// scsynth's shape numbers that change how a stage starts.
+const SHAPE_STEP: i32 = 0;
+const SHAPE_LINEAR: i32 = 1;
+const SHAPE_CURVE: i32 = 5;
+const SHAPE_HOLD: i32 = 8;
 
 impl Default for EnvGen {
     fn default() -> Self {
@@ -58,17 +70,144 @@ impl Default for EnvGen {
 impl EnvGen {
     pub fn new() -> Self {
         Self {
-            current_segment: 0,
-            segment_phase: 0,
+            stage: None,
+            counter: 0,
+            length: 1.0,
+            residual: 0.0,
+            n: 0,
+            level: 0.0,
+            end_level: 0.0,
+            segment: Segment::new(SHAPE_HOLD, 0.0, 0.0, 0.0),
+            shape: SHAPE_HOLD,
+            sustaining: false,
             gate_prev: 0.0,
             primed: false,
             released: false,
             finished: false,
-            start_level: 0.0,
-            last_val: 0.0,
             done_action: DoneAction::None,
-            prepared: None,
         }
+    }
+
+    /// Starts stage `stage`, scsynth's `EnvGen_initSegment`: its target is the
+    /// scaled level, its length the scaled time (or `dur`, a forced
+    /// release's), and it starts from wherever the output is -- except after
+    /// a hold, which jumps to the level it held towards.
+    fn start_stage(&mut self, inputs: &[&[f32]], stage: i64, dur: Option<f64>, sr: f64) -> bool {
+        let base = HEADER_INPUTS + stage as usize * SEGMENT_INPUTS;
+        if stage < 0 || base + SEGMENT_INPUTS > inputs.len() {
+            return false;
+        }
+        self.stage = Some(stage);
+        let (scale, bias) = (at(inputs[1], 0) as f64, at(inputs[2], 0) as f64);
+        let previous_end = self.end_level;
+        if self.shape == SHAPE_HOLD {
+            self.level = previous_end;
+        }
+        let end = at(inputs[base], 0) as f64 * scale + bias;
+        let dur = dur.unwrap_or(at(inputs[base + 1], 0) as f64 * at(inputs[3], 0) as f64);
+        let mut shape = at(inputs[base + 2], 0) as i32;
+        let curve = at(inputs[base + 3], 0);
+        self.end_level = end;
+        let samples = dur * sr + self.residual;
+        self.counter = (samples as i64).max(1);
+        self.length = samples.max(1.0);
+        self.residual = samples - self.counter as f64;
+        if self.counter == 1 || (shape == SHAPE_CURVE && curve.abs() < 0.001) {
+            shape = SHAPE_LINEAR;
+        }
+        self.shape = shape;
+        let from = if shape == SHAPE_HOLD {
+            previous_end
+        } else {
+            self.level
+        };
+        self.segment = Segment::new(shape, curve, from as f32, end as f32);
+        self.level = match shape {
+            SHAPE_STEP => end,
+            SHAPE_HOLD => previous_end,
+            _ => self.level,
+        };
+        self.n = 0;
+        self.sustaining = false;
+        true
+    }
+
+    /// The stage after the one that ended, scsynth's `EnvGen_nextSegment`:
+    /// the end, a sustain at the release node (or a jump back to the loop
+    /// node), or the next stage.
+    fn next_stage(&mut self, inputs: &[&[f32]], sr: f64) {
+        let stages = at(inputs[6], 0) as i64;
+        let release_node = at(inputs[7], 0) as i64;
+        let loop_node = at(inputs[8], 0) as i64;
+        let Some(stage) = self.stage else {
+            self.counter = i64::MAX;
+            return;
+        };
+        if stage + 1 >= stages {
+            self.finished = true;
+            self.counter = i64::MAX;
+        } else if stage + 1 == release_node && !self.released {
+            if loop_node >= 0 && loop_node < stages {
+                if !self.start_stage(inputs, loop_node, None, sr) {
+                    self.finished = true;
+                }
+            } else {
+                self.counter = i64::MAX;
+                self.sustaining = true;
+                self.level = self.end_level;
+            }
+        } else if !self.start_stage(inputs, stage + 1, None, sr) {
+            self.finished = true;
+            self.counter = i64::MAX;
+        }
+    }
+
+    /// The gate's edges, scsynth's `check_gate`: a rise starts over, a gate at
+    /// or below -1 is a forced release taking `-gate - 1` seconds, and a fall
+    /// releases into the stage after the release node.
+    fn gate(&mut self, inputs: &[&[f32]], gate: f32, sr: f64) {
+        // A falling gate releases -- and so does a gate found *already*
+        // closed on the very first sample. A live client's note-on and
+        // note-off can land in the same command drain (both applied before
+        // the node's first block), so the envelope never sees an edge;
+        // without this it would wait forever on a closed gate -- a stuck,
+        // audible node. Born released, it plays the release stage from the
+        // initial level and finishes, so the done action still frees the
+        // node.
+        let born = !self.primed;
+        self.primed = true;
+        let release_node = at(inputs[7], 0) as i64;
+        if gate > 0.0 && self.gate_prev <= 0.0 {
+            self.stage = Some(-1);
+            self.released = false;
+            self.finished = false;
+            self.sustaining = false;
+            self.counter = 0;
+            self.residual = 0.0;
+        } else if gate <= -1.0 && self.gate_prev > -1.0 {
+            let dur = (-gate - 1.0) as f64;
+            let last = at(inputs[6], 0) as i64 - 1;
+            self.released = true;
+            self.finished = false;
+            self.residual = 0.0;
+            self.start_stage(inputs, last, Some(dur), sr);
+            self.residual = 0.0;
+        } else if gate <= 0.0 && (self.gate_prev > 0.0 || born) && !self.released {
+            self.released = true;
+            if release_node >= 0 {
+                self.stage = Some(release_node - 1);
+                self.finished = false;
+                self.sustaining = false;
+                self.counter = 0;
+                self.residual = 0.0;
+            } else if born {
+                // No release node: a closed gate at birth plays straight
+                // through, as an open one that closed at once would.
+                self.stage = Some(-1);
+                self.counter = 0;
+            }
+        }
+        self.gate_prev = gate;
     }
 }
 
@@ -86,138 +225,48 @@ impl UGen for EnvGen {
             output.fill(0.0);
             return;
         }
-
+        let sr = ctx.sample_rate as f64;
         self.done_action = DoneAction::from_i32(at(inputs[4], 0) as i32);
-
-        let num_segments = at(inputs[6], 0) as usize;
-        // Index into the levels array (== the segment index to resume from) at
-        // which the envelope sustains while the gate is open; < 0 disables the
-        // sustain, so the envelope plays straight through.
-        let release_node = at(inputs[7], 0) as i32;
-        let has_release = release_node >= 0 && (release_node as usize) < num_segments;
-        let release_node = release_node as usize;
-        // Sustain loop: while the gate is held, on reaching the release node
-        // jump back to the loop node instead of holding, replaying the segments
-        // in `[loopNode, releaseNode)` in a cycle. The loop node must sit before
-        // the release node so the cycle makes progress; otherwise it is ignored.
-        let loop_node = at(inputs[8], 0) as i32;
-        let has_loop = has_release && loop_node >= 0 && (loop_node as usize) < release_node;
-        let loop_node = loop_node.max(0) as usize;
-
+        if !self.primed {
+            // scsynth's constructor: the output starts at the scaled initial
+            // level, or at the first target when the first stage holds.
+            self.level =
+                at(inputs[5], 0) as f64 * at(inputs[1], 0) as f64 + at(inputs[2], 0) as f64;
+            self.end_level = self.level;
+            if inputs.len() > HEADER_INPUTS + 2
+                && at(inputs[HEADER_INPUTS + 2], 0) as i32 == SHAPE_HOLD
+            {
+                self.level = at(inputs[HEADER_INPUTS], 0) as f64;
+            }
+        }
+        // A control-rate gate is checked once, at the slice's start; an
+        // audio-rate one at every sample.
+        let gate = inputs[0];
         for (i, out) in output.iter_mut().enumerate() {
-            let gate = at(inputs[0], i);
-            let level_scale = at(inputs[1], i);
-            let level_bias = at(inputs[2], i);
-            let time_scale = at(inputs[3], i);
-
-            let trig = gate > 0.0 && self.gate_prev <= 0.0;
-            // A falling gate releases -- and so does a gate found *already*
-            // closed on the very first sample. A live client's note-on and
-            // note-off can land in the same command drain (both applied
-            // before the node's first block), so the envelope never sees an
-            // edge; without this it would play its segments and sustain
-            // forever on a closed gate -- a stuck, audible node. Born
-            // released, it plays the release segment from the initial level
-            // and finishes, so the done action still frees the node.
-            let born = !self.primed;
-            self.primed = true;
-            let release_edge = gate <= 0.0 && (self.gate_prev > 0.0 || born);
-            self.gate_prev = gate;
-
-            if trig {
-                self.current_segment = 0;
-                self.segment_phase = 0;
-                self.released = false;
-                self.finished = false;
-                self.start_level = at(inputs[5], i);
-                self.last_val = self.start_level;
-            } else if release_edge && !self.finished {
-                self.released = true;
-                if born {
-                    // Never triggered: the level "reached so far" is the
-                    // envelope's initial level.
-                    self.last_val = at(inputs[5], i);
-                }
-                if has_release {
-                    // Resume from the release segment, starting at the level
-                    // reached so far (which may be mid-sustain-decay).
-                    self.start_level = self.last_val;
-                    self.current_segment = release_node;
-                    self.segment_phase = 0;
-                }
+            if i == 0 || gate.len() > 1 {
+                self.gate(inputs, at(gate, i), sr);
             }
-
-            if self.finished {
-                *out = self.last_val * level_scale + level_bias;
+            if self.counter <= 0 && !self.finished {
+                self.next_stage(inputs, sr);
+            }
+            *out = self.level as f32;
+            if self.finished || self.sustaining || self.stage.is_none() {
+                self.level = if self.finished {
+                    self.end_level
+                } else {
+                    self.level
+                };
                 continue;
             }
-
-            // Advance past every segment whose duration has elapsed.
-            loop {
-                if self.current_segment >= num_segments {
-                    self.finished = true;
-                    break;
-                }
-                // Reached the release node with the gate still open: either
-                // loop back (carrying the current level as the loop's start) or
-                // sustain by holding here until the gate falls.
-                if has_release && self.current_segment == release_node && !self.released {
-                    if has_loop {
-                        self.current_segment = loop_node;
-                        continue;
-                    }
-                    break;
-                }
-                let base = HEADER_INPUTS + self.current_segment * SEGMENT_INPUTS;
-                if base + SEGMENT_INPUTS > inputs.len() {
-                    self.finished = true;
-                    break;
-                }
-                let dur = at(inputs[base + 1], i) * time_scale;
-                let dur_samples = (dur * ctx.sample_rate).max(1.0) as usize;
-                if self.segment_phase < dur_samples {
-                    break;
-                }
-                // Segment complete: land exactly on its target and step on.
-                self.start_level = at(inputs[base], i);
-                self.last_val = self.start_level;
-                self.current_segment += 1;
-                self.segment_phase -= dur_samples;
-            }
-
-            if self.finished {
-                *out = self.last_val * level_scale + level_bias;
-                continue;
-            }
-            if has_release && self.current_segment == release_node && !self.released {
-                // Sustaining at the release level.
-                *out = self.last_val * level_scale + level_bias;
-                continue;
-            }
-
-            // Interpolate within the current segment.
-            let base = HEADER_INPUTS + self.current_segment * SEGMENT_INPUTS;
-            let target = at(inputs[base], i);
-            let dur = at(inputs[base + 1], i) * time_scale;
-            let dur_samples = (dur * ctx.sample_rate).max(1.0) as usize;
-            let shape = at(inputs[base + 2], i) as i32;
-            let curve = at(inputs[base + 3], i);
-
-            let frac = self.segment_phase as f32 / dur_samples as f32;
-            let key = (self.current_segment, self.start_level, target, shape, curve);
-            let segment = match self.prepared {
-                Some((k, segment)) if k == key => segment,
+            self.n += 1;
+            self.counter -= 1;
+            match self.shape {
+                SHAPE_STEP | SHAPE_HOLD => {}
                 _ => {
-                    let segment = Segment::new(shape, curve, self.start_level, target);
-                    self.prepared = Some((key, segment));
-                    segment
+                    let t = (self.n as f64 / self.length).min(1.0);
+                    self.level = self.segment.at(t as f32) as f64;
                 }
-            };
-            let val = segment.at(frac);
-
-            self.last_val = val;
-            *out = val * level_scale + level_bias;
-            self.segment_phase += 1;
+            }
         }
     }
 

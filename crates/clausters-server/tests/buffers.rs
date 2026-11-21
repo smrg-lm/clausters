@@ -150,8 +150,10 @@ fn ramp_buffer(frames: usize) -> Arc<Buffer> {
 
 // ---- engine + UGens ----
 
+/// Played once, a buffer stops on its last frame and holds it, as scsynth's
+/// `PlayBuf` does: what follows the end is the done action's business.
 #[test]
-fn playbuf_plays_a_buffer_once_then_goes_silent() {
+fn playbuf_plays_a_buffer_once_then_holds_its_last_frame() {
     let frames = 100;
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
@@ -168,7 +170,7 @@ fn playbuf_plays_a_buffer_once_then_goes_silent() {
 
     let left = render_channel(&mut engine, 4, 0); // 256 samples > 100 frames
     for (i, s) in left.iter().enumerate() {
-        let expected = if i < frames { i as f32 / 1000.0 } else { 0.0 };
+        let expected = i.min(frames - 1) as f32 / 1000.0;
         assert_eq!(*s, expected, "sample {i}: rate-1 playback must be exact");
     }
 }
@@ -258,12 +260,8 @@ fn playbuf_starts_at_its_start_pos() {
 
     let left = render_channel(&mut engine, 2, 0);
     for (i, s) in left.iter().enumerate() {
-        let frame = 40 + i;
-        let expected = if frame < frames {
-            frame as f32 / 1000.0
-        } else {
-            0.0
-        };
+        let frame = (40 + i).min(frames - 1);
+        let expected = frame as f32 / 1000.0;
         assert_eq!(*s, expected, "sample {i}: the pass began at frame 40");
     }
 }

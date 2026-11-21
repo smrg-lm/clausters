@@ -290,7 +290,8 @@ def test_defpatch_decodes_a_synthdef_into_ugen_boxes_and_cords():
     # Controls are pinned sources, UGens are objects, literals are value boxes.
     assert by_role["source"] == ["freq", "amp"]
     assert "Sine" in by_role["object"] and by_role["object"].count("Out") == 2
-    assert by_role["const"] == ["0", "1"]   # the two Out bus literals (0.0, 1.0)
+    # The sine's phase (0.0) and the two Out bus literals (0.0, 1.0).
+    assert sorted(by_role["const"]) == ["0", "0", "1"]
     # The shared `sine*amp` subgraph feeds both Outs (a fan-out): two roots.
     assert len(p.roots) == 2
     # Every UGen inlet is corded now -- a value box feeds each former constant.

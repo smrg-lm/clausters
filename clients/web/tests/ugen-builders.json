@@ -56,6 +56,7 @@
     "LFTri",
     "LPF",
     "Lag",
+    "LagUD",
     "Latch",
     "LeakDC",
     "LinXFade2",
@@ -112,7 +113,6 @@
     "Trig1",
     "TruePeak",
     "VOsc",
-    "VarLag",
     "VarSaw",
     "WhiteNoise",
     "XFade2"
@@ -162,6 +162,7 @@
     "SendReply": "the value list leads, and the reply's id and command are options",
     "StereoWidth": "built once per output channel, filling `chan`",
     "Svf": "the resonance is given as `rq` or `q`",
+    "VarLag": "`start` defaults to the signal itself",
     "XLine": "`done_action` is a `DoneAction`"
   },
   "operator": {

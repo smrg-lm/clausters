@@ -36,16 +36,20 @@ __all__ = [
 ]
 
 
-def sine(freq=440.0) -> Ugen:
-    """Sine by f64 phase accumulation, starting at phase 0."""
-    return Ugen("Sine", [freq])
-
-
-def impulse(freq=1.0) -> Ugen:
-    """A single-sample `1.0` every `freq` Hz, `0.0` between (`freq` 0 =
-    one impulse then silence). The first sample is always an impulse.
+def sine(freq=440.0, phase=0.0) -> Ugen:
+    """Sine by f64 phase accumulation, starting at phase 0. `phase` is a
+    running offset in cycles, so an audio-rate `phase` is phase modulation.
     """
-    return Ugen("Impulse", [freq])
+    return Ugen("Sine", [freq, phase])
+
+
+def impulse(freq=1.0, phase=0.0) -> Ugen:
+    """A single-sample `1.0` every `freq` Hz, `0.0` between (`freq` 0 =
+    one impulse then silence). `phase` offsets the train in cycles: at 0 the
+    first sample is an impulse, and moving it moves the train, firing when
+    that carries it across a cycle. A negative `freq` runs it backwards.
+    """
+    return Ugen("Impulse", [freq, phase])
 
 
 def white_noise() -> Ugen:

@@ -183,7 +183,7 @@ class Control(_Node):
       ``/node_set`` is ignored. As ``ir`` it may feed an ``ir`` input (`rand`,
       buffer-info UGens).
     - ``lag`` (seconds) -- smooth a ``kr`` control's changes with an implicit
-      one-pole (a `lag`/`var_lag` UGen the server inserts); ``lag_down`` gives a
+      one-pole (a `lag`/`lag_ud` UGen the server inserts); ``lag_down`` gives a
       separate downward time.
 
     It may also say **how it is drawn**: a ``min`` and a ``max`` (both or

@@ -3991,15 +3991,16 @@ fn u_query_reports_a_ugen_signature() {
     // name, arity, defaultRate, rates, exec, bus, needsPath, opFamily,
     // spectral, numInputs, then (name, default) per input.
     assert_eq!(a[0], OscType::String("Sine".into()));
-    assert_eq!(a[1], OscType::Int(1), "arity");
+    assert_eq!(a[1], OscType::Int(2), "arity");
     assert_eq!(a[2], OscType::String("ar".into()), "default rate");
     assert_eq!(a[3], OscType::String("kr,ar".into()), "allowed rates");
     assert_eq!(a[4], OscType::String("normal".into()));
     assert_eq!(a[5], OscType::String(String::new()), "no bus role");
     assert_eq!(a[6], OscType::Int(0), "needs no path");
-    assert_eq!(a[9], OscType::Int(1), "one named input");
+    assert_eq!(a[9], OscType::Int(2), "two named inputs");
     assert_eq!(a[10], OscType::String("freq".into()));
     assert_eq!(a[11], OscType::Float(440.0));
+    assert_eq!(a[12], OscType::String("phase".into()));
     server.quit();
 }
 

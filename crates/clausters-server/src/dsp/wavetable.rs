@@ -70,7 +70,9 @@ pub enum GenCommand {
     },
     /// `cheby flags amp...`: a waveshaping transfer function, the weighted sum
     /// `sum_k amp[k] * T_{k+1}(x)` of Chebyshev polynomials over `x` in
-    /// `[-1, 1]`. Read by `Shaper`. Uses the non-wrapping wavetable layout.
+    /// `[-1, 1]`, each shifted to pass through 0 at `x = 0` as scsynth's are.
+    /// Read by `Shaper`. In wavetable form its `n` pairs span `[-1, 1]`
+    /// inclusive.
     Cheby { flags: GenFlags, coeffs: Vec<f32> },
     /// `copy dstStart srcBuf srcStart numSamples`: overlay `num` samples of
     /// `src` (from `src_start`) onto a copy of the current buffer at
@@ -141,23 +143,30 @@ impl GenCommand {
             GenCommand::PreparePartConv { src, fft_size } => prepare_partconv(src, *fft_size, len),
             _ => {
                 let flags = self.flags();
-                // Period length: half the samples in wavetable mode (the format
-                // doubles), the whole buffer otherwise.
-                let n = if flags.wavetable { len / 2 } else { len };
-                let mut signal = self.base_signal(current, n, flags.clear);
-                self.render_into(&mut signal);
-                if flags.normalize {
-                    normalize(&mut signal);
-                }
-                let mut data = if flags.wavetable {
-                    // Oscillator tables wrap (periodic); a cheby transfer curve
-                    // holds its endpoint.
-                    signal_to_wavetable(&signal, !matches!(self, GenCommand::Cheby { .. }))
+                if flags.wavetable {
+                    // scsynth adds a command's pairs to the pairs already
+                    // there, and normalizes the pairs: the format is linear in
+                    // the signal, so this is the signal's sum, normalized.
+                    let n = len / 2;
+                    let mut data = self.wavetable(n);
+                    if !flags.clear {
+                        for (d, c) in data.iter_mut().zip(current.to_vec()) {
+                            *d += c;
+                        }
+                    }
+                    if flags.normalize {
+                        normalize_wavetable(&mut data);
+                    }
+                    data.resize(len, 0.0);
+                    data
                 } else {
+                    let mut signal = self.base_signal(current, len, flags.clear);
+                    self.render_into(&mut signal);
+                    if flags.normalize {
+                        normalize(&mut signal);
+                    }
                     signal
-                };
-                data.resize(len, 0.0);
-                data
+                }
             }
         };
         Buffer::new(data, channels, frames, sr)
@@ -194,6 +203,32 @@ impl GenCommand {
         }
     }
 
+    /// This command's contribution as `n` wavetable pairs. An oscillator
+    /// table is one period, so its last pair leads back to its first value; a
+    /// `cheby` transfer curve is sampled at `n + 1` points from `-1` to `1`
+    /// inclusive, so its last pair ends exactly at `x = 1`, which is what
+    /// `Shaper` reads at its top (scsynth's `add_wchebyshev`).
+    fn wavetable(&self, n: usize) -> Vec<f32> {
+        match self {
+            GenCommand::Cheby { coeffs, .. } => {
+                let v: Vec<f32> = (0..=n)
+                    .map(|i| cheby_sum(coeffs, -1.0 + 2.0 * i as f64 / n.max(1) as f64))
+                    .collect();
+                let mut table = Vec::with_capacity(n * 2);
+                for w in v.windows(2) {
+                    table.push(2.0 * w[0] - w[1]);
+                    table.push(w[1] - w[0]);
+                }
+                table
+            }
+            _ => {
+                let mut signal = vec![0.0; n];
+                self.render_into(&mut signal);
+                signal_to_wavetable(&signal, true)
+            }
+        }
+    }
+
     /// Adds this command's contribution to `signal` (one period).
     fn render_into(&self, signal: &mut [f32]) {
         let n = signal.len();
@@ -217,10 +252,10 @@ impl GenCommand {
                 }
             }
             GenCommand::Cheby { coeffs, .. } => {
-                let denom = (n - 1).max(1) as f32;
+                // scsynth's `add_chebyshev`: `n` points from `-1`, stepping
+                // `2/n`, so the last falls one step short of `1`.
                 for (j, s) in signal.iter_mut().enumerate() {
-                    let x = 2.0 * j as f32 / denom - 1.0;
-                    *s += cheby_sum(coeffs, x);
+                    *s += cheby_sum(coeffs, -1.0 + 2.0 * j as f64 / n as f64);
                 }
             }
             // Copy, Env and PreparePartConv short-circuit in `apply` and
@@ -242,23 +277,36 @@ fn add_sine(signal: &mut [f32], freq: f32, amp: f32, phase: f32) {
     }
 }
 
-/// `sum_k coeffs[k] * T_{k+1}(x)` -- Chebyshev polynomials by the recurrence
-/// `T_0 = 1`, `T_1 = x`, `T_{m+1} = 2x*T_m - T_{m-1}`. `coeffs[0]` weights
-/// `T_1` (a linear transfer, i.e. passthrough).
-fn cheby_sum(coeffs: &[f32], x: f32) -> f32 {
-    if coeffs.is_empty() {
-        return 0.0;
+/// `sum_k coeffs[k] * (T_{k+1}(x) - T_{k+1}(0))` -- the Chebyshev polynomials
+/// as scsynth's `cheby` adds them, each offset so it passes through 0 at `x =
+/// 0`: a silent input stays silent, whatever the even partials would add as a
+/// constant. `coeffs[0]` weights `T_1` (a linear transfer, i.e. passthrough).
+/// `T_k(x) = cos(k acos x)`, computed as scsynth computes it, in `f64`.
+fn cheby_sum(coeffs: &[f32], x: f64) -> f32 {
+    let x = x.clamp(-1.0, 1.0);
+    let mut sum = 0.0;
+    for (k, &amp) in coeffs.iter().enumerate() {
+        if amp == 0.0 {
+            continue;
+        }
+        let partial = (k + 1) as f64;
+        let offset = -(amp as f64) * (partial * std::f64::consts::FRAC_PI_2).cos();
+        sum += amp as f64 * (partial * x.acos()).cos() + offset;
     }
-    let mut t_prev = 1.0; // T_0
-    let mut t_cur = x; // T_1
-    let mut sum = coeffs[0] * t_cur;
-    for &c in &coeffs[1..] {
-        let t_next = 2.0 * x * t_cur - t_prev;
-        sum += c * t_next;
-        t_prev = t_cur;
-        t_cur = t_next;
+    sum as f32
+}
+
+/// Scales a wavetable in place so the signal it encodes peaks at 1: the value
+/// at each point is the sum of its pair (scsynth's `normalize_wsamples`).
+fn normalize_wavetable(table: &mut [f32]) {
+    let (pairs, _) = table.as_chunks::<2>();
+    let peak = pairs.iter().fold(0.0f32, |m, p| m.max((p[0] + p[1]).abs()));
+    if peak > 0.0 && peak != 1.0 {
+        let gain = 1.0 / peak;
+        for s in table.iter_mut() {
+            *s *= gain;
+        }
     }
-    sum
 }
 
 /// Scales `signal` in place so its peak magnitude is 1 (a no-op if it is all

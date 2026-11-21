@@ -387,7 +387,9 @@ sampled every 64 (`CURVE_STEP`), and a control mapped to a bus reads one value
 a block; so a reader that ramps to each value it is set is that value arriving
 one block later, and the node, the bus, the map and the sub-group around it
 compute nothing a `/node_set` on the voice's own control does not. (The ramp
-could not have been built from the catalogue either: `VarLag` is a one-pole.)
+could not have been built from the catalogue then either: the `VarLag` of the
+time was a one-pole, scsynth's `LagUD` under the wrong name. scsynth's linear
+`VarLag` joined the catalog on 2026-11-21.)
 
 So nothing is built. The note is the plain synth it always was, and the client
 sets the controls: one emitter per server, which wakes every 50 ms and sends

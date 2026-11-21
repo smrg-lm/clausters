@@ -570,6 +570,15 @@
  },
  {
   "builder": "docs",
+  "option": "folder",
+  "value": "q",
+  "tree": {
+   "type": "docs",
+   "folder": "q"
+  }
+ },
+ {
+  "builder": "docs",
   "option": "text_size",
   "value": 3.5,
   "tree": {

@@ -106,6 +106,7 @@ quoted title lands here, on the link to the entry.
 - [The built-in `default` is a subtractive voice with the MPE controls](decisions/defs.md#the-built-in-default-is-a-subtractive-voice-with-the-mpe-controls)
 - [`scaleneg` is the UGen kernels' form, not the header's](decisions/defs.md#scaleneg-is-the-ugen-kernels-form-not-the-headers)
 - [A builder that mirrors the registry is generated, and one that does more is written beside it](decisions/defs.md#a-builder-that-mirrors-the-registry-is-generated-and-one-that-does-more-is-written-beside-it)
+- [A UGen is held against scsynth's own code, not against its help file](decisions/defs.md#a-ugen-is-held-against-scsynths-own-code-not-against-its-help-file)
 
 ## [Faust](decisions/faust.md)
 

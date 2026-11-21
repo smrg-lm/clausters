@@ -118,6 +118,7 @@ export {
     hpf,
     integrator,
     lag,
+    lagUd,
     leakDc,
     lpf,
     onePole,

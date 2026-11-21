@@ -75,7 +75,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Svf::new(SvfMode::Bp)),
+        |_, _| Box::new(Svf::new(SvfMode::Resonz)),
     ),
     desc(
         "BRF",

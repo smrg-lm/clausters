@@ -21,7 +21,7 @@ waveshaper (``osc``/``oscn``/``vosc``, ``shaper``), bus and buffer I/O
 (``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``, the
 ``buf_*`` info queries), streaming disk I/O (``disk_in``/``disk_out``),
 feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
-``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
+``lag_ud``/``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
 ``madd``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
 ``Add``/``Sub``/``Mul``/``Div`` kinds and every other operator or method
 (``%``, ``min``/``max``, comparisons, ``.sin()``, ``.midicps()``,
@@ -123,6 +123,7 @@ from .filter import (
     hpf,
     integrator,
     lag,
+    lag_ud,
     leak_dc,
     lpf,
     one_pole,
@@ -387,6 +388,7 @@ __all__ = [
     "hpf",
     "integrator",
     "lag",
+    "lag_ud",
     "leak_dc",
     "lpf",
     "one_pole",

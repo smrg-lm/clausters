@@ -1,11 +1,14 @@
 //! The filter core.
 //!
 //! The two-pole rows are asserted against the **analytic transfer function of
-//! the structure they implement**, evaluated in `f64` -- never against a stored
-//! buffer and never against scsynth's numbers. The trapezoidal state-variable
-//! filter is the bilinear transform of the analog two-pole prototype, so its
-//! magnitude at a frequency `f` is the prototype evaluated at the *pre-warped*
-//! ratio
+//! the section they implement**, evaluated in `f64` -- never against a stored
+//! buffer. A named row is scsynth's two-pole section, so its magnitude at `f`
+//! is `|N(e^jw) / D(e^jw)|` for scsynth's coefficients
+//! (`clausters::dsp::filter::Biquad::scsynth`, which
+//! `tests/offline/sc_reference.rs` holds against scsynth's own code); what is
+//! under test here is that the state-variable realization has exactly that
+//! response. `Svf` is the analog two-pole prototype through the bilinear
+//! transform, so its magnitude is the prototype at the *pre-warped* ratio
 //!
 //! ```text
 //! W = tan(pi*f/sr) / tan(pi*fc/sr)
@@ -13,7 +16,7 @@
 //!
 //! with `|H_lp| = 1 / sqrt((1 - W^2)^2 + (k*W)^2)` and the bandpass, highpass
 //! and notch numerators `W`, `W^2` and `|1 - W^2|` over the same denominator.
-//! That expression is the whole specification; if the filter matches it at
+//! Either expression is the whole specification; if the filter matches it at
 //! twenty points across the band, it is the filter it claims to be.
 //!
 //! The one-pole family is asserted the same way, against its own closed form --
@@ -34,6 +37,7 @@ use std::sync::Arc;
 
 use bench::{SR, render_with_input};
 use clausters::clausters_core::rng::SEED_STRIDE;
+use clausters::dsp::filter::{Biquad, SvfMode};
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
@@ -79,6 +83,31 @@ fn analytic(tap: &str, f: f32, fc: f32, k: f64) -> f64 {
     }
 }
 
+/// The analytic magnitude of the named row `kind`: scsynth's section at `f`.
+fn section(kind: &str, f: f32, fc: f32, rq: f32) -> f64 {
+    let mode = match kind {
+        "LPF" => SvfMode::Lp,
+        "HPF" => SvfMode::Hp,
+        "RLPF" => SvfMode::RLp,
+        "RHPF" => SvfMode::RHp,
+        "BPF" => SvfMode::Bp,
+        "BRF" => SvfMode::Notch,
+        "Resonz" => SvfMode::Resonz,
+        _ => unreachable!(),
+    };
+    let b = Biquad::scsynth(mode, fc as f64, rq as f64, SR as f64);
+    let w = 2.0 * PI * f as f64 / SR as f64;
+    // e^-jw and e^-2jw.
+    let (c1, s1) = (w.cos(), -w.sin());
+    let (c2, s2) = ((2.0 * w).cos(), -(2.0 * w).sin());
+    let num = (
+        b.n[0] + b.n[1] * c1 + b.n[2] * c2,
+        b.n[1] * s1 + b.n[2] * s2,
+    );
+    let den = (1.0 - b.b1 * c1 - b.b2 * c2, -b.b1 * s1 - b.b2 * s2);
+    (num.0.hypot(num.1)) / (den.0.hypot(den.1))
+}
+
 /// Drives the filter with a sine at each frequency and returns the measured
 /// gain, discarding a generous transient first.
 fn measured_response(ugen_json: &str, freqs: &[f32]) -> Vec<f32> {
@@ -103,18 +132,17 @@ fn sweep() -> Vec<f32> {
         .collect()
 }
 
-fn assert_matches_analytic(kind: &str, tap: &str, fc: f32, rq: Option<f32>, tol_db: f64) {
+fn assert_matches_analytic(kind: &str, fc: f32, rq: Option<f32>, tol_db: f64) {
     let json = match rq {
         None => format!(r#"{{"kind": "{kind}", "inputs": [{{"ugen": 0}}, {{"const": {fc}}}]}}"#),
         Some(q) => format!(
             r#"{{"kind": "{kind}", "inputs": [{{"ugen": 0}}, {{"const": {fc}}}, {{"const": {q}}}]}}"#
         ),
     };
-    let k = rq.map(|q| q as f64).unwrap_or(std::f64::consts::SQRT_2);
     let freqs = sweep();
     let got = measured_response(&json, &freqs);
     for (f, g) in freqs.iter().zip(&got) {
-        let want = analytic(tap, *f, fc, k);
+        let want = section(kind, *f, fc, rq.unwrap_or(0.0));
         // Compare in dB: a filter is specified in dB and a relative tolerance
         // would be meaningless deep in a stopband.
         let (got_db, want_db) = (20.0 * (*g as f64).log10(), 20.0 * want.log10());
@@ -143,8 +171,8 @@ fn butterworth_rows_match_the_analytic_response() {
     // apart. The residual is the measurement's, not the filter's: the analysis
     // window is not coherent with every sweep frequency.
     for fc in [snap(100.0), snap(1000.0), snap(6000.0)] {
-        assert_matches_analytic("LPF", "lp", fc, None, 0.25);
-        assert_matches_analytic("HPF", "hp", fc, None, 0.25);
+        assert_matches_analytic("LPF", fc, None, 0.25);
+        assert_matches_analytic("HPF", fc, None, 0.25);
     }
 }
 
@@ -152,33 +180,34 @@ fn butterworth_rows_match_the_analytic_response() {
 fn resonant_rows_match_the_analytic_response_across_q() {
     for &rq in &[1.0f32, 0.5, 0.1] {
         let fc = snap(800.0);
-        assert_matches_analytic("RLPF", "lp", fc, Some(rq), 0.1);
-        assert_matches_analytic("RHPF", "hp", fc, Some(rq), 0.1);
-        assert_matches_analytic("BPF", "bp", fc, Some(rq), 0.1);
-        assert_matches_analytic("BRF", "notch", fc, Some(rq), 0.2);
+        assert_matches_analytic("RLPF", fc, Some(rq), 0.1);
+        assert_matches_analytic("RHPF", fc, Some(rq), 0.1);
+        assert_matches_analytic("BPF", fc, Some(rq), 0.1);
+        assert_matches_analytic("BRF", fc, Some(rq), 0.2);
         // Resonz gets its own sweep rather than riding on the one below. That
         // test says the two rows are the same implementation; this one says
         // the implementation is the right one, and either could fail alone.
-        assert_matches_analytic("Resonz", "bp", fc, Some(rq), 0.1);
+        assert_matches_analytic("Resonz", fc, Some(rq), 0.1);
     }
 }
 
 #[test]
-fn resonz_is_the_same_resonator_as_bpf() {
-    // scsynth ships two historically distinct two-pole resonators with the same
-    // parameterization and the same unity peak gain; here they are one
-    // implementation under both names, and this is the assert that says so
-    // rather than leaving a reader to wonder.
-    let x = sine(800.0, 1 << 14);
-    let bpf = render_with_input(
-        r#"{"kind": "BPF", "inputs": [{"ugen": 0}, {"const": 800.0}, {"const": 0.3}]}"#,
-        &x,
+fn resonz_is_not_the_bpf_resonator() {
+    // scsynth ships two two-pole resonators with the same parameterization
+    // and different poles: `BPF` is the bilinear bandpass, exactly unity at
+    // its centre, and `Resonz` places its poles by radius, which is near unity
+    // only at a narrow bandwidth. At a wide one they part by decibels, which
+    // is where a port that merged them would show.
+    let fc = snap(800.0);
+    let off = snap(200.0);
+    let bpf = section("BPF", off, fc, 1.0);
+    let resonz = section("Resonz", off, fc, 1.0);
+    assert!(
+        (20.0 * (bpf / resonz).log10()).abs() > 3.0,
+        "BPF {bpf} and Resonz {resonz} two octaves below the centre"
     );
-    let resonz = render_with_input(
-        r#"{"kind": "Resonz", "inputs": [{"ugen": 0}, {"const": 800.0}, {"const": 0.3}]}"#,
-        &x,
-    );
-    assert_eq!(bpf, resonz);
+    assert_matches_analytic("Resonz", fc, Some(0.3), 0.1);
+    assert_matches_analytic("BPF", fc, Some(0.3), 0.1);
 }
 
 #[test]
@@ -233,7 +262,7 @@ fn a_low_cutoff_stays_accurate_over_a_long_run() {
     // Analyse a whole number of `WIN` blocks from the end, keeping coherence.
     let from = n - n % WIN - WIN;
     let (gain, _) = response_at(&x[from..from + WIN], &y[from..from + WIN], f, SR);
-    let want = analytic("lp", f, 20.0, std::f64::consts::SQRT_2);
+    let want = section("LPF", f, 20.0, 0.0);
     let err_db = 20.0 * ((gain as f64) / want).log10();
     assert!(
         err_db.abs() < 0.1,

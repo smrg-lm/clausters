@@ -204,3 +204,17 @@ def allpass_c(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
     """Schroeder allpass with cubic interpolation -- the one to modulate."""
     return Ugen("AllpassC", [signal, delaytime, decaytime],
                 static=_line("AllpassC", delaytime, max_delay))
+
+
+# ---- smoothers --------------------------------------------------------------
+
+
+def var_lag(signal, time=0.1, start=None) -> Ugen:
+    """A straight line to each new value of `signal`, taking `time` seconds.
+
+    Where `lag` approaches a new value and never quite reaches it, this
+    arrives, in `time` and exactly; changing `time` partway rescales what is
+    left of the line. `start` is where the output begins, and is the signal
+    itself unless given -- a glide in from `start` when it is.
+    """
+    return Ugen("VarLag", [signal, time, signal if start is None else start])

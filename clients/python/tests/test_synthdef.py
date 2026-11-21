@@ -88,9 +88,9 @@ def test_spec_matches_builtin_default():
         {"name": "freq", "default": 440.0},
         {"name": "amp", "default": 0.2},
     ]
-    # topological: Sine(control 0), Mul(ugen 0, control 1), two Outs.
+    # topological: Sine(control 0, phase 0), Mul(ugen 0, control 1), two Outs.
     assert spec["ugens"] == [
-        {"kind": "Sine", "inputs": [{"control": 0}]},
+        {"kind": "Sine", "inputs": [{"control": 0}, {"const": 0.0}]},
         {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 1}]},
         {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]},
         {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 1}]},

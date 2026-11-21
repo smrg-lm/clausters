@@ -2049,9 +2049,10 @@ opened it.
     `time`) is asymptotic and never reaches 0 or 1, so the pause still cuts a
     residue of 0.1% of the difference between the processed and the direct
     signal.
-  - **`VarLag`** is the same one-pole smoother with separate rise and fall
-    times. It is not scsynth's `VarLag`, which runs a shaped segment, even
-    though the name is the same.
+  - **`LagUD`** is the same one-pole smoother with separate rise and fall
+    times, and asymptotic in the same way. (It was the catalog's `VarLag`
+    until 2026-11-21, when that name went to scsynth's linear `VarLag`, which
+    does reach both ends; the envelope stays, as it already worked.)
   - **`Line`** and **`XLine`** are linear but run once, when the node is
     created, so they cannot switch back and forth.
   - **`XFade2`** is the equal-power crossfade. The processed and the direct

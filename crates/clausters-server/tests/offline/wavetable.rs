@@ -82,7 +82,9 @@ fn b_gen_sine1_builds_a_wavetable_sine() {
 
 #[test]
 fn b_gen_cheby_builds_the_transfer_curve() {
-    // T_2(x) = 2x^2 - 1, no wavetable format so we read the raw samples.
+    // T_2(x) = 2x^2 - 1, shifted by T_2(0) = -1 to pass through 0 as
+    // scsynth's are, at scsynth's grid: n points from -1 in steps of 2/n. No
+    // wavetable format, so we read the raw samples.
     let n = 256;
     let buf = Buffer::zeroed(n, 1, SR as f64);
     let cmd = GenCommand::Cheby {
@@ -93,8 +95,8 @@ fn b_gen_cheby_builds_the_transfer_curve() {
     let data = out.to_vec();
     assert_eq!(data.len(), n);
     for (j, &s) in data.iter().enumerate() {
-        let x = 2.0 * j as f32 / (n as f32 - 1.0) - 1.0;
-        let expect = 2.0 * x * x - 1.0;
+        let x = 2.0 * j as f32 / n as f32 - 1.0;
+        let expect = 2.0 * x * x;
         assert!((s - expect).abs() < 1e-4, "x={x}: {s} != {expect}");
     }
 }

@@ -61,12 +61,12 @@ pub struct ControlSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate: Option<String>,
     /// Lag time in seconds: a `kr` control whose changes are smoothed by
-    /// an implicit one-pole `Lag` (or `VarLag` with `lag_down`) inserted at
+    /// an implicit one-pole `Lag` (or `LagUD` with `lag_down`) inserted at
     /// compile time. `None` (or `0`) means no smoothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lag: Option<f32>,
     /// Separate downward lag time: when set alongside `lag`, the control
-    /// smooths with `VarLag` (`lag` up, `lag_down` down).
+    /// smooths with `LagUD` (`lag` up, `lag_down` down).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lag_down: Option<f32>,
     /// Optional generic editor metadata, independent of DSP limits.
@@ -884,7 +884,7 @@ fn insert_lags(
     constants: &mut Vec<f32>,
 ) -> Vec<UGenDef> {
     // Compile-time lag insertion: a lagged control compiles to a `Lag`
-    // (or `VarLag`) UGen reading the raw control, prepended to the graph; every
+    // (or `LagUD`) UGen reading the raw control, prepended to the graph; every
     // reference to that control is rewritten to the smoother's output. Reusing
     // the real UGen keeps a single lag implementation shared with the library
     // (no bespoke control path). The smoothers run at audio rate, so a lagged
@@ -892,7 +892,7 @@ fn insert_lags(
     if !lagged.is_empty() {
         let n_lag = lagged.len();
         let lag_desc = lookup("Lag").expect("Lag is registered");
-        let varlag_desc = lookup("VarLag").expect("VarLag is registered");
+        let lagud_desc = lookup("LagUD").expect("LagUD is registered");
         // control index -> its lag UGen's position (0..n_lag), prepended.
         let mut lag_pos: Vec<Option<usize>> = vec![None; n_controls];
         let mut prefix: Vec<UGenDef> = Vec::with_capacity(n_lag);
@@ -904,7 +904,7 @@ fn insert_lags(
                 Some(d) => {
                     constants.push(d);
                     let down_ref = InputRef::Const(constants.len() - 1);
-                    (varlag_desc, vec![InputRef::Control(ci), up_ref, down_ref])
+                    (lagud_desc, vec![InputRef::Control(ci), up_ref, down_ref])
                 }
                 None => (lag_desc, vec![InputRef::Control(ci), up_ref]),
             };

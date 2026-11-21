@@ -272,9 +272,10 @@ fn rejects_bad_control_index() {
 
 #[test]
 fn rejects_wrong_arity() {
-    let json = r#"{"name":"x","ugens":[{"kind":"Sine","inputs":[]}]}"#;
+    let json =
+        r#"{"name":"x","ugens":[{"kind":"Sine","inputs":[{"const":1},{"const":2},{"const":3}]}]}"#;
     let err = compile(spec_from_json(json)).unwrap_err();
-    assert!(err.contains("expected 1 inputs"), "{err}");
+    assert!(err.contains("expected 1 to 2 inputs"), "{err}");
 }
 
 /// **A def survives the UGen it was written against growing a tail.** Arity is

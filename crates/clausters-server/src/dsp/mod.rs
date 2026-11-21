@@ -1395,3 +1395,52 @@ pub fn ugen_cmd_selector(name: &str) -> u32 {
 pub fn at(input: &[f32], i: usize) -> f32 {
     if input.len() == 1 { input[0] } else { input[i] }
 }
+
+/// scsynth's interpolation of a **control-rate parameter** across an audio
+/// slice: where a UGen derives something from a control (a gain from a pan
+/// position, an increment from a frequency), the derived value moves in a
+/// straight line from what it was at the end of the last slice to what the
+/// control asks for now, rather than jumping at the slice's first sample. It
+/// is `CALCSLOPE` in scsynth's plugins, and it is why a control-rate pan or
+/// cutoff sweep does not step audibly at the block rate.
+///
+/// The first slice starts at its target: there is nothing to move from.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Ramp {
+    value: f64,
+    primed: bool,
+}
+
+impl Ramp {
+    /// Where the line starts and how far it moves per sample, to reach
+    /// `target` after `frames` samples. Leaves the ramp at `target`.
+    #[inline]
+    pub fn toward(&mut self, target: f64, frames: usize) -> (f64, f64) {
+        if !self.primed {
+            self.value = target;
+            self.primed = true;
+        }
+        let start = self.value;
+        self.value = target;
+        (start, (target - start) / frames.max(1) as f64)
+    }
+
+    /// The value the ramp ended the last slice at.
+    #[inline]
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+
+    /// Whether the ramp has seen a target yet.
+    #[inline]
+    pub fn primed(&self) -> bool {
+        self.primed
+    }
+
+    /// Sets the value without moving to it: the next slice starts here.
+    #[inline]
+    pub fn set(&mut self, value: f64) {
+        self.value = value;
+        self.primed = true;
+    }
+}

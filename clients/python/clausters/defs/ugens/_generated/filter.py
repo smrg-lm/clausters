@@ -17,7 +17,7 @@ __all__ = [
     "leak_dc",
     "integrator",
     "lag",
-    "var_lag",
+    "lag_ud",
     "buf_delay_n",
     "buf_delay_l",
     "buf_delay_c",
@@ -80,9 +80,11 @@ def lag(signal, time=0.1) -> Ugen:
     return Ugen("Lag", [signal, time])
 
 
-def var_lag(signal, up=0.1, down=0.1) -> Ugen:
-    """One-pole smoother with separate rise (`up`) and fall (`down`) times."""
-    return Ugen("VarLag", [signal, up, down])
+def lag_ud(signal, up=0.1, down=0.1) -> Ugen:
+    """One-pole smoother with separate rise (`up`) and fall (`down`) times: the
+    UGen a control with a separate downward lag inserts.
+    """
+    return Ugen("LagUD", [signal, up, down])
 
 
 def buf_delay_n(bufnum, chan, signal, delaytime=0.2) -> Ugen:

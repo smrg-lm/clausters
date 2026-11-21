@@ -6,8 +6,11 @@
 //! buffers are read or written one channel per UGen via the `chan` input (two
 //! UGens with the same inputs stay sample-locked, so a stereo file is two
 //! readers and two writers). This diverges from scsynth's multi-output
-//! PlayBuf/BufRd -- documented in `docs/schemas.md`. The two readers interpolate
-//! linearly.
+//! PlayBuf/BufRd -- documented in `docs/schemas.md`. How the readers
+//! interpolate is scsynth's: `PlayBuf` always cubically, `BufRd` as its
+//! `interpolation` input says (1 none, 2 linear, 4 cubic), and both with
+//! scsynth's rule at a buffer's ends -- the frames past an end are the
+//! buffer's other end when looping and its own end frame when not.
 //!
 //! **A cue point belongs to a reader that carries a position.** `PlayBuf` and
 //! `RecordBuf` advance themselves, so each takes a `trigger`, a frame to cue to
@@ -24,6 +27,7 @@
 //! carry the mutability.
 
 use crate::dsp::buffer::{Buffer, Run};
+use crate::dsp::delay::cubic;
 use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
 /// **A reader's place in a buffer**: the buffer, and the contiguous run it is
@@ -56,6 +60,48 @@ impl<'a> Reader<'a> {
     /// the buffer when they are not -- which is exactly the seam: the last frame
     /// of a part interpolates towards the first of the next, and reading a zero
     /// there would click at every cut.
+    /// One frame's sample, through the run when it holds the frame.
+    #[inline]
+    fn frame(&mut self, f: usize, channel: usize) -> f32 {
+        if !self.run.holds(f) {
+            self.run = self.buf.run_at(f);
+        }
+        self.run.sample(f, channel)
+    }
+
+    /// Reads at fractional frame `pos` (within `0..frames`) the way scsynth's
+    /// readers do for an `interpolation` of 1 (none), 2 (linear) or 4
+    /// (cubic); anything else reads linearly, as scsynth's does.
+    ///
+    /// The cubic reads two frames each side. Past an end they are the other
+    /// end when looping and the end frame itself when not, which is
+    /// scsynth's `LOOP_BODY_4`.
+    #[inline]
+    fn read_with(&mut self, pos: f64, channel: usize, looping: bool, interpolation: i32) -> f32 {
+        match interpolation {
+            1 => self.frame(pos as usize, channel),
+            4 => {
+                let frames = self.buf.frames();
+                let i1 = pos as usize;
+                let frac = pos - i1 as f64;
+                let last = frames.saturating_sub(1);
+                let (i0, i2, i3) = if looping {
+                    (
+                        (i1 + frames - 1) % frames,
+                        (i1 + 1) % frames,
+                        (i1 + 2) % frames,
+                    )
+                } else {
+                    (i1.saturating_sub(1), (i1 + 1).min(last), (i1 + 2).min(last))
+                };
+                let y = |r: &mut Self, f| r.frame(f, channel) as f64;
+                let (y0, y1, y2, y3) = (y(self, i0), y(self, i1), y(self, i2), y(self, i3));
+                cubic(frac, y0, y1, y2, y3) as f32
+            }
+            _ => self.read(pos, channel, looping),
+        }
+    }
+
     #[inline]
     fn read(&mut self, pos: f64, channel: usize, looping: bool) -> f32 {
         let f0 = pos as usize; // pos >= 0 by contract
@@ -90,9 +136,14 @@ impl<'a> Reader<'a> {
 ///
 /// A rising `trigger` re-cues to `start_pos` mid-play, which is what makes one
 /// player a re-usable voice instead of a one-use node. Without `loop`, reaching
-/// the end stops it and fires the done action -- `2` frees the synth, so a
-/// one-shot leaves the tree by itself; with `loop`, the reader never finishes
-/// and the action never fires.
+/// the last frame (or frame 0, playing backwards) stops it there and fires the
+/// done action -- `2` frees the synth, so a one-shot leaves the tree by
+/// itself; a player left alive holds the frame it stopped on, as scsynth's
+/// does. With `loop`, the reader never finishes and the action never fires.
+///
+/// It reads cubically, scsynth's interpolation for `PlayBuf`: at a rate of
+/// exactly 1 that is every frame verbatim, and at any other rate it is the
+/// four-point curve through the frames around the position.
 ///
 /// The three arrive **after** the original four rather than in scsynth's order
 /// (`rate, trigger, startPos, loop`): inputs are positional, so putting
@@ -138,37 +189,54 @@ impl UGen for PlayBuf {
         // a control and a client can change it before the pass ends.
         self.done_action = DoneAction::from_i32(at(inputs[6], 0) as i32);
         if !self.started {
-            self.phase = at(inputs[5], 0).max(0.0) as f64;
+            self.phase = at(inputs[5], 0) as f64;
             self.started = true;
         }
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
             output.fill(0.0);
             return;
         };
-        let frames = buf.frames() as f64;
+        let frames = buf.frames();
+        if frames == 0 {
+            output.fill(0.0);
+            return;
+        }
+        // scsynth's `sc_loop`: a looping position wraps over the whole
+        // buffer, and a one-shot stops on its last frame (or its first,
+        // going backwards) and holds there.
+        let hi = if looping { frames } else { frames - 1 } as f64;
         let mut reader = Reader::new(buf);
         for (i, s) in output.iter_mut().enumerate() {
             // The trigger is read whatever else is happening: re-cueing a
             // finished player is how one is played again.
             let t = at(inputs[4], i);
             if t > 0.0 && self.prev_trig <= 0.0 {
-                self.phase = at(inputs[5], i).max(0.0) as f64;
+                self.phase = at(inputs[5], 0) as f64;
                 self.finished = false;
             }
             self.prev_trig = t;
-            // The buffer can shrink under us on a swap: re-clamp, don't trust
-            // the phase from previous blocks.
-            if self.finished || self.phase >= frames || self.phase < 0.0 {
-                if looping && frames > 0.0 {
-                    self.phase = self.phase.rem_euclid(frames);
-                    self.finished = false;
+            if self.phase >= hi {
+                if looping {
+                    self.phase -= hi;
+                    if self.phase >= hi {
+                        self.phase -= hi * (self.phase / hi).floor();
+                    }
                 } else {
                     self.finished = true;
-                    *s = 0.0;
-                    continue;
+                    self.phase = hi;
+                }
+            } else if self.phase < 0.0 {
+                if looping {
+                    self.phase += hi;
+                    if self.phase < 0.0 {
+                        self.phase -= hi * (self.phase / hi).floor();
+                    }
+                } else {
+                    self.finished = true;
+                    self.phase = 0.0;
                 }
             }
-            *s = reader.read(self.phase, channel, looping);
+            *s = reader.read_with(self.phase, channel, looping, 4);
             self.phase += at(inputs[2], i) as f64;
         }
     }
@@ -184,7 +252,9 @@ impl UGen for PlayBuf {
 
 /// Buffer reader driven by a phase signal in frames. Inputs: 0 buffer
 /// index, 1 channel, 2 phase, 3 loop flag (wrap vs clamp out-of-range
-/// phases). Stateless; drive it with any signal for scrubbing/wavetables.
+/// phases), 4 interpolation (1 none, 2 linear, 4 cubic -- scsynth's values
+/// and its default of 2). Stateless; drive it with any signal for
+/// scrubbing/wavetables.
 pub struct BufRd;
 
 impl UGen for BufRd {
@@ -203,6 +273,7 @@ impl UGen for BufRd {
             output.fill(0.0);
             return;
         }
+        let interpolation = inputs.get(4).map_or(2, |x| at(x, 0) as i32);
         let mut reader = Reader::new(buf);
         for (i, s) in output.iter_mut().enumerate() {
             let raw = at(inputs[2], i) as f64;
@@ -211,7 +282,7 @@ impl UGen for BufRd {
             } else {
                 raw.clamp(0.0, frames - 1.0)
             };
-            *s = reader.read(pos, channel, looping);
+            *s = reader.read_with(pos, channel, looping, interpolation);
         }
     }
 }

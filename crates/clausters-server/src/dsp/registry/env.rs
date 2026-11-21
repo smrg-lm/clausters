@@ -20,7 +20,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
             inp("done_action", 0.0),
         ],
         Ar,
-        R_AR,
+        R_KR_AR,
         Normal,
         BusRole::None,
         false,

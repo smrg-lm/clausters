@@ -75,11 +75,12 @@ control -- use it directly to smooth any signal.
 '''
 
 [[ugen]]
-kind = "VarLag"
-builder = "var_lag"
+kind = "LagUD"
+builder = "lag_ud"
 required = ["signal"]
 doc = '''
-One-pole smoother with separate rise (`up`) and fall (`down`) times.
+One-pole smoother with separate rise (`up`) and fall (`down`) times: the
+UGen a control with a separate downward lag inserts.
 '''
 
 [[ugen]]
@@ -153,6 +154,10 @@ required = ["bufnum", "chan", "signal"]
 doc = '''
 `allpass_c` over a channel of a pool buffer.
 '''
+
+[[hand]]
+kind = "VarLag"
+why = "`start` defaults to the signal itself"
 
 [[hand]]
 kind = "RLPF"

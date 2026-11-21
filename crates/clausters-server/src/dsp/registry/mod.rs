@@ -31,7 +31,7 @@ use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
-use crate::dsp::lag::{Lag, VarLag};
+use crate::dsp::lag::{Lag, LagUD, VarLag};
 use crate::dsp::line::{Line, LineShape};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};

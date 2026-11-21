@@ -9,14 +9,21 @@
 import { Ugen } from "../graph.ts";
 import type { Channel } from "../graph.ts";
 
-/** Sine by f64 phase accumulation, starting at phase 0. */
-export const sine = (freq: Channel = 440.0): Ugen => new Ugen("Sine", [freq]);
+/**
+ * Sine by f64 phase accumulation, starting at phase 0. `phase` is a
+ * running offset in cycles, so an audio-rate `phase` is phase modulation.
+ */
+export const sine = (freq: Channel = 440.0, phase: Channel = 0.0): Ugen =>
+    new Ugen("Sine", [freq, phase]);
 
 /**
  * A single-sample `1.0` every `freq` Hz, `0.0` between (`freq` 0 =
- * one impulse then silence). The first sample is always an impulse.
+ * one impulse then silence). `phase` offsets the train in cycles: at 0 the
+ * first sample is an impulse, and moving it moves the train, firing when
+ * that carries it across a cycle. A negative `freq` runs it backwards.
  */
-export const impulse = (freq: Channel = 1.0): Ugen => new Ugen("Impulse", [freq]);
+export const impulse = (freq: Channel = 1.0, phase: Channel = 0.0): Ugen =>
+    new Ugen("Impulse", [freq, phase]);
 
 /** Uniform white noise in +/-1. */
 export const whiteNoise = (): Ugen => new Ugen("WhiteNoise", []);

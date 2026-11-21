@@ -53,9 +53,9 @@ def play_buf(
     )
 
 
-def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
+def buf_rd(bufnum, chan, phase, loop=0.0, interpolation=2.0) -> Ugen:
     """Reads a buffer at a `phase` signal in frames (linear interpolation)."""
-    return Ugen("BufRd", [bufnum, chan, phase, loop])
+    return Ugen("BufRd", [bufnum, chan, phase, loop, interpolation])
 
 
 def transport_buf_rd(

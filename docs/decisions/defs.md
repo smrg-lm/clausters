@@ -444,12 +444,26 @@ seven direct-form two-pole sections, each with its own coefficient formula, its
 own `next` variants, and its own copy of the same algebra.
 
 **Decision:** one *topology-preserving* (trapezoidal-integrator) state-variable
-filter behind all of them. It implements the **same** prototype — the bilinear
-transform of the analog two-pole — so the transfer function is not an
-approximation of scsynth's, it is the same function, and the tests assert it
-against the closed form rather than against a golden file: within **0.1 dB**
-across nine octaves at every cutoff and resonance tried, with the allpass mix
-flat to 0.02 dB and the notch nulling below −136 dB.
+filter behind all of them, realizing **scsynth's own section** for each row.
+The row computes scsynth's coefficients (`dsp::filter::Biquad::scsynth`) and
+converts them to the state-variable filter's integrator gain, damping and tap
+mix (`Biquad::svf`). The conversion is exact, not a fit: every digital two-pole
+is the bilinear transform of exactly one analog two-pole, a state-variable
+filter realizes that analog section exactly, and its numerator is a mix of the
+three taps. So the transfer function is scsynth's, and
+`tests/offline/sc_reference.rs` holds every row against scsynth's code sample by
+sample.
+
+*Corrected 2026-11-21.* The first version of this decision claimed that all
+seven rows were the bilinear transform of the textbook analog prototypes, so
+that implementing those prototypes was implementing scsynth's filters. It was
+true of `LPF` and `HPF` only. scsynth's `RLPF`/`RHPF` place their poles with a
+formula of their own, `BPF` and `BRF` prewarp their bandwidth differently, and
+`Resonz` is a different resonator altogether (zeros at DC and Nyquist, poles
+placed by radius) — the earlier claim that "`BPF` and `Resonz` are the same row
+twice" was a reading of the help files rather than of the code. Held against the
+code, the resonant rows were off by up to 0.4 in sample value. The structure
+below survives; only the coefficients changed.
 
 What changes is behaviour, not response:
 
@@ -481,13 +495,15 @@ deviation — scsynth's `FilterUGens.cpp` declares `double y1, y2, a0, b1, b2` f
 exactly these filters, because near DC the coefficient quantization and the
 state truncation of `f32` dominate the output.
 
-**Coefficient rate:** the `tan` and the reciprocal run **once per block** when
-the parameters arrive as scalar wires, and twice — at the block's first and last
-sample, with the three integrator gains interpolated linearly between — when
-either is audio-rate. Interpolating the *gains* rather than the cutoff is what
-keeps a modulated filter at three multiply-adds per sample instead of a
+**Coefficient rate:** the coefficients are worked out once per block, from the
+parameters at its last sample, and the integrator gains and the tap mix move in
+a straight line across the block from where the previous block left them.
+Interpolating the *gains* rather than the cutoff is what keeps a modulated
+filter at three multiply-adds and the mix per sample instead of a
 transcendental and a division. This is scsynth's `CALCSLOPE` idea applied one
-level later.
+level later: scsynth ramps its direct-form coefficients from the block's first
+sample, so an audio-rate cutoff is read once a block there and at the block's
+end here.
 
 **`rq`, not `Q`, on the wire.** Keeping scsynth's reciprocal is not a
 performance choice: it saves one division per *block*, next to a `tan` that
@@ -495,12 +511,6 @@ costs several times more. It is a domain choice — `rq = 0` is infinite Q and i
 exactly representable, where `Q = 0` divides by zero and `Q → ∞` is not a
 number. The awkwardness is real, so the client builders accept `q=` and convert
 (a constant folds at graph-build time; a signal composes one reciprocal).
-
-**`BPF` and `Resonz` are the same row twice.** scsynth ships two historically
-distinct two-pole resonators that promise the same parameterization and the same
-unity peak gain; reproducing the distinction would mean reproducing an accident.
-A test asserts the two are sample-identical, so a reader finds the answer
-instead of wondering.
 
 **The one-pole family keeps its coefficient parameterization** (`OnePole`,
 `OneZero`, `LeakDC`, `Integrator` take a pole, not a cutoff), as in scsynth: a
@@ -901,8 +911,11 @@ the two gains across a block — what a filter coefficient does here, and what
 scsynth's `CALCSLOPE` does for its own amplitudes — reads `0.5` where the law
 wants `0.707` if the position sweeps a whole block: a 3 dB hole in the middle of
 every block, on exactly the fast pan sweeps someone reaches for audio rate to
-get. A scalar position still computes its gains once per block; the polynomial
-is what makes the other path affordable, and is most of the reason it exists.
+get. A scalar position still computes its gains once per block and moves them
+in a straight line across it from where the last block left them, as scsynth
+does — a control-rate position is a block-rate staircase otherwise, and the
+gains are what scsynth ramps. The polynomial is what makes the per-sample path
+affordable, and is most of the reason it exists.
 `crates/clausters-server/examples/bench.rs` measures the gap on the same graph
 (`Sine → Pan2 → 2× Out`, position constant against position from an `LFTri`):
 **1.30×** the whole graph at every voice count from 32 up — and that figure
@@ -1481,3 +1494,49 @@ private module per family in each client (`_generated/<module>.py`,
   the three lists, so a kind the server grows fails the test until both
   clients have it; the clients' contrast tests still check the hand-written
   signatures against the catalog.
+
+## A UGen is held against scsynth's own code, not against its help file
+
+The catalog's rows carry scsynth's names, and a name is a promise about what a
+ported def will sound like. The U track checked each row against the closed
+form of what its *documentation* says, which is how several drifted: a filter
+whose coefficients were the textbook ones and not scsynth's, a `VarLag` that was
+scsynth's `LagUD`, a waveshaper that read its table over one interval too few,
+a `PlayBuf` that interpolated linearly where scsynth's is cubic, an envelope
+whose stages rounded where scsynth's carry their fraction forward.
+
+**Decision:** the reference is scsynth's code, run.
+`crates/clausters-server/tests/sc_reference/` compiles the base library's
+plugins from a SuperCollider checkout and loads them, the way scsynth does,
+into a harness that builds the part of scsynth a plugin sees — a World, a
+Graph, its Units and Wires, the interface table — and runs a small graph of
+them. `gen.py` writes what each graph's probed wire carried into
+`vectors.json`, with the SuperCollider revision it came from, and
+`tests/offline/sc_reference.rs` renders the same graph through the server and
+compares sample by sample. The checkout is needed only to regenerate the file;
+the comparison runs without it, in CI.
+
+What the comparison allows is part of the decision:
+
+- **A tolerance is a claim about arithmetic, and a wide one needs a reason.**
+  The default (`1e-5` relative) is the difference two correct computations of
+  one formula show after a few hundred samples of state, one in `f32` and the
+  other in `f64`. A case that allows more names the decision that explains it
+  in its `why` — the pan law's polynomial against scsynth's table, a sine
+  computed against one read from a table — and the test refuses a wide
+  tolerance without one.
+- **scsynth's own artifacts are not reproduced.** A plugin's constructor runs
+  one sample of its calculation to prime its output, and the filters keep the
+  state that sample left, so an impulse at a synth's very first sample is
+  counted twice; scsynth's cubic allpass outputs nothing while its line fills,
+  where its other allpasses output the feedforward term; an `LFSaw` at control
+  rate above the control rate's Nyquist stops wrapping. The cases avoid those
+  inputs rather than the server copying them.
+- **Where scsynth reads an audio-rate input once a block, the server may read
+  it per sample.** `Rotate2`'s angle, `VarLag`'s target, a filter's cutoff, an
+  `Impulse` offset beside a constant frequency: the server's per-sample
+  reading is the more accurate one, and the cases drive those inputs at
+  control rate, where the two agree.
+- **A boundary is not compared.** A phase that lands exactly on a wrap is on
+  one side of it or the other by the rounding of two accumulators of different
+  widths, so the cases use frequencies that never land on one.

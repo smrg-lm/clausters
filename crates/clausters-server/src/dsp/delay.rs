@@ -71,7 +71,7 @@ pub enum Feedback {
 ///
 /// `y1` and `y2` bracket the point; `x` is the fraction between them.
 #[inline]
-fn cubic(x: f64, y0: f64, y1: f64, y2: f64, y3: f64) -> f64 {
+pub(crate) fn cubic(x: f64, y0: f64, y1: f64, y2: f64, y3: f64) -> f64 {
     let c0 = y1;
     let c1 = 0.5 * (y2 - y0);
     let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;

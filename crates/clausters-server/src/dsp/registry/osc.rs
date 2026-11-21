@@ -9,8 +9,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     // --- generators (audio or control rate; the default shape) ---
     desc(
         "Sine",
-        Fixed(1),
-        &[inp("freq", 440.0)],
+        Fixed(2),
+        &[inp("freq", 440.0), inp_opt("phase", 0.0)],
         Ar,
         R_KR_AR,
         Normal,
@@ -20,8 +20,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     ),
     desc(
         "Impulse",
-        Fixed(1),
-        &[inp("freq", 1.0)],
+        Fixed(2),
+        &[inp("freq", 1.0), inp_opt("phase", 0.0)],
         Ar,
         R_KR_AR,
         Normal,

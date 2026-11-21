@@ -61,7 +61,7 @@
 
 use std::f64::consts::FRAC_PI_2;
 
-use crate::dsp::{ProcessCtx, UGen, at};
+use crate::dsp::{ProcessCtx, Ramp, UGen, at};
 
 // --- the pan law ---------------------------------------------------------
 
@@ -201,18 +201,28 @@ impl PanKind {
 /// That index is a wire input read at index 0, not a build-time field, for the
 /// same reason `PlayBuf`'s channel is: it is what a def writes down, and the
 /// build closure never sees the def's values.
+///
+/// A control-rate position and level move the two gains in a straight line
+/// across the slice, from where the last slice left them ([`Ramp`]), as
+/// scsynth's do; an audio-rate position is read per sample.
 pub struct Pan {
     kind: PanKind,
+    gains: [Ramp; 2],
 }
 
 impl Pan {
     pub fn new(kind: PanKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            gains: [Ramp::default(); 2],
+        }
     }
 }
 
 impl UGen for Pan {
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        *self = Self::new(self.kind);
+    }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         // A one-source row feeds the same signal to both gains, which is
@@ -226,20 +236,13 @@ impl UGen for Pan {
         let base = self.kind.sources();
         let pos = inputs[base];
         let level = inputs[base + 1];
-
-        // A scalar position is the common case (a control, a constant): the
-        // polynomial runs once for the block instead of once per sample.
-        let fixed = (pos.len() == 1).then(|| self.kind.gains(pos[0] as f64));
         let sums = self.kind.sums();
         // A summing row has no channel index on the wire, so the slice is only
         // reached once the first operand has ruled that case out.
         let right = !sums && at(inputs[base + 2], 0) >= 0.5;
+        let n = output.len();
 
-        for (i, s) in output.iter_mut().enumerate() {
-            let (gl, gr) = match fixed {
-                Some(g) => g,
-                None => self.kind.gains(at(pos, i) as f64),
-            };
+        let apply = |s: &mut f32, i: usize, gl: f64, gr: f64| {
             // `f64` by consistency with the law, not by need: see the module doc.
             let v = if sums {
                 at(a, i) as f64 * gl + at(b, i) as f64 * gr
@@ -248,8 +251,30 @@ impl UGen for Pan {
             } else {
                 at(a, i) as f64 * gl
             };
-            *s = (v * at(level, i) as f64) as f32;
+            *s = v as f32;
+        };
+
+        if pos.len() == 1 && level.len() == 1 {
+            // A control (or a constant): the law runs once for the slice.
+            let (gl, gr) = self.kind.gains(pos[0] as f64);
+            let lev = level[0] as f64;
+            let (l0, dl) = self.gains[0].toward(gl * lev, n);
+            let (r0, dr) = self.gains[1].toward(gr * lev, n);
+            for (i, s) in output.iter_mut().enumerate() {
+                let k = i as f64;
+                apply(s, i, l0 + dl * k, r0 + dr * k);
+            }
+            return;
         }
+        let mut last = (0.0, 0.0);
+        for (i, s) in output.iter_mut().enumerate() {
+            let (gl, gr) = self.kind.gains(at(pos, i) as f64);
+            let lev = at(level, i) as f64;
+            last = (gl * lev, gr * lev);
+            apply(s, i, last.0, last.1);
+        }
+        self.gains[0].set(last.0);
+        self.gains[1].set(last.1);
     }
 }
 
@@ -282,11 +307,15 @@ impl RotKind {
 /// Like [`Pan`], one instance per output channel, the index last on the wire.
 pub struct Rotate {
     kind: RotKind,
+    row: [Ramp; 2],
 }
 
 impl Rotate {
     pub fn new(kind: RotKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            row: [Ramp::default(); 2],
+        }
     }
 
     /// The matrix row for output channel `chan`, at one parameter value.
@@ -322,7 +351,9 @@ impl Rotate {
 }
 
 impl UGen for Rotate {
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        *self = Self::new(self.kind);
+    }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (x, y) = (inputs[0], inputs[1]);
@@ -334,16 +365,27 @@ impl UGen for Rotate {
             (&[0.0][..], 2)
         };
         let chan = usize::from(at(inputs[chan_slot], 0) >= 0.5);
-        let fixed = (param.len() == 1).then(|| self.row(chan, param[0] as f64));
-
-        for (i, s) in output.iter_mut().enumerate() {
-            let (cx, cy) = match fixed {
-                Some(r) => r,
-                None => self.row(chan, at(param, i) as f64),
-            };
-            // `f64` by consistency with the law, not by need: see the module doc.
-            *s = (at(x, i) as f64 * cx + at(y, i) as f64 * cy) as f32;
+        let n = output.len();
+        // `f64` by consistency with the law, not by need: see the module doc.
+        if param.len() == 1 {
+            // A control moves the matrix row in a straight line across the
+            // slice, as scsynth's does.
+            let (cx, cy) = self.row(chan, param[0] as f64);
+            let (x0, dx) = self.row[0].toward(cx, n);
+            let (y0, dy) = self.row[1].toward(cy, n);
+            for (i, s) in output.iter_mut().enumerate() {
+                let k = i as f64;
+                *s = (at(x, i) as f64 * (x0 + dx * k) + at(y, i) as f64 * (y0 + dy * k)) as f32;
+            }
+            return;
         }
+        let mut last = (0.0, 0.0);
+        for (i, s) in output.iter_mut().enumerate() {
+            last = self.row(chan, at(param, i) as f64);
+            *s = (at(x, i) as f64 * last.0 + at(y, i) as f64 * last.1) as f32;
+        }
+        self.row[0].set(last.0);
+        self.row[1].set(last.1);
     }
 }
 
@@ -357,10 +399,18 @@ impl UGen for Rotate {
 /// lobes are a sine and a cosine of the same angle, so any pair the source sits
 /// between holds equal power, and a source parked on a channel gives that
 /// channel exactly unity.
-pub struct PanAz;
+///
+/// A control-rate position, width, orientation and level move the gain in a
+/// straight line across the slice ([`Ramp`]), as scsynth's do.
+#[derive(Default)]
+pub struct PanAz {
+    gain: Ramp,
+}
 
 impl UGen for PanAz {
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (sig, pos, level) = (inputs[0], inputs[1], inputs[2]);
@@ -369,31 +419,37 @@ impl UGen for PanAz {
         // node's life: read once, not per sample.
         let chans = (at(inputs[5], 0) as f64).max(1.0);
         let i_chan = (at(inputs[6], 0) as f64).max(0.0);
+        let n = output.len();
 
-        let fixed = (pos.len() == 1 && width.len() == 1 && orientation.len() == 1).then(|| {
-            gain_az(
+        let control =
+            pos.len() == 1 && width.len() == 1 && orientation.len() == 1 && level.len() == 1;
+        if control {
+            let g = gain_az(
                 pos[0] as f64,
                 width[0] as f64,
                 orientation[0] as f64,
                 chans,
                 i_chan,
-            )
-        });
-
-        for (i, s) in output.iter_mut().enumerate() {
-            let g = match fixed {
-                Some(g) => g,
-                None => gain_az(
-                    at(pos, i) as f64,
-                    at(width, i) as f64,
-                    at(orientation, i) as f64,
-                    chans,
-                    i_chan,
-                ),
-            };
-            // `f64` by consistency with the law, not by need: see the module doc.
-            *s = (at(sig, i) as f64 * g * at(level, i) as f64) as f32;
+            ) * level[0] as f64;
+            let (g0, dg) = self.gain.toward(g, n);
+            for (i, s) in output.iter_mut().enumerate() {
+                // `f64` by consistency with the law, not by need: see the module doc.
+                *s = (at(sig, i) as f64 * (g0 + dg * i as f64)) as f32;
+            }
+            return;
         }
+        let mut last = 0.0;
+        for (i, s) in output.iter_mut().enumerate() {
+            last = gain_az(
+                at(pos, i) as f64,
+                at(width, i) as f64,
+                at(orientation, i) as f64,
+                chans,
+                i_chan,
+            ) * at(level, i) as f64;
+            *s = (at(sig, i) as f64 * last) as f32;
+        }
+        self.gain.set(last);
     }
 }
 

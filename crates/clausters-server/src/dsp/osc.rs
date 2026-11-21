@@ -183,8 +183,9 @@ impl UGen for VOsc {
 }
 
 /// Waveshaper: maps its input signal through a transfer table (wavetable
-/// format, typically built by `/buffer_gen cheby`). Input `x` in `[-1, 1]` indexes
-/// the table from its first to its last point; values outside are clamped.
+/// format, typically built by `/buffer_gen cheby`). Input `x` in `[-1, 1]` spans
+/// the table's intervals, from its first point to the end of its last pair, as
+/// scsynth's does; values outside are clamped.
 /// Inputs: 0 buffer index, 1 input signal. Stateless.
 pub struct Shaper;
 
@@ -207,11 +208,14 @@ impl UGen for Shaper {
             output.fill(0.0);
             return;
         }
-        // x in [-1, 1] spans the table's first..last point.
-        let span = (points - 1) as f32;
+        // x in [-1, 1] spans the table's `points` intervals, the last ending
+        // at x = 1 (scsynth's `ShaperPerform`: the index is kept just short
+        // of the end, so x = 1 reads the top of the last pair).
+        let n = points as f32;
+        let top = n - 0.001;
         for (i, s) in output.iter_mut().enumerate() {
-            let x = at(inputs[1], i).clamp(-1.0, 1.0);
-            let scaled = (x * 0.5 + 0.5) * span;
+            let x = at(inputs[1], i);
+            let scaled = (n * 0.5 + x * n * 0.5).clamp(0.0, top);
             let k = (scaled as usize).min(points - 1);
             *s = wt_interp(table, k, scaled - k as f32);
         }

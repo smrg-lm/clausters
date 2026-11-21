@@ -413,7 +413,7 @@
     },
     {
       "name": "BufRd",
-      "arity": 4,
+      "arity": 5,
       "inputs": [
         {
           "name": "bufnum",
@@ -430,6 +430,10 @@
         {
           "name": "loop",
           "default": 0.0
+        },
+        {
+          "name": "interpolation",
+          "default": 2.0
         }
       ]
     },
@@ -1153,11 +1157,15 @@
     },
     {
       "name": "Impulse",
-      "arity": 1,
+      "arity": 2,
       "inputs": [
         {
           "name": "freq",
           "default": 1.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
         }
       ]
     },
@@ -1305,6 +1313,24 @@
         },
         {
           "name": "time",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "LagUD",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "up",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "down",
           "default": 0.10000000149011612
         }
       ]
@@ -2305,11 +2331,15 @@
     },
     {
       "name": "Sine",
-      "arity": 1,
+      "arity": 2,
       "inputs": [
         {
           "name": "freq",
           "default": 440.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
         }
       ]
     },
@@ -2677,12 +2707,12 @@
           "default": 0.0
         },
         {
-          "name": "up",
+          "name": "time",
           "default": 0.10000000149011612
         },
         {
-          "name": "down",
-          "default": 0.10000000149011612
+          "name": "start",
+          "default": 0.0
         }
       ]
     },

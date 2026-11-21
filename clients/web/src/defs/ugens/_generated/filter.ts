@@ -57,9 +57,12 @@ export const integrator = (signal: Channel, coef: Channel = 0.999): Ugen =>
 export const lag = (signal: Channel, time: Channel = 0.1): Ugen =>
     new Ugen("Lag", [signal, time]);
 
-/** One-pole smoother with separate rise (`up`) and fall (`down`) times. */
-export const varLag = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1): Ugen =>
-    new Ugen("VarLag", [signal, up, down]);
+/**
+ * One-pole smoother with separate rise (`up`) and fall (`down`) times: the
+ * UGen a control with a separate downward lag inserts.
+ */
+export const lagUd = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1): Ugen =>
+    new Ugen("LagUD", [signal, up, down]);
 
 /** `delayN` over a channel of a pool buffer. */
 export const bufDelayN = (

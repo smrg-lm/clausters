@@ -250,3 +250,16 @@ export const allpassC = (
     new Ugen("AllpassC", [signal, delaytime, decaytime], {
         static: lineSize("AllpassC", delaytime, maxDelay),
     });
+
+// --- smoothers ---
+
+/**
+ * A straight line to each new value of `signal`, taking `time` seconds.
+ *
+ * Where `lag` approaches a new value and never quite reaches it, this
+ * arrives, in `time` and exactly; changing `time` partway rescales what is
+ * left of the line. `start` is where the output begins, and is the signal
+ * itself unless given -- a glide in from `start` when it is.
+ */
+export const varLag = (signal: Channel, time: Channel = 0.1, start?: Channel): Ugen =>
+    new Ugen("VarLag", [signal, time, start ?? signal]);

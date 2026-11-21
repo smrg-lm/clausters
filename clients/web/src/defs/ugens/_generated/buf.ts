@@ -35,7 +35,8 @@ export const bufRd = (
     chan: Channel,
     phase: Channel,
     loop: Channel = 0.0,
-): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop]);
+    interpolation: Channel = 2.0,
+): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop, interpolation]);
 
 /**
  * Reads a buffer **at the transport's position**: `bufRd` at
