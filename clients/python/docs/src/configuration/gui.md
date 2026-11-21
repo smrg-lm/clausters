@@ -120,7 +120,8 @@ the notation:
 | `primary_text` | `#171717` | `#fafafa` | The text on `primary`. |
 | `secondary` | `#262626` | `#f5f5f5` | The **secondary** fill: a bar's ground, a secondary button, a chosen segment. |
 | `secondary_text` | `#fafafa` | `#171717` | The text on `secondary`. |
-| `muted` | `#262626` | `#f5f5f5` | The **muted** fill: a toggle that is on, a ghost button under the pointer, a block of code in a page. |
+| `muted` | `#262626` | `#f5f5f5` | The **muted** fill: a ghost button under the pointer, a block of code in a page. |
+| `toggled` | `#ffffff1f` | `#0000001a` | The **toggled** fill: a toggle that is on, a tool whose state is on or whose choice is in force; translucent, so it reads on any ground, a bar of the `secondary` fill included. |
 | `hover_text` | `#fafafa` | `#171717` | The text on `hover`: an entry of a list under the pointer or the keyboard. |
 | `input` | `#ffffff26` | `#e5e5e5` | The edge of a field the hand types in. |
 | `shadow` | `#0000001a` | `#0000001a` | What a raised surface casts on the window: the ink of every elevation's shadow, its alpha the strongest layer's. |

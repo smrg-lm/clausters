@@ -738,9 +738,10 @@ pub fn caption_floor(caption: &str, size: f32, m: &Metrics) -> f32 {
 /// **A button**, as the design system draws one: its box with the medium
 /// corner in its variant's fill and edge, and centred in it the icon, then
 /// the label in the medium weight, its variant's ink; a little lower while it
-/// is held. Its states are its variant's: under the pointer or on, a ghost
-/// or an outlined button takes the `muted` fill and a filled one fades to
-/// four fifths.
+/// is held. Its states are its variant's: under the pointer, a ghost or an
+/// outlined button takes the `muted` fill and a filled one fades to four
+/// fifths; on, a ghost or an outlined one takes the `toggled` fill, which
+/// reads on the bar it stands in.
 pub fn button(
     d: &mut Draw,
     label: Option<&str>,
@@ -766,7 +767,9 @@ pub fn button(
         Variant::Default => (Some(fade(theme.primary)), None, theme.primary_text),
         Variant::Secondary => (Some(fade(theme.secondary)), None, theme.secondary_text),
         Variant::Outline => {
-            let ground = if lit {
+            let ground = if look.active {
+                theme.toggled
+            } else if lit {
                 theme.muted
             } else if dark {
                 with_alpha(theme.input, 0.3)
@@ -776,6 +779,7 @@ pub fn button(
             let edge = if dark { theme.input } else { theme.separator };
             (Some(ground), Some(edge), theme.text)
         }
+        Variant::Ghost if look.active => (Some(theme.toggled), None, theme.text),
         Variant::Ghost => (lit.then_some(theme.muted), None, theme.text),
         Variant::Destructive => (
             Some(with_alpha(theme.destructive, if lit { 0.2 } else { 0.1 })),
@@ -1082,8 +1086,9 @@ pub fn toggle(
     if view == ToggleView::Button {
         let (mesh, m, theme) = d.parts();
         let radius = m.radius_md;
-        let lit = on || hovered;
-        if lit {
+        if on {
+            mesh.round_rect(rect, radius, theme.toggled);
+        } else if hovered {
             mesh.round_rect(rect, radius, theme.muted);
         }
         let ink = if hovered && !on {
@@ -1751,7 +1756,7 @@ mod tests {
     }
 
     /// **A latch is the design system's toggle**: off, no fill; on, the
-    /// `muted` fill a ghost button lights with.
+    /// `toggled` fill, which differs from the bar's `secondary` ground.
     #[test]
     fn a_latch_is_drawn_as_a_toggle_on_or_off() {
         let theme = Theme::default();
@@ -1769,8 +1774,9 @@ mod tests {
             );
             mesh.colors_by_y().next().map(|(_, color)| color)
         };
-        assert_ne!(fill(false), Some(theme.muted));
-        assert_eq!(fill(true), Some(theme.muted));
+        assert_ne!(fill(false), Some(theme.toggled));
+        assert_eq!(fill(true), Some(theme.toggled));
+        assert_ne!(theme.toggled, theme.secondary);
     }
 
     #[test]

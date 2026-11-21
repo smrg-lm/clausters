@@ -115,9 +115,13 @@ theme_roles! {
     secondary = [0.149, 0.149, 0.149, 1.0];
     /// The text on [`secondary`](Theme::secondary).
     secondary_text = [0.980, 0.980, 0.980, 1.0];
-    /// The **muted** fill: a toggle that is on, a ghost button under the
-    /// pointer, a block of code in a page.
+    /// The **muted** fill: a ghost button under the pointer, a block of
+    /// code in a page.
     muted = [0.149, 0.149, 0.149, 1.0];
+    /// The **toggled** fill: a toggle that is on, a tool whose state is on
+    /// or whose choice is in force. Translucent ink, so it reads on any
+    /// ground it is laid over, a bar of the `secondary` fill included.
+    toggled = [1.0, 1.0, 1.0, 0.122];
     /// The text on [`hover`](Theme::hover): an entry of a list under the
     /// pointer or the keyboard.
     hover_text = [0.980, 0.980, 0.980, 1.0];
@@ -494,6 +498,7 @@ const LIGHT: &[(&str, &str)] = &[
     ("secondary", "#f5f5f5"),
     ("secondary_text", "#171717"),
     ("muted", "#f5f5f5"),
+    ("toggled", "#0000001a"),
     ("hover_text", "#171717"),
     ("input", "#e5e5e5"),
     ("field", "#ffffff"),

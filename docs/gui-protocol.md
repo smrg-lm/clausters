@@ -528,7 +528,7 @@ The color roles:
 | Family | Roles |
 | --- | --- |
 | Window chrome | `background`, `panel`, `text`, `text_dim`, `label_dim`, `status_bar` |
-| Surfaces | `card`, `primary`, `primary_text`, `secondary`, `secondary_text`, `muted`, `hover_text`, `input`, `shadow`, `scrim` |
+| Surfaces | `card`, `primary`, `primary_text`, `secondary`, `secondary_text`, `muted`, `toggled`, `hover_text`, `input`, `shadow`, `scrim` |
 | Controls | `field`, `track`, `accent`, `accent_dim`, `hilite`, `hover`, `text_disabled`, `popup`, `separator` |
 | Data traces | `trace`, `trace_bright`, `trace_body`, `trace_signal`, `trace_loudness`, `trace_guide`, `point` |
 | Frames | `frame`, `view_frame`, `frame_info`, `frame_plot` |
