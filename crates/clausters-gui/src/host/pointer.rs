@@ -217,6 +217,9 @@ mod tests {
 
     /// **A shape drawn from an icon is a picture of it**: black lines on a
     /// white halo, clear around them, for every shape the list pictures.
+    /// Stroking an icon is the `notation` feature's (the drawing base's
+    /// `path`); a build without it shows each shape's named stand-in.
+    #[cfg(feature = "notation")]
     #[test]
     fn a_pictured_shape_is_its_icon_in_black_on_white() {
         for &(_, name, _) in PICTURED {
