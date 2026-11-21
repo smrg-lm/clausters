@@ -84,7 +84,8 @@ export class GuiBridge {
      * Feeds one packet from **client `peer`** of the page, a number above
      * zero the page gives each client it links to the host: what answers the
      * packet, and the events of the windows it defines, are drained with
-     * that number ([`poll`](Self::poll)), so each reaches its own client.
+     * that number ([`poll_for`](Self::poll_for)), so each reaches its own
+     * client.
      */
     feedFrom(peer: number, packet: Uint8Array): void;
     /**
