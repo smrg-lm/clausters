@@ -1651,6 +1651,37 @@ holds what is open.
   test per row), and reaches both clients' builders in the same commit,
   as the contrast tests require.
 
+- ⬜ **A UGen's builder never takes the name of a client function** *(asked
+  by the user, 2026-11-21, beside the entry above)*. A UGen builder is its
+  scsynth name in snake_case, and a client's random functions are sclang's
+  (`rand`, `irand`, `exprand`, `linrand`): sclang never meets the two
+  because its UGens are capitalized, and here they meet. Today the clash is
+  one name -- `rand` is both the client's draw-now function
+  (`clausters.base.rand`, a number) and scsynth's `Rand` (`defs.rand`, a
+  value drawn once at the synth's start), so `from clausters import *`
+  followed by `from clausters.defs import *` changes what `rand` means, in
+  both clients. Completing the catalog makes it a family: `IRand` would be
+  `irand`, the client's integer function; `ExpRand` and `LinRand` would sit
+  one underscore from `exprand` and `linrand`. To decide, before the first
+  of them is added, and as one rule for the family rather than a name each:
+  - **Names weighed with the user that day.** `rnd` (`rnd`, `irnd`,
+    `exprnd`, `linrnd`, `nrnd`; `t_rnd` for the triggered ones): short and
+    clashing with nothing, but the one family whose builders are not their
+    scsynth names, so each docstring names its scsynth UGen. A `_ir` suffix
+    (`rand_ir`, `irand_ir`): scsynth's own spelling (`Rand.ir`), right only
+    for UGens that are `ir` alone, since a rate is the builder's default and
+    `Ugen.at_rate` changes it, so `x_ir(...).at_rate("kr")` would read
+    against itself. `init_` reads well and is long. `i_rand` was set aside:
+    the `i` reads as `IRand`'s integer, and the integer one would be
+    `i_irand`. `frand` clashes with nothing, but its pair would be `irand`.
+  - **The rename is a breaking change of both clients** at once (the
+    pre-1.0 breaking tier), with the examples that call `rand` inside a def
+    (`basics/multichannel` in both) and the books.
+  - **A test keeps it**: no name of the UGen catalog (`defs`, `defs.ugens`)
+    equals a name the client exports at its top level or in its
+    `builtins`, in both clients, so the next UGen added cannot reintroduce
+    it.
+
 - ⬜ **The server runs from a seed, and its random UGens draw from shared
   generators (`RandSeed`, `RandID`)** *(asked by the user, 2026-11-21)*.
   **The requirement: a server can be run from a seed and give
