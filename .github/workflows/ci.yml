@@ -16,8 +16,9 @@
 # libverovio works the same way (`.github/actions/verovio`, pinned by
 # third_party/verovio.pin) and is needed by two jobs: `python`, which stages it
 # into the Python package and binds it with ctypes, and `gui`, which tests the
-# code editor, whose default `score` feature links it through the GUI host. The
-# server links it nowhere, so the server's test rows exclude the editor.
+# GUI host's `score` feature (the engraver) and the code editor, which turns
+# that feature on by default. The server links it nowhere, so the server's test
+# rows exclude the editor.
 
 name: CI
 
@@ -169,8 +170,8 @@ jobs:
     name: gui tests + wasm gates (host + engine)
     runs-on: ubuntu-26.04
     timeout-minutes: 20
-    # The code editor's default `score` feature links libverovio through the
-    # host's engraver.
+    # The host's `score` feature links libverovio, and the code editor turns
+    # it on by default.
     env:
       VEROVIO_PREFIX: /home/runner/.local
     steps:
@@ -189,6 +190,8 @@ jobs:
           prefix: ${{ env.VEROVIO_PREFIX }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p clausters-gui
+      # The host's engraver, the one feature of its own that links a library.
+      - run: cargo test -p clausters-gui --features score
       # The code editor links the host, so it is tested here rather than with
       # the server's rows, and with its default features: the score editor.
       - run: cargo test -p clausters-editor

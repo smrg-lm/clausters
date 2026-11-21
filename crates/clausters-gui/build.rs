@@ -51,10 +51,7 @@ fn main() {
     // Only the rpath: the library itself and where to find it at *link* time
     // come from the server crate's own script, which is where the dependency
     // is declared.
-    println!("cargo:rustc-link-arg-bins=-Wl,--disable-new-dtags");
-    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN");
-    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../_libs");
-    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,{prefix}/lib");
+    rpath(&prefix);
 }
 
 /// **The same for libverovio**, which the `score` feature links to read a
@@ -69,8 +66,17 @@ fn verovio() {
     let Ok(prefix) = std::env::var("DEP_VEROVIO_PREFIX") else {
         return;
     };
-    println!("cargo:rustc-link-arg-bins=-Wl,--disable-new-dtags");
+    rpath(&prefix);
+}
+
+/// Where what this package links finds a library it needs: beside itself,
+/// in a staged `../_libs` (a binary, as a package stages it), and in the
+/// build's prefix, which every linked target takes -- a test binary
+/// included, the library's own unit tests among them, which without it do not
+/// start (`rustc-link-arg-tests` reaches only the integration tests).
+fn rpath(prefix: &str) {
+    println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN");
     println!("cargo:rustc-link-arg-bins=-Wl,-rpath,$ORIGIN/../_libs");
-    println!("cargo:rustc-link-arg-bins=-Wl,-rpath,{prefix}/lib");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
 }

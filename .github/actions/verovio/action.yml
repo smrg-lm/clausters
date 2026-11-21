@@ -11,12 +11,12 @@
 # or test the server. It is needed wherever the Python package is staged
 # (build_native.py copies libverovio.so and its SMuFL resource data out of
 # <prefix> into the wheel, and the client binds the library with ctypes at run
-# time) and wherever the code editor is built, since its default `score`
-# feature links it through the GUI host's engraver. Used by ci.yml (the
-# `python` job, so the notation tests exercise a real engraver instead of
-# skipping, and the `gui` job, which tests the editor), by clausters-editor.yml
-# (the editor's wheel) and by release.yml (so the published wheels actually
-# carry one).
+# time) and wherever the GUI host's `score` feature is built, the code editor
+# included, which turns it on by default. Used by ci.yml (the `python` job, so
+# the notation tests exercise a real engraver instead of skipping, and the
+# `gui` job, which tests the host's engraver and the editor), by
+# clausters-editor.yml (the editor's wheel) and by release.yml (so the
+# published wheels actually carry one).
 #
 # The cache key covers both real inputs: the pinned commit (third_party/
 # verovio.pin, the single source of truth, read here) and a hash of the recipe
