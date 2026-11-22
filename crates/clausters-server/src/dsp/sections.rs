@@ -381,3 +381,78 @@ pub(crate) fn flush(x: f64) -> f64 {
     let a = x.abs();
     if a > 1e-15 && a < 1e15 { x } else { 0.0 }
 }
+
+/// The longest `Median` window, scsynth's.
+const MEDIAN_MAX: usize = 31;
+
+/// `Median(length, in)`: the median of the last `length` samples (1 to 31,
+/// odd for a true median), scsynth's sorted window, each value aged so the
+/// oldest leaves as the newest arrives. `length` is read at the start. A
+/// spike shorter than half the window is removed and an edge kept, which
+/// is what sets it apart from a lowpass.
+pub struct Median {
+    values: [f32; MEDIAN_MAX],
+    ages: [u8; MEDIAN_MAX],
+    size: usize,
+    started: bool,
+}
+
+impl Default for Median {
+    fn default() -> Self {
+        Self {
+            values: [0.0; MEDIAN_MAX],
+            ages: [0; MEDIAN_MAX],
+            size: 1,
+            started: false,
+        }
+    }
+}
+
+impl Median {
+    fn insert(&mut self, x: f32) -> f32 {
+        let n = self.size;
+        let last = (n - 1) as u8;
+        let mut pos = 0;
+        for i in 0..n {
+            if self.ages[i] == last {
+                pos = i;
+            } else {
+                self.ages[i] += 1;
+            }
+        }
+        while pos != 0 && x < self.values[pos - 1] {
+            self.values[pos] = self.values[pos - 1];
+            self.ages[pos] = self.ages[pos - 1];
+            pos -= 1;
+        }
+        while pos != n - 1 && x > self.values[pos + 1] {
+            self.values[pos] = self.values[pos + 1];
+            self.ages[pos] = self.ages[pos + 1];
+            pos += 1;
+        }
+        self.values[pos] = x;
+        self.ages[pos] = 0;
+        self.values[n >> 1]
+    }
+}
+
+impl UGen for Median {
+    fn reset(&mut self) {
+        self.started = false;
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        if !self.started {
+            self.started = true;
+            self.size = (at(inputs[0], 0) as i64).clamp(1, MEDIAN_MAX as i64) as usize;
+            let first = at(inputs[1], 0);
+            for i in 0..self.size {
+                self.values[i] = first;
+                self.ages[i] = i as u8;
+            }
+        }
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = self.insert(at(inputs[1], i));
+        }
+    }
+}

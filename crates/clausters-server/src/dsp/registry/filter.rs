@@ -285,6 +285,43 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |c, _| Box::new(Klank::new(c.inputs)),
     ),
+    plain(
+        "Median",
+        &[inp("length", 3.0), inp("signal", 0.0)],
+        |_, _| Box::new(Median::default()),
+    ),
+    plain(
+        "MoogFF",
+        &[
+            inp("signal", 0.0),
+            inp("freq", 100.0),
+            inp("gain", 2.0),
+            inp_opt("reset", 0.0),
+        ],
+        |_, _| Box::new(MoogFf::default()),
+    ),
+    desc(
+        "Hilbert",
+        Fixed(2),
+        &[inp("signal", 0.0), inp_opt("chan", 0.0)],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Hilbert::new()),
+    ),
+    desc(
+        "FreqShift",
+        Fixed(3),
+        &[inp("signal", 0.0), inp("freq", 0.0), inp_opt("phase", 0.0)],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(FreqShift::new()),
+    ),
 ];
 
 const I_RADIUS: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("radius", 0.8)];

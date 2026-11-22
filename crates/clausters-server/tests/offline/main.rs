@@ -35,6 +35,7 @@ mod conv;
 mod core_parity;
 mod delays;
 mod demand;
+mod dynamics;
 mod engine;
 mod envgen;
 mod feedback;

@@ -59,6 +59,13 @@ __all__ = [
     "lag3",
     "lag2_ud",
     "lag3_ud",
+    "median",
+    "moog_ff",
+    "amplitude",
+    "compander",
+    "normalizer",
+    "limiter",
+    "freq_shift",
 ]
 
 
@@ -331,3 +338,66 @@ def lag2_ud(signal, up=0.1, down=0.1) -> Ugen:
 def lag3_ud(signal, up=0.1, down=0.1) -> Ugen:
     """Three `lag_ud`s in a row."""
     return Ugen("Lag3UD", [signal, up, down])
+
+
+def median(length, signal) -> Ugen:
+    """The median of the last `length` samples (1 to 31, odd for a true median):
+    removes spikes shorter than half the window and keeps edges.
+    """
+    return Ugen("Median", [length, signal])
+
+
+def moog_ff(signal, freq=100.0, gain=2.0, reset=0.0) -> Ugen:
+    """The Moog ladder (zero-delay feedback): a four-pole lowpass at `freq`, its
+    resonance `gain` from 0 to 4 (self-oscillating at 4); a positive `reset`
+    clears it.
+    """
+    return Ugen("MoogFF", [signal, freq, gain, reset])
+
+
+def amplitude(signal, attacktime=0.01, releasetime=0.01) -> Ugen:
+    """An envelope follower: `|signal|` coming within a tenth of a rise in
+    `attacktime` and of a fall in `releasetime`.
+    """
+    return Ugen("Amplitude", [signal, attacktime, releasetime])
+
+
+def compander(
+    signal,
+    control=0.0,
+    thresh=0.5,
+    slopebelow=1.0,
+    slopeabove=1.0,
+    clamptime=0.01,
+    relaxtime=0.1,
+) -> Ugen:
+    """A compressor, expander or gate: `control`'s envelope sets the gain,
+    `(env / thresh)^(slope - 1)` with `slopebelow` under `thresh` and
+    `slopeabove` over it, following in `clamptime` and `relaxtime`.
+    """
+    return Ugen(
+        "Compander",
+        [signal, control, thresh, slopebelow, slopeabove, clamptime, relaxtime],
+    )
+
+
+def normalizer(signal, level=1.0, dur=0.01) -> Ugen:
+    """`signal` brought to peak at `level`, by a gain that looks `dur` ahead:
+    the output is `2 dur` late.
+    """
+    return Ugen("Normalizer", [signal, level, dur])
+
+
+def limiter(signal, level=1.0, dur=0.01) -> Ugen:
+    """`signal` kept below `level` by a gain that looks `dur` ahead and moves in
+    lines: the output is `2 dur` late and never passes `level`.
+    """
+    return Ugen("Limiter", [signal, level, dur])
+
+
+def freq_shift(signal, freq=0.0, phase=0.0) -> Ugen:
+    """Every frequency of `signal` moved by `freq` hertz (down for a negative
+    one): single-sideband modulation. `phase` offsets the oscillator in
+    cycles.
+    """
+    return Ugen("FreqShift", [signal, freq, phase])

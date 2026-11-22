@@ -79,6 +79,7 @@ const TRAILING: Record<string, string> = {
     // per channel and fills the trailing `chan` itself. The caller never sees
     // it: the signature is the wire's minus its last input, by construction.
     Pan2: "chan is filled by the builder, once per output channel",
+    Hilbert: "chan is filled by the builder, once per output channel",
     LinPan2: "chan is filled by the builder, once per output channel",
     Balance2: "chan is filled by the builder, once per output channel",
     Rotate2: "chan is filled by the builder, once per output channel",

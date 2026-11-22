@@ -1588,6 +1588,10 @@ What the comparison allows is part of the decision:
   `Impulse` offset beside a constant frequency: the server's per-sample
   reading is the more accurate one, and the cases drive those inputs at
   control rate, where the two agree.
+- **A transient of scsynth's own is not compared.** Where a constructor
+  leaves a first block different -- `Compander`'s gain fading in from 0 --
+  the case says so with a `skip` of those values and a `why`, as a `shift`
+  does for priming, and compares the rest exactly.
 - **A boundary is not compared.** A phase that lands exactly on a wrap is on
   one side of it or the other by the rounding of two accumulators of different
   widths, so the cases use frequencies that never land on one.
@@ -1649,3 +1653,12 @@ What the comparison allows is part of the decision:
     `Gendy3` truncates each segment's interpolation factor to an integer and
     crosses one point a sample, so its lines miss their points. Here every
     value is reflected into its range and each line reaches its point.
+  - `Amplitude` at control rate over an audio input computes its
+    coefficients from the control rate while it runs them every audio
+    sample, so its times come out a block's samples longer; here they are
+    the times given. (Its times are to within a tenth, 20 dB, as its code
+    and `Compander`'s compute them, where its documentation says 60 dB; the
+    code is kept, since a ported def keeps its envelope.)
+  - `Normalizer` and `Limiter` step their gain in `f32`, which drifts past
+    the ceiling by its rounding; here the line is in `f64` and ends where it
+    aims.

@@ -366,6 +366,7 @@ _WIRE_ORDER_STATIC_FIELDS_POSITIONAL: dict[str, str] = {}
 # minus its last input -- by construction, for every row of the family.
 _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "Pan2": "built twice, one row per output channel",
+    "Hilbert": "built twice, one row per output channel",
     "LinPan2": "built twice, one row per output channel",
     "Balance2": "built twice, one row per output channel",
     "Rotate2": "built twice, one row per output channel",

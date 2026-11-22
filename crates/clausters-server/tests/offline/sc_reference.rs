@@ -178,10 +178,19 @@ fn every_ugen_computes_what_scsynth_computes() {
             shift == 0 || case.get("why").is_some(),
             "{name}: a shift needs a `why`"
         );
+        // A transient of scsynth's own at the start (a first block its
+        // constructor's state leaves different): `skip` says how many of the
+        // first values are not compared.
+        let skip = case.get("skip").and_then(Value::as_u64).unwrap_or(0) as usize;
+        assert!(
+            skip == 0 || case.get("why").is_some(),
+            "{name}: a skip needs a `why`"
+        );
         match render(case) {
             Err(e) => failures.push(format!("{name}: {e}")),
             Ok(got) => {
                 let (got, want) = (&got[shift..], &want[..want.len() - shift]);
+                let (got, want) = (&got[skip..], &want[skip..]);
                 if let Some(why) = compare(got, want, tol) {
                     failures.push(format!("{name}: {why}"));
                 }

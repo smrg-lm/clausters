@@ -1663,7 +1663,9 @@ holds what is open.
     `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
     `DegreeToKey`, `TWindex`, `Hasher`, `MantissaMask`, `Logistic`,
     `LFDNoise0`, `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`; the 24 chaotic
-    maps of `ChaosUGens.cpp` and `Gendy1`, `Gendy2`, `Gendy3`.
+    maps of `ChaosUGens.cpp` and `Gendy1`, `Gendy2`, `Gendy3`; the rest of
+    `FilterUGens.cpp`: `Median`, `MoogFF`, `Normalizer`, `Limiter`,
+    `Compander`, `Amplitude`, `Hilbert`, `FreqShift`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1685,9 +1687,6 @@ holds what is open.
     names, 17 of them out of scope above, 190 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **5. `FilterUGens.cpp`'s dynamics and the analytic signal:**
-      `Median`, `MoogFF`, `Normalizer`, `Limiter`, `Compander`,
-      `Amplitude`, `Hilbert`, `FreqShift`.
     - ⬜ **6. `TriggerUGens.cpp` and `RunningSum`:** `Free`, `Pause`,
       `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`,
       `RunningMin`, `RunningSum`, `LastValue`, `MostChange`,

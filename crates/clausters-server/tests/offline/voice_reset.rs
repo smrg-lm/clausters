@@ -342,6 +342,46 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "median",
+            json!([input(), {"kind": "Median", "inputs": [c(7.0), u(0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "moogff",
+            json!([input(), {"kind": "MoogFF", "inputs": [u(0), c(900.0), c(3.0), c(0.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "amplitude",
+            json!([input(), {"kind": "Amplitude", "inputs": [u(0), c(0.002), c(0.05)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "compander",
+            json!([input(), {"kind": "Compander", "inputs": [u(0), u(0), c(0.3), c(1.0), c(0.4), c(0.002), c(0.05)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "normalizer",
+            json!([input(), {"kind": "Normalizer", "inputs": [u(0), c(0.7), c(0.005)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "limiter",
+            json!([input(), {"kind": "Limiter", "inputs": [u(0), c(0.3), c(0.005)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "hilbert",
+            json!([input(), {"kind": "Hilbert", "inputs": [u(0), c(1.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "freqshift",
+            json!([input(), {"kind": "FreqShift", "inputs": [u(0), c(213.0), c(0.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
             "logistic",
             json!([{"kind": "Logistic", "inputs": [c(3.7), c(3000.0), c(0.3)]}, out(0)]),
         ),

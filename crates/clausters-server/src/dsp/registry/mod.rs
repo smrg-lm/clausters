@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::dsp::analytic::{FreqShift, Hilbert};
 use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
@@ -25,6 +26,7 @@ use crate::dsp::demand::{
     RandKind,
 };
 use crate::dsp::disk::{DiskIn, DiskOut};
+use crate::dsp::dynamics::{Amplitude, Compander, Lookahead, LookaheadKind};
 use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
@@ -32,6 +34,7 @@ use crate::dsp::gendy::{Gendy, Gendy3, GendyKind};
 use crate::dsp::harmonic::{Blip, Formant};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
+use crate::dsp::ladder::MoogFf;
 use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
 use crate::dsp::lfo::{LfGauss, Vibrato};
 use crate::dsp::line::{Line, LineShape};
@@ -56,7 +59,9 @@ use crate::dsp::rangemap::RangeMap;
 use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::SampleRate;
-use crate::dsp::sections::{Fir, FirKind, Flip, Fos, LineRamp, SampleDelay, Slew, Sos, TwoZero};
+use crate::dsp::sections::{
+    Fir, FirKind, Flip, Fos, LineRamp, Median, SampleDelay, Slew, Sos, TwoZero,
+};
 use crate::dsp::sine::{FSinOsc, PSinGrain, SinOscFb, Sine};
 use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
@@ -853,6 +858,7 @@ mod buf;
 mod delay;
 mod demand;
 mod disk;
+mod dynamics;
 mod env;
 mod filter;
 mod io;
@@ -877,6 +883,7 @@ mod trig;
 static FAMILIES: &[&[UGenDescriptor]] = &[
     osc::UGENS,
     filter::UGENS,
+    dynamics::UGENS,
     delay::UGENS,
     arith::UGENS,
     io::UGENS,

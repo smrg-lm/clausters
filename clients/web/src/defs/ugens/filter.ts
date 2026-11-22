@@ -17,7 +17,7 @@
 // `bufnum`/`chan` being inputs means a line can be moved between buffers with
 // a `node.set`.
 
-import { Ugen, channelBinop, channelUnop } from "./graph.ts";
+import { ChannelList, Ugen, channelBinop, channelUnop, chans } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 import { partials } from "./osc.ts";
 export * from "./_generated/filter.ts";
@@ -281,3 +281,11 @@ export const klank = (
     decayscale: Channel = 1.0,
 ): Ugen =>
     new Ugen("Klank", [signal, freqscale, freqoffset, decayscale, ...partials(freqs, amps, times, 1.0)]);
+
+/**
+ * `signal` as its analytic pair, two channels 90 degrees apart across the
+ * audio band: the real part and the imaginary. Their magnitude
+ * `sqrt(re^2 + im^2)` is the signal's envelope.
+ */
+export const hilbert = (signal: Channel): ChannelList =>
+    chans([0.0, 1.0].map((c) => new Ugen("Hilbert", [signal, c])));

@@ -137,6 +137,24 @@
       ]
     },
     {
+      "name": "Amplitude",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "attacktime",
+          "default": 0.009999999776482582
+        },
+        {
+          "name": "releasetime",
+          "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
       "name": "BAllPass",
       "arity": 3,
       "inputs": [
@@ -869,6 +887,40 @@
         {
           "name": "decaytime",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Compander",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "control",
+          "default": 0.0
+        },
+        {
+          "name": "thresh",
+          "default": 0.5
+        },
+        {
+          "name": "slopebelow",
+          "default": 1.0
+        },
+        {
+          "name": "slopeabove",
+          "default": 1.0
+        },
+        {
+          "name": "clamptime",
+          "default": 0.009999999776482582
+        },
+        {
+          "name": "relaxtime",
+          "default": 0.10000000149011612
         }
       ]
     },
@@ -1737,6 +1789,24 @@
       ]
     },
     {
+      "name": "FreqShift",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 0.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Gate",
       "arity": 2,
       "inputs": [
@@ -2051,6 +2121,20 @@
         },
         {
           "name": "x1",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Hilbert",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "chan",
           "default": 0.0
         }
       ]
@@ -2718,6 +2802,24 @@
       ]
     },
     {
+      "name": "Limiter",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
+        },
+        {
+          "name": "dur",
+          "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
       "name": "LinCongC",
       "arity": 5,
       "inputs": [
@@ -3026,6 +3128,20 @@
       ]
     },
     {
+      "name": "Median",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "length",
+          "default": 3.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Meter",
       "arity": 3,
       "inputs": [
@@ -3102,6 +3218,28 @@
       ]
     },
     {
+      "name": "MoogFF",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 100.0
+        },
+        {
+          "name": "gain",
+          "default": 2.0
+        },
+        {
+          "name": "reset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Mul",
       "arity": 2,
       "inputs": [
@@ -3148,6 +3286,24 @@
         {
           "name": "n",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Normalizer",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
+        },
+        {
+          "name": "dur",
+          "default": 0.009999999776482582
         }
       ]
     },

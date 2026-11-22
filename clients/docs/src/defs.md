@@ -484,6 +484,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `lpz1`, `hpz1`, `lpz2`, `hpz2`, `bpz2`, `brz2`, `slope`, `flip`, `delay1`, `delay2` | scsynth's fixed FIRs and one- and two-sample delays |
 | | `two_pole`, `two_zero`, `apf`, `ringz`, `formlet`, `mid_eq`, `fos`, `sos` | pole/zero sections and resonators |
 | | `b_low_pass`, `b_hi_pass`, `b_all_pass`, `b_band_pass`, `b_band_stop`, `b_peak_eq`, `b_low_shelf`, `b_hi_shelf` | the cookbook biquads (BEQSuite) |
+| | `median(length, signal)`, `moog_ff(signal, freq, gain)` | a running median; the Moog ladder |
+| | `hilbert(signal)`, `freq_shift(signal, freq, phase)` | the analytic pair; a single-sideband shift |
+| | `amplitude`, `compander`, `normalizer`, `limiter` | an envelope follower, a compressor/expander, look-ahead gains |
 | | `var_lag(signal, time=0.1, start=None)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
@@ -625,6 +628,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `lpz1`, `hpz1`, `lpz2`, `hpz2`, `bpz2`, `brz2`, `slope`, `flip`, `delay1`, `delay2` | scsynth's fixed FIRs and one- and two-sample delays |
 | | `twoPole`, `twoZero`, `apf`, `ringz`, `formlet`, `midEq`, `fos`, `sos` | pole/zero sections and resonators |
 | | `bLowPass`, `bHiPass`, `bAllPass`, `bBandPass`, `bBandStop`, `bPeakEq`, `bLowShelf`, `bHiShelf` | the cookbook biquads (BEQSuite) |
+| | `median(length, signal)`, `moogFf(signal, freq, gain)` | a running median; the Moog ladder |
+| | `hilbert(signal)`, `freqShift(signal, freq, phase)` | the analytic pair; a single-sideband shift |
+| | `amplitude`, `compander`, `normalizer`, `limiter` | an envelope follower, a compressor/expander, look-ahead gains |
 | | `varLag(signal, time = 0.1, start?)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sampleRate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo = 0.0, hi = 1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |

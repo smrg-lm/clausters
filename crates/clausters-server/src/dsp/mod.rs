@@ -22,6 +22,8 @@ pub mod wavetable;
 // core-only build carries none of it; Faust synths implement `node::SynthNode`
 // directly and only touch the core types above.
 #[cfg(feature = "synth")]
+pub mod analytic;
+#[cfg(feature = "synth")]
 pub mod banks;
 #[cfg(feature = "synth")]
 pub mod binop;
@@ -56,6 +58,8 @@ pub mod disk;
 // An I/O thread's account and its waits, where the engine has threads: natively,
 // and in a page whose engine shares its memory with its threads.
 #[cfg(feature = "synth")]
+pub mod dynamics;
+#[cfg(feature = "synth")]
 pub mod envgen;
 pub mod fed;
 #[cfg(feature = "synth")]
@@ -75,6 +79,8 @@ pub mod io;
     any(not(target_arch = "wasm32"), target_feature = "atomics")
 ))]
 pub(crate) mod io_thread;
+#[cfg(feature = "synth")]
+pub mod ladder;
 #[cfg(feature = "synth")]
 pub mod lag;
 #[cfg(feature = "synth")]

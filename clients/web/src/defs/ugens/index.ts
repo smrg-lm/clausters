@@ -225,6 +225,14 @@ export {
     bufAllpassL,
     bufAllpassC,
     klank,
+    median,
+    moogFf,
+    amplitude,
+    compander,
+    normalizer,
+    limiter,
+    hilbert,
+    freqShift,
 } from "./filter.ts";
 export type { Resonance } from "./filter.ts";
 

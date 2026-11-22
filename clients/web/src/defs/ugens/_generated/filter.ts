@@ -322,3 +322,78 @@ export const lag2Ud = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1):
 /** Three `lagUd`s in a row. */
 export const lag3Ud = (signal: Channel, up: Channel = 0.1, down: Channel = 0.1): Ugen =>
     new Ugen("Lag3UD", [signal, up, down]);
+
+/**
+ * The median of the last `length` samples (1 to 31, odd for a true median):
+ * removes spikes shorter than half the window and keeps edges.
+ */
+export const median = (length: Channel, signal: Channel): Ugen =>
+    new Ugen("Median", [length, signal]);
+
+/**
+ * The Moog ladder (zero-delay feedback): a four-pole lowpass at `freq`, its
+ * resonance `gain` from 0 to 4 (self-oscillating at 4); a positive `reset`
+ * clears it.
+ */
+export const moogFf = (
+    signal: Channel,
+    freq: Channel = 100.0,
+    gain: Channel = 2.0,
+    reset: Channel = 0.0,
+): Ugen => new Ugen("MoogFF", [signal, freq, gain, reset]);
+
+/**
+ * An envelope follower: `|signal|` coming within a tenth of a rise in
+ * `attacktime` and of a fall in `releasetime`.
+ */
+export const amplitude = (
+    signal: Channel,
+    attacktime: Channel = 0.01,
+    releasetime: Channel = 0.01,
+): Ugen => new Ugen("Amplitude", [signal, attacktime, releasetime]);
+
+/**
+ * A compressor, expander or gate: `control`'s envelope sets the gain,
+ * `(env / thresh)^(slope - 1)` with `slopebelow` under `thresh` and
+ * `slopeabove` over it, following in `clamptime` and `relaxtime`.
+ */
+export const compander = (
+    signal: Channel,
+    control: Channel = 0.0,
+    thresh: Channel = 0.5,
+    slopebelow: Channel = 1.0,
+    slopeabove: Channel = 1.0,
+    clamptime: Channel = 0.01,
+    relaxtime: Channel = 0.1,
+): Ugen => new Ugen("Compander", [signal, control, thresh, slopebelow, slopeabove, clamptime, relaxtime]);
+
+/**
+ * `signal` brought to peak at `level`, by a gain that looks `dur` ahead:
+ * the output is `2 dur` late.
+ */
+export const normalizer = (
+    signal: Channel,
+    level: Channel = 1.0,
+    dur: Channel = 0.01,
+): Ugen => new Ugen("Normalizer", [signal, level, dur]);
+
+/**
+ * `signal` kept below `level` by a gain that looks `dur` ahead and moves in
+ * lines: the output is `2 dur` late and never passes `level`.
+ */
+export const limiter = (
+    signal: Channel,
+    level: Channel = 1.0,
+    dur: Channel = 0.01,
+): Ugen => new Ugen("Limiter", [signal, level, dur]);
+
+/**
+ * Every frequency of `signal` moved by `freq` hertz (down for a negative
+ * one): single-sideband modulation. `phase` offsets the oscillator in
+ * cycles.
+ */
+export const freqShift = (
+    signal: Channel,
+    freq: Channel = 0.0,
+    phase: Channel = 0.0,
+): Ugen => new Ugen("FreqShift", [signal, freq, phase]);

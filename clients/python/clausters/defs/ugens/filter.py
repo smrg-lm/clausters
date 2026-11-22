@@ -15,7 +15,7 @@ buffer or a channel it does not have plays silence, and `bufnum`/`chan` being
 inputs means a line can be moved between buffers with a `node.set`.
 """
 
-from .graph import Ugen, _channel_binop, _channel_unop
+from .graph import ChannelList, Ugen, _channel_binop, _channel_unop, chans
 from .osc import _partials
 from ._generated.filter import *  # noqa: F403 -- the builders that mirror the wire
 
@@ -230,3 +230,10 @@ def var_lag(signal, time=0.1, start=None) -> Ugen:
     itself unless given -- a glide in from `start` when it is.
     """
     return Ugen("VarLag", [signal, time, signal if start is None else start])
+
+
+def hilbert(signal) -> ChannelList:
+    """`signal` as its analytic pair, two channels 90 degrees apart across
+    the audio band: the real part and the imaginary. Their magnitude
+    `sqrt(re^2 + im^2)` is the signal's envelope."""
+    return chans(*(Ugen("Hilbert", [signal, c]) for c in (0.0, 1.0)))

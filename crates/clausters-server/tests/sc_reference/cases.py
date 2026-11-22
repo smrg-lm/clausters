@@ -9,7 +9,9 @@ an input is scsynth's output), `outputs` (how many scsynth's has) and `output`
 (which of them the server's single output is).
 
 `tol` is the largest difference allowed, relative to the reference's
-magnitude where that is above one. A case whose difference is a decision
+magnitude where that is above one; `shift` how many samples the server's
+output leads scsynth's, and `skip` how many of the first values are not
+compared (a transient scsynth's constructor leaves), each with a `why`. A case whose difference is a decision
 rather than an error says so in `why`, and the comparison then checks only
 what the decision keeps.
 """
@@ -95,6 +97,7 @@ def cases() -> list[dict]:
         _oscugens,
         _tables,
         _chaos,
+        _dynamics,
     ]:
         out.extend(f())
     return out
@@ -1031,4 +1034,56 @@ def _chaos() -> list[dict]:
     # Gendy2 with the walks' scales at 0: scsynth reflects a level below -1
     # out of the range, so the walk itself cannot be compared.
     out.append(one("Gendy2.ar", "Gendy2", "ar", 1, 1, 1.0, 1.0, 440, 660, 0.0, 0.0, 12, 12, 1.17, 0.31, blocks=8, seed=61))
+    return out
+
+
+def _dynamics() -> list[dict]:
+    """`FilterUGens.cpp`'s dynamics, `Median`, `MoogFF` and the analytic
+    signal."""
+    out = []
+    for n in [1, 3, 7, 31]:
+        g = G()
+        x = sig(g)
+        g.add("Median", "ar", n, x)
+        out.append(case(f"Median.{n}", g))
+    for rate in ["ar", "kr"]:
+        g = G()
+        x = sig(g, rate)
+        g.add("Amplitude", rate, x, 0.002, 0.02)
+        out.append(case(f"Amplitude.{rate}", g, 4 if rate == "ar" else 64))
+    # Not at control rate over an audio input: scsynth's times there come
+    # out a block's samples longer (`tests/offline/dynamics.rs`).
+    for name, below, above in [("compress", 1.0, 0.3), ("expand", 3.0, 1.0), ("both", 0.5, 0.5)]:
+        g = G()
+        x = sig(g)
+        g.add("Compander", "ar", x, x, 0.3, below, above, 0.002, 0.03)
+        out.append(case(f"Compander.{name}", g, 8, skip=64, why="scsynth's first block fades in from a gain of 0"))
+    # A signal whose every window peaks at 1: scsynth's windows fall a
+    # sample later, which then changes nothing.
+    for kind, level in [("Normalizer", 0.6), ("Limiter", 0.4), ("Limiter", 2.0)]:
+        g = G()
+        x = g.add("LFTri", "ar", 1000, 0)
+        g.add(kind, "ar", x, level, 0.01)
+        out.append(case(f"{kind}.{level}", g, 24, tol=3e-5, why="scsynth steps the gain in f32, which drifts from its aim by the rounding"))
+    for freq, gain in [(800, 0.5), (2500, 3.5), (300, 2.0)]:
+        out.append(through(f"MoogFF.{freq}", "MoogFF", "ar", freq, gain, 0))
+        out.append(through(f"MoogFF.imp.{freq}", "MoogFF", "ar", freq, gain, 0, source=impulse, blocks=8))
+    g = G()
+    x = sig(g)
+    k = g.add("LFTri", "kr", 9, 0)
+    k = g.add("MulAdd", "kr", k, 1.8, 2.0)
+    g.add("MoogFF", "ar", x, 1200, k, 0)
+    out.append(case("MoogFF.gain", g, 16))
+    for chan in [0, 1]:
+        g = G()
+        x = sig(g)
+        g.add("Hilbert", "ar", x, chan, sc={"inputs": [x], "outputs": 2, "output": chan})
+        out.append(case(f"Hilbert.{chan}", g, 8, tol=2e-5, why="scsynth's Hilbert runs its allpasses in f32"))
+    # scsynth's oscillator runs a sample ahead: the server's phase is given
+    # that sample.
+    for f in [300.0, -721.3]:
+        g = G()
+        x = sig(g)
+        g.add("FreqShift", "ar", x, f, f / 48000.0, sc={"inputs": [x, f, 0]})
+        out.append(case(f"FreqShift.{f}", g, 8, tol=2e-5, why="scsynth reads its quadrature oscillator from a table"))
     return out
