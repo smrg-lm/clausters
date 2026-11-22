@@ -3170,3 +3170,50 @@ fn a_client_is_told_where_the_engine_is_served() {
     let again = door(&mut host, GUI_ENGINE, vec![OscType::Int(8)], client);
     assert_eq!(again.len(), 1, "answered on the packet that asked");
 }
+
+/// **A client in the host's program reaches the applications' engine through
+/// the application's thread**: its packet is served there, its reply kept
+/// for the program under its tag, and samples it decoded are installed as a
+/// buffer the engine's server knows.
+#[test]
+fn a_programs_client_is_served_on_the_applications_thread() {
+    use clausters_core::osc::encode;
+    let mut host = host();
+    let packet = |addr: &str, args: Vec<OscType>| {
+        encode(&OscPacket::Message(OscMessage {
+            addr: addr.into(),
+            args,
+        }))
+        .unwrap()
+    };
+    host.engine_send(packet("/server_status", vec![]), 3)
+        .unwrap();
+    let mut said = Vec::new();
+    until(&mut host, "the engine never answered", |h| {
+        said.extend(h.take_engine_said());
+        !said.is_empty()
+    });
+    let EngineSaid::Reply { peer, bytes } = &said[0] else {
+        panic!("a reply, not {said:?}");
+    };
+    assert_eq!(*peer, 3, "under the tag that asked");
+    let OscPacket::Message(reply) = clausters_core::osc::decode_packet(bytes).unwrap() else {
+        panic!("a message");
+    };
+    assert_eq!(reply.addr, "/server_status.reply");
+    host.engine_samples(9, 4, 2, 48_000.0, vec![0.5; 64])
+        .unwrap();
+    let mut said = Vec::new();
+    until(&mut host, "the samples were never installed", |h| {
+        said.extend(h.take_engine_said());
+        said.iter().any(|s| matches!(s, EngineSaid::Samples { .. }))
+    });
+    assert!(said.contains(&EngineSaid::Samples {
+        token: 9,
+        result: Ok(())
+    }));
+    assert!(
+        host.engine_clock().is_some(),
+        "the clock reads once it is open"
+    );
+}

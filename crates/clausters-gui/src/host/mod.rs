@@ -161,6 +161,8 @@ pub use quit::DockClose;
 mod audio_app;
 #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 mod audio_editor;
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+pub use audio_editor::EngineSaid;
 /// **Where this process's applications' engine is served**, and the share of
 /// its ids a client takes: what a program that runs a session beside its
 /// host (clausters-editor) names to it, so the session plays on the engine
@@ -1166,6 +1168,10 @@ pub struct Host {
     /// opened by [`Host::open_audio`], its windows answered here.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     audio: Option<audio_editor::AudioHost>,
+    /// **What the applications' engine said to the host's program's
+    /// clients**, until it takes it ([`Host::take_engine_said`]).
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    engine_said: Vec<audio_editor::EngineSaid>,
     /// What wakes the front's loop when an application's thread has said
     /// something ([`Host::set_app_wake`]).
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
@@ -1384,6 +1390,8 @@ impl Host {
             node_trees: HashMap::new(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             audio: None,
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+            engine_said: Vec::new(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             app_wake: Default::default(),
             window_sources: HashMap::new(),

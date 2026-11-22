@@ -270,6 +270,20 @@ pub(super) enum ToApp {
     /// nothing is left -- or that the saving was called off, when work
     /// appeared that was not there to be saved.
     SaveAll,
+    /// **A packet from a client of the engine** tagged `peer`: served by the
+    /// engine's server on this thread, which may wait where the host's may
+    /// not (a page's main thread), its replies said back as
+    /// [`FromApp::EngineReply`].
+    Packet { bytes: Vec<u8>, peer: u32 },
+    /// **Samples a client decoded**, installed as buffer `index`, answered
+    /// with [`FromApp::SamplesLoaded`] under `token`.
+    Samples {
+        token: u64,
+        index: usize,
+        channels: usize,
+        rate: f64,
+        samples: Vec<f32>,
+    },
 }
 
 /// What the application says back to the host.
@@ -294,6 +308,14 @@ pub(super) enum FromApp {
     /// The engine could not be opened, and why: every open asked of the
     /// application says so, and so does every client that asks for it.
     NoEngine(String),
+    /// A reply of the engine to its client tagged `peer` ([`ToApp::Packet`]).
+    EngineReply { peer: u32, bytes: Vec<u8> },
+    /// Samples a client decoded were installed, or why not
+    /// ([`ToApp::Samples`]).
+    SamplesLoaded {
+        token: u64,
+        result: Result<(), String>,
+    },
     /// Window `def_id`'s editor opened, and the dialogs whose widget ids it
     /// needs; or why it did not.
     Opened {
@@ -387,6 +409,9 @@ struct Window {
 /// **The application on its thread**.
 struct App {
     app: Application,
+    /// The clients of the engine whose replies are said back already
+    /// ([`ToApp::Packet`]).
+    peers: std::collections::HashSet<u32>,
     editing: Editing,
     windows: HashMap<i32, Window>,
     /// A door's actions waiting on a render, by the token they started with,
@@ -524,6 +549,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     }));
     let mut state = App {
         app,
+        peers: Default::default(),
         editing,
         windows: HashMap::new(),
         asked: HashMap::new(),
@@ -561,6 +587,43 @@ impl App {
 
     fn handle(&mut self, ask: ToApp) {
         match ask {
+            ToApp::Packet { bytes, peer } => {
+                let engine = Arc::clone(self.app.engine());
+                let Ok(mut engine) = engine.lock() else {
+                    return;
+                };
+                // its replies are said back, from the first packet on
+                if self.peers.insert(peer) {
+                    let out = self.out.clone();
+                    engine.set_local_sink(
+                        peer,
+                        Box::new(move |bytes: &[u8]| {
+                            out.send(
+                                Vec::new(),
+                                FromApp::EngineReply {
+                                    peer,
+                                    bytes: bytes.to_vec(),
+                                },
+                            );
+                        }),
+                    );
+                }
+                engine.serve_local(&bytes, peer);
+            }
+            ToApp::Samples {
+                token,
+                index,
+                channels,
+                rate,
+                samples,
+            } => {
+                let result = match self.app.engine().lock() {
+                    Ok(mut engine) => engine.install_samples(index, channels, rate, samples),
+                    Err(_) => Err("the engine's lock is poisoned".into()),
+                };
+                self.out
+                    .send(Vec::new(), FromApp::SamplesLoaded { token, result });
+            }
             ToApp::Open {
                 def_id,
                 kind,

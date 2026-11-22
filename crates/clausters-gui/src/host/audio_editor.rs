@@ -62,6 +62,25 @@ pub(crate) struct AudioHost {
     /// **The engine itself**, once its thread opened it: what the host's own
     /// link to it sends through ([`super::ServerLink::Engine`]).
     pub(super) engine: Option<Arc<Mutex<AppEngine>>>,
+    /// What the engine publishes, once it is open: its sample clock, read
+    /// with no lock ([`Host::engine_clock`]).
+    engine_reading: Option<clausters_app_engine::EngineReading>,
+}
+
+/// **What the applications' engine said to a client in the host's program**
+/// ([`Host::engine_send`], [`Host::engine_samples`]), kept until the program
+/// takes it ([`Host::take_engine_said`]): a page's clients of the engine, which
+/// reach it through the application's thread because the page's own may not
+/// wait.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EngineSaid {
+    /// A reply to the client tagged `peer`.
+    Reply { peer: u32, bytes: Vec<u8> },
+    /// The samples under `token` were installed, or why not.
+    Samples {
+        token: u64,
+        result: Result<(), String>,
+    },
 }
 
 /// What a client asking for the applications' engine is answered
@@ -176,6 +195,7 @@ impl AudioHost {
             next_structure: 0,
             door: EngineDoor::default(),
             engine: None,
+            engine_reading: None,
         }
     }
 
@@ -278,6 +298,51 @@ impl Host {
             held.set_local_sink(super::ENGINE_TAG, sink);
         }
         Ok((super::ServerLink::Engine(super::EngineLink { engine }), shm))
+    }
+
+    /// **Hands a packet of a client of the applications' engine to it**, the
+    /// client tagged `peer` in the host's program: served on the
+    /// application's thread (which opens the engine first if it has not),
+    /// its replies kept for [`Self::take_engine_said`].
+    pub fn engine_send(&mut self, bytes: Vec<u8>, peer: u32) -> Result<(), String> {
+        self.audio_host()
+            .ask(super::audio_app::ToApp::Packet { bytes, peer })
+    }
+
+    /// **Hands samples a client decoded to the applications' engine**, to be
+    /// installed as buffer `index` (interleaved, `channels` wide, at
+    /// `rate`), answered under `token` through [`Self::take_engine_said`].
+    pub fn engine_samples(
+        &mut self,
+        token: u64,
+        index: usize,
+        channels: usize,
+        rate: f64,
+        samples: Vec<f32>,
+    ) -> Result<(), String> {
+        self.audio_host().ask(super::audio_app::ToApp::Samples {
+            token,
+            index,
+            channels,
+            rate,
+            samples,
+        })
+    }
+
+    /// **What the applications' engine said to the host's program's
+    /// clients** since it last asked ([`EngineSaid`]).
+    pub fn take_engine_said(&mut self) -> Vec<EngineSaid> {
+        std::mem::take(&mut self.engine_said)
+    }
+
+    /// **The applications' engine's sample clock**, once it is open: what a
+    /// client in the host's program reads its clock from.
+    pub fn engine_clock(&self) -> Option<u64> {
+        let audio = self.audio.as_ref()?;
+        audio
+            .engine_reading
+            .as_ref()
+            .map(clausters_app_engine::EngineReading::current_samples)
     }
 
     /// **Answers every client waiting for the engine**, now that it is open
@@ -769,11 +834,18 @@ impl Host {
                     engine,
                 } => {
                     if let Some(audio) = self.audio.as_mut() {
+                        audio.engine_reading = Some(reading.clone());
                         audio.source = Some(Arc::new(EngineSource(reading)));
                         audio.door.open = Some(shm);
                         audio.engine = Some(engine);
                     }
                     self.answer_engine_waiting();
+                }
+                FromApp::EngineReply { peer, bytes } => {
+                    self.engine_said.push(EngineSaid::Reply { peer, bytes });
+                }
+                FromApp::SamplesLoaded { token, result } => {
+                    self.engine_said.push(EngineSaid::Samples { token, result });
                 }
                 FromApp::NoEngine(why) => {
                     if let Some(audio) = self.audio.as_mut() {

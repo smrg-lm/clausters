@@ -1623,7 +1623,7 @@ holds what is open.
      host does. A page's main thread may not wait and the engine is another
      module's memory, so a client of the page reaches the applications'
      engine through the application's thread, which may:
-     1. ⬜ **The application's thread serves a client's packets**: the host
+     1. ✅ **The application's thread serves a client's packets**: the host
         hands it a client's packets (`ToApp::Packet`), its engine serves
         them as a client in its process (`serve_local`), and the replies come
         back on the host's turn; the same for samples a page decoded

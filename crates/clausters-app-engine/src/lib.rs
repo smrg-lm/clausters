@@ -286,6 +286,28 @@ impl AppEngine {
         self.server.serve_local(bytes, tag);
     }
 
+    /// **Installs samples a client decoded as buffer `index`**
+    /// (interleaved, `channels` wide, at `sample_rate`): a page's
+    /// `/buffer_allocRead`, which the page decodes and hands over, through
+    /// the server's own install path, so a client's `/buffer_query` sees it.
+    pub fn install_samples(
+        &mut self,
+        index: usize,
+        channels: usize,
+        sample_rate: f64,
+        samples: Vec<f32>,
+    ) -> Result<(), String> {
+        if channels == 0 || !samples.len().is_multiple_of(channels) {
+            return Err(format!(
+                "{} samples are not a multiple of {channels} channels",
+                samples.len()
+            ));
+        }
+        let frames = samples.len() / channels;
+        let buffer = Buffer::new(samples, channels, frames, sample_rate);
+        self.server.install_buffer(index, Arc::new(buffer))
+    }
+
     /// **Where the replies to the client in this process tagged `tag` go**
     /// ([`Self::serve_local`]), its notifications included.
     pub fn set_local_sink(&mut self, tag: u32, sink: LocalSink) {
