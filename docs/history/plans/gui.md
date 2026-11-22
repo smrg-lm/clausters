@@ -5485,6 +5485,66 @@ first four are the order the user set; the components come after.
   the project's hands and it shipped: the picture is kept on the card and a
   frame of what moves redraws only its live layers.)*
 
+- ✅ **One panel, in the dock and in an application's window** *(the
+  user, 2026-11-22)*. Two mechanisms draw a panel today. The code editor's
+  are the dock's panes (`host/dock`): each group has a bar (grip, title or
+  tabs, menu, close) and the dock's dividers resize it. The audio editor's,
+  the roll's and the score's are a column of framed sections in the window
+  (`clausters-apps/src/panels.rs`: a `layout` with `title`, `frame` and
+  `collapsed`), beside the work behind one divider, each section folded by
+  a triangle on its title strip. The two look and behave differently, and
+  the rule against two versions of one thing says they become one:
+
+  - **Resizable is an option.** A panel can be resized as a dock pane is,
+    and says so; a panel of a fixed size, or whose size a layout decides,
+    turns it off.
+  - **Folding is the bar's.** The dock's bar, already configurable, gains
+    the fold triangle, so a code editor panel folds as a section does.
+  - **A section is a panel with a thin bar.** It keeps the dock's bar's
+    look, configured to show only the fold triangle on a thinner strip,
+    with a spacing option for how far apart the panels sit in their
+    column (the score editor's palettes are the spacing to match).
+
+  **The shape: one bar, configured, not a hierarchy.** What differs between
+  the two is which parts the bar shows (grip, title, tabs, menu, close,
+  fold), how thick it is, whether the panel resizes and how far apart
+  panels sit: data, not behavior. So the bar is one description (a
+  struct of those options) drawn and hit-tested by one function, the one
+  the dock's chrome already has, and a section header is that bar with
+  everything but the fold turned off; a trait per kind would only
+  duplicate the drawing behind each implementation. A trait is the right
+  tool only at a real seam, who keeps the folded state and the size (the
+  dock's layout for a pane, the window's tree for a section), and that is
+  a narrow one, not a panel class. Folding a pane in the dock also
+  asks what its group gives up and to whom, which the dock's layout
+  decides, as it does for a divider moved.
+  *(Done 2026-11-22.)* **Every addition is an option, off by default, and
+  what was there keeps its behavior.** The bar is one configured piece
+  (`host/graphics/bar.rs`: a `Bar` says which parts it shows, grip, fold
+  mark, title or tabs, menu, close, a line along its top, and one function
+  places them for the drawing and the hit test alike); the dock describes
+  each panel's bar from what its windows say and draws it through it, and a
+  titled group's strip is the same bar, a line of control of the bar's text
+  tall, with its title alone and, for a section, its fold mark (a chevron,
+  lit while the pointer is over the bar). A dock's panel folds only when its
+  window says `dock_fold`: in a column, the fold mark after its grip folds
+  it to its bar, the open parts of its column share the room, its pane is
+  not shown, the layout keeps the fold and the dock's door has the verb
+  (`fold`); the last open part of a column shows its mark quiet. The
+  spacing is a style of a column of sections (`clausters_apps::panels`,
+  `Spacing`): `Spaced`, framed sections apart as the score editor's
+  palettes stand and every column stood before, the default; or `Joined`,
+  no frame and no room, each section's bar parting it from the one above
+  with a line along its top, as a dock's panels in a column. **Decided**
+  *(the user)*: an application's sections are not resized, only folded,
+  as before; resizing stays the dock's. What was there was checked to be
+  unchanged by headless captures compared byte for byte: a dock without
+  `dock_fold` (a column, a panel that may not be closed, a document's tabs
+  with a modified one) and a spaced column of sections.
+  **Related:** "The spectrogram's settings read as two panels" in
+  `crates/clausters-apps/PLAN.md`, Found by use, which wants a panel with
+  sections inside it, a level this design has to leave room for.
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

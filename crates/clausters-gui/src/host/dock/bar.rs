@@ -89,6 +89,8 @@ impl Dock {
             // with tabs, each has its own close mark
             close: single && shown.is_some_and(|p| self.closable(p)),
             focused: self.focus().is_some_and(|f| shown == Some(f)),
+            // the dock's divider parts a panel from the one above
+            line_top: false,
         }
     }
 

@@ -298,7 +298,7 @@ pub fn panel(
             Value::Object(section)
         })
         .collect();
-    crate::panels::column(sections, WIDTH)
+    crate::panels::column(sections, WIDTH, crate::panels::Spacing::Spaced)
 }
 
 /// **What the panel's widgets are corrected with**, for the sequence as it

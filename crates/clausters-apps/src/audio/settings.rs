@@ -365,7 +365,7 @@ impl Settings {
                 })
             })
             .collect();
-        crate::panels::column(sections, WIDTH)
+        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Spaced)
     }
 }
 

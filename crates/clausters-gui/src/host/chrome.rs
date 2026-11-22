@@ -28,14 +28,17 @@ pub fn title_strip(p: &Placed) -> Option<Rect> {
 }
 
 /// **The bar a titled group's strip is** ([`bar::Bar`]): its title, and
-/// for a section the fold mark, every other part off. A dialog's title is
-/// in its card ([`Head`]), not on a strip.
+/// for a section the fold mark, every other part off. A section with no
+/// frame stands in a column with others ([`clausters_apps::panels`]'s joined
+/// spacing), and its bar's top line parts it from the one above. A dialog's
+/// title is in its card ([`Head`]), not on a strip.
 pub fn strip_bar(group: &Group, title: &str) -> bar::Bar {
     bar::Bar {
         fold: group.collapsed.map(|folded| bar::Fold {
             folded,
             enabled: true,
         }),
+        line_top: group.collapsed.is_some() && !group.frame,
         ..bar::Bar::titled(title)
     }
 }
@@ -500,6 +503,31 @@ mod tests {
             group.rect.h, m.control_h,
             "it is its strip and nothing else"
         );
+    }
+
+    /// **A section's bar is the configured bar**: its title and its fold
+    /// mark, and a line along its top only where it stands joined to others
+    /// (no frame); a plain titled group has its title alone.
+    #[test]
+    fn a_titled_groups_strip_is_the_configured_bar() {
+        let group = |collapsed: Option<bool>, frame: bool| Group {
+            title: Some("Display".into()),
+            collapsed,
+            frame,
+            ..Group::default()
+        };
+        let framed = strip_bar(&group(Some(true), true), "Display");
+        assert_eq!(
+            framed.fold,
+            Some(bar::Fold {
+                folded: true,
+                enabled: true
+            })
+        );
+        assert!(!framed.line_top && !framed.grip && !framed.menu && !framed.close);
+        assert!(strip_bar(&group(Some(false), false), "Display").line_top);
+        let plain = strip_bar(&group(None, false), "Display");
+        assert_eq!(plain, bar::Bar::titled("Display"));
     }
 
     #[test]

@@ -86,6 +86,10 @@ pub struct Bar {
     /// The keyboard is in the panel: the tab shown is marked in the ring's
     /// role.
     pub focused: bool,
+    /// A line along the bar's top too: what parts a section from the one
+    /// above it in a column whose sections stand together, where a dock has
+    /// its divider.
+    pub line_top: bool,
 }
 
 impl Bar {
@@ -98,6 +102,7 @@ impl Bar {
             menu: false,
             close: false,
             focused: false,
+            line_top: false,
         }
     }
 }
@@ -282,6 +287,9 @@ pub fn draw(mesh: &mut Mesh, bar: &Bar, r: Rect, lit: Option<Part>, m: &Metrics,
         }
     }
     line(mesh, r, m, theme);
+    if bar.line_top {
+        mesh.rect(Rect::new(r.x, r.y, r.w, m.divider_w), theme.separator);
+    }
 }
 
 /// The line along the foot of `bar`, as under every panel's bar.

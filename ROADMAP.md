@@ -301,12 +301,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **One panel, in the dock and in an application's window**
-  *(`crates/clausters-gui/PLAN.md`, Future directions)*. The dock's panes
-  and the applications' sections become one panel: resizable as an option,
-  folding on the bar, a section a thin bar of it. One configured bar, not a
-  hierarchy of kinds.
-
 - ⬜ **The GUI host's engine is a server a script reaches, and
   clausters-editor's default** *(`crates/clausters-gui/PLAN.md`, Future
   directions)*. A property of the host: the engine its applications share,
