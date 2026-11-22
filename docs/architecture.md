@@ -1051,13 +1051,22 @@ question, whoever asks it".
 ### The applications: what an editor opens
 
 `crates/clausters-app-engine` is **the engine an editing application holds**:
-the server's engine and its command translator taken as a library, spoken to
-with built commands through the engine's FIFO and never with OSC.
-`AppEngine` holds the engine's handle, the translator whose typed doors build
-the commands (`CmdTranslator::new_synth`, `new_graph`, `add_slot`, `set_node`,
-`define_synth`, ...; the OSC commands decode their arguments and call the same
-doors) and, with `realtime`, the device; `pump` takes the engine's garbage and
-node ends back on the application's turn. `EngineMedium` is a playback's
+the server's engine served by the server's own loop, taken as a library
+(`OscServer::embedded`), so a client that reaches the engine and the
+application share one translator, one mirror of the node tree, one set of
+transports and lanes and one collection of what the engine hands back. The
+application speaks to it with built commands through the engine's FIFO and
+never with OSC: `AppEngine` holds that server, whose translator's typed
+doors build the commands (`CmdTranslator::new_synth`, `new_graph`,
+`add_slot`, `set_node`, `define_synth`, ...; the OSC commands decode their
+arguments and call the same doors), and, with `realtime`, the device; it
+tells the server what its commands moved of a transport (`observe_sent`),
+and `pump` is one turn of the server's loop on the application's turn,
+after which it takes what the engine handed back for it (a cue over, a
+transport stopped on its end mark, its own lanes' spent entries:
+`take_handed`). The applications allocate from their half of the engine's
+ids (`APPS_SHARE`), and a client of the engine from the other
+(`CLIENT_SHARE`). `EngineMedium` is a playback's
 medium over it (`clausters_editing::apply::Medium`, whose other implementation
 is the OSC `Applier`): a playback written once answers ops, and this carries
 them out at once, so it answers no steps. It is the first piece of the apps

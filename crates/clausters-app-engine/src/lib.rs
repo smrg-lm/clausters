@@ -40,13 +40,32 @@ use std::sync::{Arc, Mutex};
 use clausters::dsp::buffer::Buffer;
 use clausters::node::{AddAction, ROOT_NODE_ID};
 use clausters::osc::graphdef::GraphDefSpec;
+use clausters::osc::server::{Handed, OscServer, ServerInfo};
 use clausters::osc::translate::{CmdTranslator, Control};
-use clausters::server::engine::{Cmd, EndMark, EngineHandle, Garbage, NodeEventKind};
+use clausters::server::engine::{Cmd, EndMark, EngineHandle};
 #[cfg(feature = "synth")]
 use clausters::synthdef::SynthDefSpec;
-use clausters_core::ids::{IdError, IdSpaces, Space};
+use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 use clausters_editing::apply::{MULTITRACK_TRANSPORT, Medium, Step};
 use clausters_editing::instance::{Op, Port, Ports};
+
+/// **The share of the engine's ids the applications allocate from**: the
+/// second half of every space. The engine is a server a client may reach
+/// ([`OscServer::embedded`]), and two allocators over one space must take
+/// disjoint slices of it, so the applications keep this one and a client of
+/// the engine takes [`CLIENT_SHARE`].
+pub const APPS_SHARE: IdShare = IdShare { index: 1, of: 2 };
+
+/// **The share a client reaching the applications' engine allocates from**:
+/// the first half of every space, beside [`APPS_SHARE`].
+pub const CLIENT_SHARE: IdShare = IdShare { index: 0, of: 2 };
+
+/// How many transports the engine an application opens has: an editor's
+/// window takes one of its own, and the applications have half of them
+/// ([`APPS_SHARE`]), so a server's default would leave room for a few
+/// windows only.
+#[cfg(feature = "realtime")]
+const TRANSPORTS: usize = 64;
 
 /// A transport's loop and end mark, as last told.
 type Standing = (Option<(u64, u64)>, Option<u64>);
@@ -69,11 +88,17 @@ enum Waiting {
     },
 }
 
-/// **The engine an application holds**: its handle, the translator that
-/// builds its commands, and the device it runs on when it has one.
+/// **The engine an application holds**: the server that serves it, whose
+/// translator builds the application's commands and whose loop takes back
+/// what the engine hands over, and the device it runs on when it has one.
+///
+/// The engine is served as a server's is ([`OscServer::embedded`]) so that a
+/// client reaching it and the application share one translator, one mirror
+/// of the node tree, one set of transports and one collection of garbage and
+/// node ends; the application is the server's client in the process, with
+/// typed doors instead of OSC.
 pub struct AppEngine {
-    handle: EngineHandle,
-    translator: CmdTranslator,
+    server: OscServer,
     sample_rate: f32,
     channels: usize,
     /// **What waits for a cue**: the commands pushed after a transport's cue,
@@ -117,15 +142,13 @@ impl AppEngine {
     pub fn over(handle: EngineHandle) -> AppEngine {
         let sample_rate = handle.sample_rate;
         let channels = handle.channels;
-        let mut translator = CmdTranslator::with_buses(
-            sample_rate,
-            handle.audio_buses,
-            clausters::server::engine::DEFAULT_CONTROL_BUSES,
-        );
-        translator.set_meters(Arc::clone(handle.meters()));
+        let rate = f64::from(sample_rate);
+        let info = ServerInfo {
+            nominal_sample_rate: rate,
+            actual_sample_rate: rate,
+        };
         AppEngine {
-            handle,
-            translator,
+            server: OscServer::embedded(info, handle, unix_now()),
             sample_rate,
             channels,
             held: VecDeque::new(),
@@ -159,7 +182,10 @@ impl AppEngine {
             None,
             clausters::server::engine::DEFAULT_AUDIO_BUSES,
             clausters::server::engine::DEFAULT_CONTROL_BUSES,
-            clausters::dsp::Limits::default(),
+            clausters::dsp::Limits {
+                transports: TRANSPORTS,
+                ..clausters::dsp::Limits::default()
+            },
             None,
             0,
             &clausters::server::backend::Devices::default(),
@@ -180,21 +206,36 @@ impl AppEngine {
         self.channels
     }
 
+    /// **The shape of the engine's id spaces**: its node table, its buses,
+    /// its buffers and its transports, as an allocator over it reads them.
+    pub fn shape(&self) -> ServerShape {
+        let handle = self.server.handle();
+        ServerShape {
+            max_nodes: handle.limits.max_nodes,
+            audio_buses: handle.audio_buses,
+            outputs: handle.channels,
+            control_buses: handle.control_buses().len(),
+            buffers: handle.limits.max_buffers,
+            transports: handle.limits.transports,
+            event_buses: handle.limits.event_buses,
+        }
+    }
+
     /// The engine's handle, for what reads it directly: the transports'
     /// positions, the meters.
     pub fn handle(&self) -> &EngineHandle {
-        &self.handle
+        self.server.handle()
     }
 
     /// **What the engine publishes**, for a window that draws its meters and
     /// playheads from another thread.
     pub fn reading(&self) -> clausters::server::engine::EngineReading {
-        self.handle.reading()
+        self.server.handle().reading()
     }
 
     /// The translator, for a command the typed doors build that no op names.
     pub fn translator(&mut self) -> &mut CmdTranslator {
-        &mut self.translator
+        self.server.translator_mut()
     }
 
     /// **Pushes `cmds` to the engine**, after the latency plan they move.
@@ -253,18 +294,21 @@ impl AppEngine {
                 transport,
                 target,
             }) => {
-                if let Some(cmd) = self
-                    .lanes
-                    .make(lane, transport, target, &mut self.translator)
+                if let Some(cmd) =
+                    self.lanes
+                        .make(lane, transport, target, self.server.translator_mut())
                 {
-                    let _ = self.handle.send(cmd);
+                    let _ = self.server.handle_mut().send(cmd);
                 }
             }
             Some(Waiting::LaneSet { lane, data }) => {
-                match self.lanes.set(lane, data.as_bytes(), &mut self.translator) {
+                match self
+                    .lanes
+                    .set(lane, data.as_bytes(), self.server.translator_mut())
+                {
                     Ok(cleared) => {
                         if let Some(cmd) = cleared {
-                            let _ = self.handle.send(cmd);
+                            let _ = self.server.handle_mut().send(cmd);
                         }
                         self.feed_lane(lane);
                     }
@@ -272,8 +316,8 @@ impl AppEngine {
                 }
             }
             Some(Waiting::LaneFree { lane }) => {
-                if let Some(cmd) = self.lanes.free(lane, &mut self.translator) {
-                    let _ = self.handle.send(cmd);
+                if let Some(cmd) = self.lanes.free(lane, self.server.translator_mut()) {
+                    let _ = self.server.handle_mut().send(cmd);
                 }
             }
             Some(Waiting::Cmd(_)) | None => {}
@@ -323,18 +367,22 @@ impl AppEngine {
         // the next turn fed from past the place and its note never sounded.
         for &(transport, position) in &located {
             for lane in self.lanes.on(transport) {
-                if let Some(cmd) = self.lanes.clear(lane, false, &mut self.translator) {
-                    let _ = self.handle.send(cmd);
+                if let Some(cmd) = self.lanes.clear(lane, false, self.server.translator_mut()) {
+                    let _ = self.server.handle_mut().send(cmd);
                 }
                 self.feed_lane_from(lane, transport, position);
             }
         }
         jumped.retain(|transport| !located.iter().any(|(t, _)| t == transport));
-        self.translator.prepare_compensation(&mut cmds, 0);
+        self.server
+            .translator_mut()
+            .prepare_compensation(&mut cmds, 0);
         if cmds.is_empty() {
             return true;
         }
-        let sent = match self.handle.send_batch(cmds) {
+        // the server reports the transports these move, as a client's would
+        self.server.observe_sent(&cmds);
+        let sent = match self.server.handle_mut().send_batch(cmds) {
             Ok(()) => true,
             Err(_) => {
                 tracing::warn!("app engine: the command FIFO is full; a batch was dropped");
@@ -380,8 +428,8 @@ impl AppEngine {
     /// Every lane on transport `transport` cleared and fed again.
     fn lanes_jumped(&mut self, transport: usize) {
         for lane in self.lanes.on(transport) {
-            if let Some(cmd) = self.lanes.clear(lane, false, &mut self.translator) {
-                let _ = self.handle.send(cmd);
+            if let Some(cmd) = self.lanes.clear(lane, false, self.server.translator_mut()) {
+                let _ = self.server.handle_mut().send(cmd);
             }
             self.feed_lane(lane);
         }
@@ -398,7 +446,7 @@ impl AppEngine {
         else {
             return;
         };
-        let position = self.handle.current_transport_position(transport);
+        let position = self.server.handle().current_transport_position(transport);
         self.feed_lane_from(lane, transport, position);
     }
 
@@ -412,11 +460,10 @@ impl AppEngine {
             looping,
             end,
         };
-        let handle = &mut self.handle;
-        self.lanes
-            .feed(lane, standing, &mut self.translator, &mut |cmd| {
-                handle.send(cmd).is_ok()
-            });
+        let (handle, translator) = self.server.parts_mut();
+        self.lanes.feed(lane, standing, translator, &mut |cmd| {
+            handle.send(cmd).is_ok()
+        });
     }
 
     /// **Whether transport `transport` rolls**, as the application last told
@@ -502,31 +549,26 @@ impl AppEngine {
             .collect()
     }
 
-    /// **Takes back what the engine handed over**: freed nodes, buffers and
-    /// bundles are dropped here, off the audio thread, and the translator
-    /// forgets the nodes that ended. Called on the application's turn.
+    /// **Takes back what the engine handed over**: one turn of the server's
+    /// loop (freed nodes, buffers and bundles dropped off the audio thread,
+    /// ended nodes forgotten, what a client sent served), then what the
+    /// engine handed back for the application (a cue over, a transport
+    /// stopped on its end mark, its lanes' spent entries), and its lanes
+    /// topped up. Called on the application's turn.
     pub fn pump(&mut self) {
-        while let Some(garbage) = self.handle.pop_garbage() {
-            match garbage {
-                Garbage::FreedSynth { id, synth, .. } => {
-                    self.translator.forget_freed_synth(id, synth.incarnation())
-                }
-                Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
-                    self.translator.release_node_id(id);
-                    clausters::server::engine::report_rejected(id, why, "app engine");
-                }
-                Garbage::TransportEnded { transport } => {
+        self.server.step();
+        for handed in self.server.take_handed() {
+            match handed {
+                Handed::Ended(transport) => {
                     self.rolling.insert(transport, false);
                     self.lanes_jumped(transport);
                 }
-                Garbage::EventLaneSpent {
-                    tag, start, fired, ..
-                } => self.lanes.spent(tag, &start, fired, &mut self.translator),
-                Garbage::SpentBundle(cmds) | Garbage::RejectedBundle(cmds) => {
-                    clausters::osc::server::lanes::forget_unrun(&mut self.translator, &cmds);
+                Handed::LaneSpent { tag, start, fired } => {
+                    self.lanes
+                        .spent(tag, &start, fired, self.server.translator_mut());
                 }
                 // the cue is over: what waited for it goes
-                Garbage::TransportCued { transport, .. } => {
+                Handed::Cued(transport) => {
                     if self.held.front().is_some_and(|(t, _)| *t == transport)
                         && let Some((_, waited)) = self.held.pop_front()
                     {
@@ -535,18 +577,28 @@ impl AppEngine {
                         self.held.extend(later);
                     }
                 }
-                _ => {}
-            }
-        }
-        while let Some(event) = self.handle.pop_event() {
-            if event.kind == NodeEventKind::End {
-                self.translator.release_node_id(event.id);
             }
         }
         // **The lanes topped up**, each ahead of its transport
         for (lane, _) in self.lanes.all() {
             self.feed_lane(lane);
         }
+    }
+}
+
+/// Unix seconds now: where the engine's sample 0 stands on a wall-clocked
+/// client's axis. A page has no system clock to ask here, and its engine
+/// anchors at zero.
+fn unix_now() -> f64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |d| d.as_secs_f64())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0.0
     }
 }
 
@@ -611,7 +663,7 @@ impl EngineMedium {
         ids: &mut IdSpaces,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), IdError> {
-        let t = &mut engine.translator;
+        let t = engine.server.translator_mut();
         let result: Result<(), String> = match op {
             Op::Def { family, spec } => match family.as_str() {
                 #[cfg(feature = "synth")]
@@ -986,5 +1038,47 @@ mod tests {
         // nothing waits now: a lane is made at once
         app.lane_free(5);
         assert!(app.lanes.all().is_empty());
+    }
+
+    /// **The engine is one server**: a node the application makes is in the
+    /// mirror a client of the engine is served from, and a transport it
+    /// stops on its end mark is the server's to report as well as the
+    /// application's to learn.
+    #[test]
+    fn the_application_and_a_client_share_one_server() {
+        let (mut app, mut engine) = AppEngine::detached(48_000.0, 2);
+        let group = 1_000;
+        let mut cmds = Vec::new();
+        app.translator()
+            .add_group(group, AddAction::Tail, ROOT_NODE_ID, None, &mut cmds)
+            .unwrap();
+        app.push(cmds);
+        assert!(app.translator().mirror.get(group).is_some(), "one mirror");
+        app.push(vec![
+            Cmd::TransportEnd {
+                transport: 1,
+                mark: Some(EndMark {
+                    end: BLOCK_SIZE as u64,
+                    back: None,
+                }),
+            },
+            Cmd::TransportRun {
+                transport: 1,
+                rolling: true,
+            },
+        ]);
+        assert!(app.rolling(1));
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..8 {
+            engine.process_block(&mut out);
+            app.pump();
+        }
+        assert!(!app.rolling(1), "the end the server took was handed on");
+        let shape = app.shape();
+        assert_eq!(
+            shape.transports,
+            clausters::dsp::Limits::default().transports
+        );
+        assert_ne!(APPS_SHARE, CLIENT_SHARE);
     }
 }

@@ -66,6 +66,31 @@ impl OscServer {
         )
     }
 
+    /// **A server an application holds in its process**: the application's
+    /// engine served as any server's is, so a client reaching it over a
+    /// segment ([`Self::attach_ipc`]) and the application's own built
+    /// commands share one translator, one mirror of the node tree, one set
+    /// of lanes and transports, and one collection of what the engine hands
+    /// back. No socket: whoever holds it drives the loop with
+    /// [`Self::step`]. Its NRT jobs run on a thread of their own natively, so
+    /// a long read never holds the application, and inline in a page; its
+    /// time is the engine's sample clock, `unix_epoch` (Unix seconds at
+    /// sample 0) anchoring a wall-clocked client's timetags.
+    ///
+    /// The application builds its commands with [`Self::translator_mut`],
+    /// sends them through [`Self::handle_mut`], tells the server what they
+    /// moved of a transport ([`Self::observe_sent`]), and takes what the
+    /// engine handed back for it ([`Self::take_handed`]).
+    pub fn embedded(info: ServerInfo, handle: EngineHandle, unix_epoch: f64) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        let nrt = NrtRunner::spawn(None, Arc::clone(handle.meters()));
+        #[cfg(target_arch = "wasm32")]
+        let nrt = NrtRunner::inline();
+        let mut server = Self::build(info, handle, nrt, TimeSource::Sample { unix_epoch }, None);
+        server.handed = Some(Vec::new());
+        server
+    }
+
     /// What [`Self::bind`] and [`Self::headless`] share: everything but the
     /// socket, the NRT runner, the clock and the budget. `waker` is what the
     /// async workers wake the loop with; a headless server has no loop to
@@ -138,6 +163,7 @@ impl OscServer {
             tap_buf: Vec::new(),
             clock,
             ipc: None,
+            handed: None,
             segment: None,
             shm_path: None,
             owns_samples: false,
@@ -697,9 +723,12 @@ impl OscServer {
                     }
                 }
                 Garbage::FreedBuffer(_) | Garbage::RetiredSynth(_) => {}
-                Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
+                Garbage::TransportEnded { transport } => {
+                    self.on_transport_ended(transport);
+                    self.hand(Handed::Ended(transport));
+                }
                 // A cue is an application engine's, never sent over the wire.
-                Garbage::TransportCued { .. } => {}
+                Garbage::TransportCued { transport, .. } => self.hand(Handed::Cued(transport)),
                 Garbage::SpentBundle(cmds) => {
                     // The executed shell of a timed bundle (empty), or one a
                     // `/sched_clear` dropped with its commands still in it:
@@ -709,6 +738,12 @@ impl OscServer {
                 Garbage::RejectedBundle(cmds) => {
                     warn!("engine rejected a timed bundle (schedule queue full)");
                     self.forget_unrun(&cmds);
+                }
+                // a lane the server does not hold is the application's
+                Garbage::EventLaneSpent {
+                    tag, start, fired, ..
+                } if self.handed.is_some() && !self.lanes.has(tag.lane) => {
+                    self.hand(Handed::LaneSpent { tag, start, fired });
                 }
                 Garbage::EventLaneSpent {
                     tag, start, fired, ..

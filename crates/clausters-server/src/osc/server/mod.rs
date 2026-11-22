@@ -207,6 +207,12 @@ pub struct OscServer {
     clock: TimeSource,
     /// The shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
+    /// **What is the embedding application's**, for a server an application
+    /// holds in its process ([`OscServer::embedded`]): what the engine hands
+    /// back that is the application's to act on, kept until it takes it
+    /// ([`OscServer::take_handed`]). `None` for any other server, which
+    /// keeps nothing.
+    handed: Option<Vec<Handed>>,
     /// The segment itself, whether or not this server serves its rings. A
     /// server that attached to somebody else's segment reads the samples out
     /// of it and has no ring at all, so the two cannot be one field.
@@ -322,6 +328,24 @@ pub struct OscServer {
     /// The live-client slots both stream fronts share, created when the first
     /// of them binds (so `set_max_clients` can still change the ceiling).
     client_slots: Option<std::sync::Arc<crate::osc::ClientSlots>>,
+}
+
+/// **What the engine handed back that is the embedding application's**
+/// ([`OscServer::embedded`]): a transport's cue over, a transport that stopped
+/// on its end mark, an entry of one of the application's own event lanes
+/// that left the engine. The server acts on what is its own (an end changes
+/// the transport it broadcasts) and keeps these for the application.
+pub enum Handed {
+    /// Transport `0`'s cue is over: its readers hold the frames it starts on.
+    Cued(usize),
+    /// Transport `0` stopped on its end mark.
+    Ended(usize),
+    /// An entry of an event lane the server does not hold left the engine.
+    LaneSpent {
+        tag: crate::server::engine::EventLaneTag,
+        start: Vec<Cmd>,
+        fired: bool,
+    },
 }
 
 /// The shared transport: a DAW-style **rolling state** (play / stop / where
@@ -552,6 +576,103 @@ impl OscServer {
     /// [`Self::listen_ws`]: the hubs capture the ceiling when they bind.
     pub fn set_max_frame(&mut self, bytes: usize) {
         self.max_frame = bytes.max(RECV_BUF_SIZE);
+    }
+
+    /// The engine's handle, for what reads it directly: its readings, its
+    /// transports' positions.
+    pub fn handle(&self) -> &EngineHandle {
+        &self.handle
+    }
+
+    /// **The engine's handle, for an embedding application's commands**
+    /// ([`Self::embedded`]): what it sends there it tells the server of with
+    /// [`Self::observe_sent`].
+    pub fn handle_mut(&mut self) -> &mut EngineHandle {
+        &mut self.handle
+    }
+
+    /// **The translator**, whose typed doors build an embedding
+    /// application's commands: the one this server's clients are served
+    /// with, so the node tree, the buffers and the ids are one.
+    pub fn translator_mut(&mut self) -> &mut CmdTranslator {
+        &mut self.translator
+    }
+
+    /// The handle and the translator at once, for an embedding application's
+    /// command builder that sends as it builds (a lane fed ahead of its
+    /// transport).
+    pub fn parts_mut(&mut self) -> (&mut EngineHandle, &mut CmdTranslator) {
+        (&mut self.handle, &mut self.translator)
+    }
+
+    /// **What the engine handed back for the embedding application** since
+    /// it last took it ([`Handed`]); empty for a server no application
+    /// holds.
+    pub fn take_handed(&mut self) -> Vec<Handed> {
+        self.handed.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// Keeps `handed` for the embedding application, when there is one.
+    pub(in crate::osc::server) fn hand(&mut self, handed: Handed) {
+        if let Some(kept) = &mut self.handed {
+            kept.push(handed);
+        }
+    }
+
+    /// **An embedding application sent `cmds` to the engine itself**: what
+    /// they moved of a transport (rolling, its loop, its end mark, its fade,
+    /// where it stands) is written into the transport this server reports,
+    /// its lanes are fed again from where the transport now stands, and its
+    /// clients are told, as they are of a client's transport command. So a
+    /// script watching a transport an application plays sees it play.
+    pub fn observe_sent(&mut self, cmds: &[Cmd]) {
+        let mut moved = Vec::new();
+        let mut jumped = Vec::new();
+        for cmd in cmds {
+            match cmd {
+                Cmd::TransportRun { transport, rolling } => {
+                    if let Some(t) = self.transports.get_mut(*transport) {
+                        t.playing = *rolling;
+                        moved.push(*transport);
+                    }
+                }
+                Cmd::TransportLoop { transport, span } => {
+                    if let Some(t) = self.transports.get_mut(*transport) {
+                        t.loop_span = span.as_ref().map(|s| (s.start as i64, s.end as i64));
+                        moved.push(*transport);
+                        jumped.push(*transport);
+                    }
+                }
+                Cmd::TransportEnd { transport, mark } => {
+                    if let Some(t) = self.transports.get_mut(*transport) {
+                        t.end_mark = mark.map(|m| (m.end as i64, m.back.map(|b| b as i64)));
+                        moved.push(*transport);
+                        jumped.push(*transport);
+                    }
+                }
+                Cmd::TransportFade { transport, samples } => {
+                    if let Some(t) = self.transports.get_mut(*transport) {
+                        t.fade = *samples as i64;
+                        moved.push(*transport);
+                    }
+                }
+                Cmd::TransportLocate { transport, .. } if *transport < self.transports.len() => {
+                    moved.push(*transport);
+                    jumped.push(*transport);
+                }
+                _ => {}
+            }
+        }
+        jumped.sort_unstable();
+        jumped.dedup();
+        for k in jumped {
+            self.lanes_jumped(k);
+        }
+        moved.sort_unstable();
+        moved.dedup();
+        for k in moved {
+            self.broadcast_transport(k);
+        }
     }
 
     /// Sets the ceiling for concurrent stream clients, TCP + WebSocket

@@ -305,6 +305,7 @@ quoted title lands here, on the link to the entry.
 - [A live parameter's undo writes the value it had (2026-11-02)](decisions/apps.md#a-live-parameters-undo-writes-the-value-it-had-2026-11-02)
 - [An id from outside is taken in, never trusted (2026-11-10)](decisions/apps.md#an-id-from-outside-is-taken-in-never-trusted-2026-11-10)
 - [A file says which application it belongs to, and the format is the file's (2026-11-10)](decisions/apps.md#a-file-says-which-application-it-belongs-to-and-the-format-is-the-files-2026-11-10)
+- [The applications' engine is a server, and the applications its client (2026-11-22)](decisions/apps.md#the-applications-engine-is-a-server-and-the-applications-its-client-2026-11-22)
 
 ## [Notation](decisions/notation.md)
 

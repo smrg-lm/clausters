@@ -1824,3 +1824,34 @@ switch of mode.
   links the MIDI file reader and writer (pure Rust) so the roll's file and the
   score's export are written by one function, and the engraver stays a port
   the host hands in (`Editing::read_scores_with`), as its outlines are.
+
+## The applications' engine is a server, and the applications its client (2026-11-22)
+
+**Context.** The engine an application holds was the server's engine and
+translator taken as a library, with a part of the server's serving loop
+written again beside it (the garbage, the node ends, the event lanes, the
+transports' state). A script was to reach that engine as a server (the
+user's decision: the GUI host's engine is a script's default server), and
+the engine's command FIFO has one producer, so the script's door could not
+be a second translator: two mirrors of one node tree, two buffer tables and
+two id allocators over one engine would disagree.
+
+**Decision.** The engine is served by the server's own loop, in the
+application's process (`OscServer::embedded`: no socket, NRT jobs on a
+thread natively and inline in a page, time on the engine's sample clock).
+The application is its client in the process, with typed doors instead of
+OSC: it builds commands with the server's translator, sends them through
+the server's handle, tells the server what they moved of a transport so a
+client watching it sees it, and takes back only what is the application's
+(a transport's cue over, a transport stopped on its end mark, an entry of
+its own lanes). The applications allocate from one half of every id space
+and a client of the engine from the other, by the arithmetic every client
+split already uses (`IdShare`), and the engine an application opens has
+more transports than a server's default so that half of them still leave
+room for many windows.
+
+**Consequences.** What the application repeated of the loop is gone, and a
+fix to the loop is a fix for both. A script playing on the applications'
+engine shares its transport 0 with the multitrack, which plays on it, as two
+clients of one server share it.
+

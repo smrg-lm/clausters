@@ -1598,7 +1598,7 @@ holds what is open.
 
   **The sequence.** Each step closes with its tests and leaves the
   applications playing as they did.
-  1. ⬜ **One serving loop.** `AppEngine` is built over the server's
+  1. ✅ **One serving loop.** `AppEngine` is built over the server's
      serving loop (`OscServer` in pulled mode, its NRT jobs on a thread,
      its time the engine's sample clock): one translator, one mirror, one
      set of lanes and transports, one collection of garbage and node ends.

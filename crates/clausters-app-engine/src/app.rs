@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use clausters_apps::editing::{Caller, Editing, MemberId, call_json};
 use clausters_apps::takes::Header;
-use clausters_core::ids::{IdShare, IdSpaces, ServerShape};
+use clausters_core::ids::{IdSpaces, ServerShape};
 use clausters_editing::apply::Step;
 use serde_json::{Value, json};
 
@@ -143,9 +143,11 @@ impl Caller for Here<'_> {
 impl App {
     /// The application half over `engine`.
     pub fn new(engine: Arc<Mutex<AppEngine>>) -> App {
+        // the applications' half of the engine's ids, a client's beside it
+        let shape = engine.lock().map_or(ServerShape::DEFAULT, |e| e.shape());
         App {
             engine,
-            ids: IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE),
+            ids: IdSpaces::new(shape, crate::APPS_SHARE),
             notes: channel(),
             live: HashMap::new(),
             waker: std::thread::current(),
