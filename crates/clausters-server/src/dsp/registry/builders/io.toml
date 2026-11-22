@@ -133,6 +133,27 @@ why = "a channel list is written over consecutive buses"
 kind = "SendReply"
 why = "the value list leads, and the reply's id and command are options"
 
+[[ugen]]
+kind = "CheckBadValues"
+builder = "check_bad_values"
+required = ["signal"]
+doc = '''
+The class of every sample of `signal`: 0 for an ordinary number (zero
+included), 1 for a NaN, 2 for an infinity, 3 for a denormal. `post` says when
+it is also written to the server's console: 0 never, 1 at every bad sample,
+2 whenever the class changes, with how long the previous one lasted. `id`
+tells one check from another there.
+'''
+
+[[ugen]]
+kind = "Sanitize"
+builder = "sanitize"
+required = ["signal"]
+doc = '''
+`signal` with every NaN, infinity and denormal replaced by `replace`:
+a guard before a filter whose state one NaN would ruin for good.
+'''
+
 [[hand]]
 kind = "Poll"
 why = "the label is a static field"

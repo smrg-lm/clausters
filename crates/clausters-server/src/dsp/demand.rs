@@ -42,17 +42,27 @@
 //!   different step operator.
 //! - [`Drandom`] -- `Dwhite`/`Diwhite` (independent draws) and
 //!   `Dbrown`/`Dibrown` (a bounded random walk), float or integer.
-//! - [`Dlist`] -- `Dseq`, `Drand`, `Dxrand` and `Dshuf`: one traversal of a
-//!   value list, differing only in what picks the next slot. This is the core
-//!   that flattens nested streams, so all four inherit it.
-//! - [`Dstutter`], [`Dswitch1`], [`Dbufrd`] -- one machine each.
-//! - [`Demand`] and [`Duty`] -- the drivers, which turn pulls into samples.
+//! - [`Dlist`] -- `Dseq`, `Dser`, `Drand`, `Dwrand`, `Dxrand` and `Dshuf`:
+//!   one traversal of a value list, differing only in what picks the next
+//!   slot and in what `repeats` counts. This is the core that flattens nested
+//!   streams, so all six inherit it.
+//! - [`Dstutter`] (`Dstutter` and `Ddup`, one machine under two names),
+//!   [`Dswitch1`], [`Dswitch`], [`Dconst`], [`Dreset`], [`Dpoll`],
+//!   [`Dbufrd`], [`Dbufwr`] -- one machine each.
+//! - [`Demand`], [`Duty`] and [`DemandEnvGen`] -- the drivers, which turn
+//!   pulls into samples.
 
 use clausters_core::builtins::fold;
 
+use clausters_core::envshape::Segment;
+
 use crate::dsp::rand::SynthRand;
+use crate::dsp::registry::UGenConfig;
+use crate::dsp::reply::ReplyBuffer;
 use crate::dsp::trig::Edge;
-use crate::dsp::{DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, UGen};
+use crate::dsp::{
+    DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, ReplyKind, ReplyMsg, UGen,
+};
 
 /// Input slot every source takes its repeat count in.
 const I_REPEATS: usize = 0;
@@ -364,8 +374,15 @@ impl UGen for Drandom {
 pub enum ListOrder {
     /// `Dseq`: in order, over and over.
     Seq,
+    /// `Dser`: in order, like `Dseq`, but `repeats` counts items rather than
+    /// passes -- `Dser([1, 2, 3], 5)` is `1 2 3 1 2`.
+    Ser,
     /// `Drand`: a fresh random slot every item.
     Rand,
+    /// `Dwrand`: a fresh random slot every item, each slot as likely as its
+    /// weight. The weights sit between the count and the values on the wire
+    /// (`repeats, size, w0 .. w(size-1), v0 .. v(size-1)`, sclang's layout).
+    Wrand,
     /// `Dxrand`: random, but never the slot just used.
     Xrand,
     /// `Dshuf`: one shuffled order, replayed as it stands.
@@ -423,23 +440,63 @@ impl Dlist {
         }
     }
 
+    /// The input slot the values start at: after the count, and for
+    /// `Dwrand` after its size and its weights too.
+    fn base(&self, inputs: &dyn DemandInputs) -> usize {
+        match self.order {
+            ListOrder::Wrand => 2 + weights(inputs),
+            _ => 1,
+        }
+    }
+
     /// The input slot the current position reads: `Dshuf` goes through its
     /// permutation, everyone else straight at the list.
-    fn slot(&self, n: usize) -> usize {
+    fn slot(&self, base: usize, n: usize) -> usize {
         let i = match self.order {
             ListOrder::Shuf => self.perm[self.index.min(MAX_UGEN_INPUTS - 1)] as usize,
             _ => self.index,
         };
-        1 + i.min(n.saturating_sub(1))
+        base + i.min(n.saturating_sub(1))
+    }
+
+    /// `Dwrand`'s pick: one uniform draw, and the first slot whose running
+    /// sum of weights reaches it.
+    ///
+    /// scsynth compares the draw with the bare weights, so a set that sums to
+    /// less than one leaves the remainder to *whatever slot was picked last*
+    /// (and to an uninitialized one on the first pick); here the draw is scaled
+    /// by the weights' sum, so each slot is as likely as its share of it. A set
+    /// that sums to one -- what sclang's `normalizeSum` gives -- draws exactly
+    /// as scsynth does.
+    fn pick_weighted(&self, n: usize, inputs: &dyn DemandInputs) -> usize {
+        let w = weights(inputs).min(n);
+        let total: f32 = (0..w).map(|i| inputs.at(2 + i)).sum();
+        let r = self.rand.draw(|g| g.frand()) * total;
+        let mut sum = 0.0;
+        for i in 0..w {
+            sum += inputs.at(2 + i);
+            if sum >= r {
+                return i;
+            }
+        }
+        n - 1
     }
 
     /// Moves to the next position, counting a repeat where the order says one
     /// has been completed.
-    fn step(&mut self, n: usize) {
+    fn step(&mut self, n: usize, inputs: &dyn DemandInputs) {
         match self.order {
             ListOrder::Seq | ListOrder::Shuf => self.index += 1,
+            ListOrder::Ser => {
+                self.index += 1;
+                self.rep.advance();
+            }
             ListOrder::Rand => {
                 self.index = self.rand.draw(|g| g.irand(n as i32)) as usize;
+                self.rep.advance();
+            }
+            ListOrder::Wrand => {
+                self.index = self.pick_weighted(n, inputs);
                 self.rep.advance();
             }
             ListOrder::Xrand => {
@@ -483,7 +540,8 @@ impl UGen for Dlist {
     }
 
     fn demand(&mut self, _ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
-        let n = inputs.len().saturating_sub(1);
+        let base = self.base(inputs);
+        let n = inputs.len().saturating_sub(base);
         if n == 0 {
             return f32::NAN;
         }
@@ -496,7 +554,8 @@ impl UGen for Dlist {
                 ListOrder::Rand | ListOrder::Xrand => {
                     self.index = self.rand.draw(|g| g.irand(n as i32)) as usize;
                 }
-                ListOrder::Seq => {}
+                ListOrder::Wrand => self.index = self.pick_weighted(n, inputs),
+                ListOrder::Seq | ListOrder::Ser => {}
             }
         }
         // Every slot that answers `NaN` costs one attempt; `n + 1` of them in a
@@ -505,18 +564,20 @@ impl UGen for Dlist {
         // scsynth only warns here; a callback cannot afford to find out later.
         let mut attempts = n + 1;
         loop {
-            if self.order.counts_passes() && self.index >= n {
+            if self.index >= n {
                 self.index = 0;
-                self.rep.advance();
+                if self.order.counts_passes() {
+                    self.rep.advance();
+                }
             }
             if self.rep.exhausted() {
                 self.index = 0;
                 return f32::NAN;
             }
-            let k = self.slot(n);
+            let k = self.slot(base, n);
             if !inputs.is_demand(k) {
                 let x = inputs.pull(k);
-                self.step(n);
+                self.step(n, inputs);
                 self.reset_child = true;
                 return x;
             }
@@ -529,7 +590,7 @@ impl UGen for Dlist {
                 return x;
             }
             // That slot is spent: move on, and restart whatever we move to.
-            self.step(n);
+            self.step(n, inputs);
             self.reset_child = true;
             attempts -= 1;
             if attempts == 0 {
@@ -547,11 +608,20 @@ impl UGen for Dlist {
     }
 }
 
+/// How many weights a `Dwrand` carries: its size input, which sclang makes
+/// the value list's length, held to the inputs there are.
+fn weights(inputs: &dyn DemandInputs) -> usize {
+    let size = round(inputs.at(1)).max(0.0) as usize;
+    size.min(inputs.len().saturating_sub(2) / 2)
+}
+
 // ---------------------------------------------------------------------------
-// Dstutter, Dswitch1, Dbufrd
+// Dstutter, Dswitch1, Dswitch, Dconst, Dreset, Dpoll, Dbufrd, Dbufwr
 // ---------------------------------------------------------------------------
 
-/// `Dstutter(n, value)`: repeats each item of `value` `n` times.
+/// `Dstutter(n, value)` and `Ddup(n, value)`: repeats each item of `value`
+/// `n` times. sclang renamed the first to the second and scsynth keeps both,
+/// with the same code, so here they are one machine under two names.
 ///
 /// Both inputs are pulled -- `n` per item, so the repeat count can itself vary --
 /// and either running out ends the stream. Unlike the list sources it resets
@@ -651,6 +721,302 @@ impl UGen for Dswitch1 {
     }
 }
 
+/// `Dswitch(index, v0, v1, ...)`: yields the **whole** stream `index` picks,
+/// then picks again -- where [`Dswitch1`] takes one item, this one drains.
+///
+/// Two departures from scsynth, both where its code contradicts what the UGen
+/// is for:
+///
+/// - **A plain number is a stream of one item**, as it is to every list
+///   source. scsynth reads a number again on every pull and never sees it end,
+///   so a switch that once picks a number stays on it for good.
+/// - **The stream picked is restarted when it is entered**, not when it is
+///   left. scsynth pulls the newly picked stream first and resets the old one
+///   after, so picking the same stream twice in a row reads it drained and
+///   ends the switch; here a stream picked again plays again. (Its constructor
+///   and its reset also wrap the first index into one slot too many, which can
+///   read past the last input; here every pick wraps into the list.)
+pub struct Dswitch {
+    /// The input slot playing, `0` before the first pick.
+    index: usize,
+    /// Whether the slot playing has given all it had (a number, after its
+    /// one item).
+    spent: bool,
+}
+
+impl Dswitch {
+    pub fn new() -> Self {
+        Self {
+            index: 0,
+            spent: false,
+        }
+    }
+
+    /// Pulls the next index and enters the stream it names, restarting it.
+    /// False once the index stream is exhausted.
+    fn pick(&mut self, inputs: &mut dyn DemandInputs, n: usize) -> bool {
+        let which = inputs.pull(0);
+        if which.is_nan() {
+            return false;
+        }
+        self.index = 1 + (round(which) as i64).rem_euclid(n as i64) as usize;
+        self.spent = false;
+        inputs.reset(self.index);
+        true
+    }
+
+    /// One item of the slot playing; a number is spent once read.
+    fn take(&mut self, inputs: &mut dyn DemandInputs) -> f32 {
+        if !inputs.is_demand(self.index) {
+            self.spent = true;
+        }
+        inputs.pull(self.index)
+    }
+}
+
+impl Default for Dswitch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for Dswitch {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn demand(&mut self, _ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
+        let n = inputs.len().saturating_sub(1);
+        if n == 0 {
+            return f32::NAN;
+        }
+        let mut fresh = false;
+        if self.index == 0 || self.spent {
+            if !self.pick(inputs, n) {
+                return f32::NAN;
+            }
+            fresh = true;
+        }
+        let x = self.take(inputs);
+        if !x.is_nan() || fresh {
+            // A stream entered just now that has nothing in it ends the
+            // switch, as in scsynth: one pick per pull, so an index stream
+            // naming only empty streams cannot spin the audio thread.
+            return x;
+        }
+        if !self.pick(inputs, n) {
+            return f32::NAN;
+        }
+        self.take(inputs)
+    }
+
+    fn reset_demand(&mut self, inputs: &mut dyn DemandInputs) {
+        self.index = 0;
+        self.spent = false;
+        inputs.reset(0);
+    }
+}
+
+/// `Dconst(sum, in, tolerance)`: yields `in` until the items add up to `sum`,
+/// the last one cut to land on it -- a stream of durations that fills a bar
+/// exactly. Within `tolerance` of the sum counts as there, so a sum of floats
+/// that misses by a rounding does not leave a sliver of an item behind.
+///
+/// `sum` and `tolerance` are read once per stream, on its first pull.
+pub struct Dconst {
+    total: f32,
+    tolerance: f32,
+    latched: bool,
+    /// What has been yielded so far; `NaN` once the sum is reached.
+    sum: f32,
+}
+
+impl Dconst {
+    pub fn new() -> Self {
+        Self {
+            total: 0.0,
+            tolerance: 0.0,
+            latched: false,
+            sum: 0.0,
+        }
+    }
+}
+
+impl Default for Dconst {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for Dconst {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn demand(&mut self, _ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
+        if self.sum.is_nan() {
+            return f32::NAN;
+        }
+        if !self.latched {
+            let total = inputs.pull(0);
+            let tolerance = inputs.pull(2);
+            if total.is_nan() || tolerance.is_nan() {
+                return f32::NAN;
+            }
+            self.total = total;
+            self.tolerance = tolerance;
+            self.latched = true;
+        }
+        let x = inputs.pull(1);
+        if x.is_nan() {
+            return f32::NAN;
+        }
+        let sum = self.sum + x;
+        if sum > self.total || (self.total - sum).abs() <= self.tolerance {
+            let last = self.total - self.sum;
+            self.sum = f32::NAN;
+            last
+        } else {
+            self.sum = sum;
+            x
+        }
+    }
+
+    fn reset_demand(&mut self, inputs: &mut dyn DemandInputs) {
+        self.latched = false;
+        self.sum = 0.0;
+        for k in 0..3 {
+            inputs.reset(k);
+        }
+    }
+}
+
+/// `Dreset(in, reset)`: passes `in` through, and restarts it when the `reset`
+/// stream rises -- a reset that is itself a sequence, so a phrase can be cut
+/// short on a pattern of its own. The restart takes effect on the next pull:
+/// the item read alongside the rising value is still the old stream's.
+pub struct Dreset {
+    prev: f32,
+}
+
+impl Dreset {
+    pub fn new() -> Self {
+        Self { prev: 0.0 }
+    }
+}
+
+impl Default for Dreset {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for Dreset {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn demand(&mut self, _ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
+        let x = inputs.pull(0);
+        if x.is_nan() {
+            return f32::NAN;
+        }
+        let reset = inputs.pull(1);
+        if reset > 0.0 && self.prev <= 0.0 {
+            inputs.reset(0);
+        }
+        self.prev = reset;
+        x
+    }
+
+    fn reset_demand(&mut self, inputs: &mut dyn DemandInputs) {
+        inputs.reset(0);
+    }
+}
+
+/// `Dpoll(in, trigid, run)`: passes `in` through and, while `run` is above
+/// zero, posts `label: value` for every item and, when `trigid >= 0`, sends
+/// `/node_trigger nodeID trigid value` -- [`Poll`](crate::dsp::reply::Poll)
+/// for a stream, on the same reply path. `run` is pulled with each item, so
+/// it may be a stream too.
+///
+/// scsynth sends the trigger whether `run` is set or not, and gates only the
+/// post; `run` is documented as making the UGen inactive, so here it gates
+/// both. The label is a static field, as `Poll`'s is, rather than characters
+/// spread over the inputs.
+pub struct Dpoll {
+    label: String,
+    buf: ReplyBuffer,
+}
+
+impl Dpoll {
+    pub fn new(config: &UGenConfig) -> Self {
+        let label = config
+            .label
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "dpoll".to_string());
+        Self {
+            label,
+            buf: ReplyBuffer::new(),
+        }
+    }
+}
+
+impl UGen for Dpoll {
+    // Buffered replies still leave with this block's drain.
+    fn reset(&mut self) {}
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn demand(&mut self, _ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
+        let x = inputs.pull(0);
+        if inputs.pull(2) > 0.0 {
+            let mut msg = ReplyMsg::new(ReplyKind::Poll, inputs.at(1) as i32, &self.label);
+            msg.push_value(x);
+            self.buf.push(msg);
+        }
+        x
+    }
+
+    fn reset_demand(&mut self, inputs: &mut dyn DemandInputs) {
+        inputs.reset(0);
+    }
+
+    fn is_reply(&self) -> bool {
+        true
+    }
+
+    fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+        self.buf.drain(node_id, sink);
+    }
+}
+
+/// The frame a demand buffer UGen addresses: `phase` wrapped into the buffer
+/// when `looping`, held to it otherwise (scsynth's `sc_loop`).
+fn frame_of(phase: f32, frames: usize, looping: bool) -> usize {
+    let pos = if looping {
+        phase.rem_euclid(frames as f32)
+    } else {
+        phase.clamp(0.0, frames as f32 - 1.0)
+    };
+    (pos as usize).min(frames - 1)
+}
+
 /// `Dbufrd(bufnum, phase, loop, channel)`: reads one frame of a buffer at the
 /// frame index `phase` yields.
 ///
@@ -685,13 +1051,54 @@ impl UGen for Dbufrd {
         if frames == 0 {
             return 0.0;
         }
-        let last = frames as f32 - 1.0;
-        let pos = if looping {
-            phase.rem_euclid(frames as f32)
-        } else {
-            phase.clamp(0.0, last)
+        buf.sample(frame_of(phase, frames, looping), channel)
+    }
+}
+
+/// `Dbufwr(bufnum, phase, signal, loop, channel)`: writes each item of the
+/// `signal` stream into the buffer frame the `phase` stream names, and yields
+/// it -- the writing twin of [`Dbufrd`], so a sequence can record what it
+/// plays. Either stream running out ends this one; out of range the frame
+/// wraps when `loop` is set and clamps when it is not. `channel` sits last,
+/// as `Dbufrd`'s does, where scsynth writes the first channel only.
+pub struct Dbufwr;
+
+impl UGen for Dbufwr {
+    fn reset(&mut self) {}
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn demand(&mut self, ctx: &ProcessCtx, inputs: &mut dyn DemandInputs) -> f32 {
+        let bufnum = inputs.pull(0);
+        if bufnum.is_nan() {
+            return f32::NAN;
+        }
+        let phase = inputs.pull(1);
+        if phase.is_nan() {
+            return f32::NAN;
+        }
+        let value = inputs.pull(2);
+        if value.is_nan() {
+            return f32::NAN;
+        }
+        let looping = inputs.at(3) != 0.0;
+        let channel = inputs.at(4).max(0.0) as usize;
+        let Some(buf) = ctx.buffer(bufnum.max(0.0) as usize) else {
+            return 0.0;
         };
-        buf.sample((pos as usize).min(frames - 1), channel)
+        let frames = buf.frames();
+        if frames == 0 {
+            return 0.0;
+        }
+        buf.set_sample(frame_of(phase, frames, looping), channel, value);
+        value
+    }
+
+    fn reset_demand(&mut self, inputs: &mut dyn DemandInputs) {
+        inputs.reset(1);
+        inputs.reset(2);
     }
 }
 
@@ -897,5 +1304,244 @@ impl UGen for Duty {
 
     fn is_done(&self) -> bool {
         self.finished
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DemandEnvGen
+// ---------------------------------------------------------------------------
+
+/// `DemandEnvGen`'s input slots: four streams, then what it reads as values.
+const DE_LEVEL: usize = 0;
+const DE_DUR: usize = 1;
+const DE_SHAPE: usize = 2;
+const DE_CURVE: usize = 3;
+const DE_GATE: usize = 4;
+const DE_RESET: usize = 5;
+const DE_SCALE: usize = 6;
+const DE_BIAS: usize = 7;
+const DE_TIME: usize = 8;
+const DE_DONE: usize = 9;
+
+/// The custom-curvature shape number, which a curvature this close to zero
+/// turns into a line, as `EnvGen` does.
+const SHAPE_CURVE: i32 = 5;
+const SHAPE_LINEAR: i32 = 1;
+
+/// `DemandEnvGen(level, dur, shape, curve, gate, reset, levelScale,
+/// levelBias, timeScale, doneAction)`: an envelope whose breakpoints are
+/// streams. Each segment pulls its duration, its shape, its curvature and its
+/// end level, and runs from wherever the output is to that level in that
+/// shape -- a sequencer of glides, `EnvGen`'s segments with no list to end.
+///
+/// - `gate` at or above one runs; between zero and one releases at the end of
+///   the segment playing (the output holds there, and the done action fires,
+///   until the gate is back at one); at or below zero holds where it is.
+/// - A rising `reset` restarts the four streams. Up to one it discards their
+///   first level and glides on from the current one; above one it jumps there.
+/// - When the duration or the level stream ends, the envelope holds its last
+///   level and its done action fires.
+///
+/// A segment's shape is `EnvGen`'s, evaluated by the same function
+/// (`clausters_core::envshape`), and the output follows `EnvGen`'s convention:
+/// a segment's first sample is its start level and its end level is the next
+/// segment's first. The departures from scsynth's code, each a fault of it:
+///
+/// - scsynth advances before it writes and its constructor runs a sample of
+///   its own, so its output starts two steps into the first segment and never
+///   shows the first level.
+/// - Its segments step by `1 / length` with a fractional length while running
+///   a whole number of samples, so every shape but the custom curve overshoots
+///   its end level by up to a step; here a segment of `n` samples lands on its
+///   end level exactly.
+/// - The first level, and the level a reset jumps to, are scaled and biased
+///   like every other here; scsynth leaves those two raw.
+/// - A control-rate `reset` restarts once per rise; scsynth restarts on every
+///   sample of the block it rises in. A control-rate `gate` acts on the block
+///   it arrives in; scsynth acts on it a block late.
+/// - The duration stream ending ends the envelope; scsynth turns it into a
+///   segment of the largest float's length, which never ends.
+/// - The hold shape holds and then reaches its end level, as `EnvGen`'s does;
+///   scsynth has no case for it and never leaves the start level.
+/// - Its rule that a segment shorter than two samples is a line uses the
+///   duration before `timeScale`; here no shape needs one, since every shape
+///   lands on its end level in however many samples it has.
+pub struct DemandEnvGen {
+    /// False until the first slice, which reads the first level.
+    primed: bool,
+    /// The output now.
+    level: f32,
+    /// The segment playing, its end level, how far in and how long it is.
+    segment: Segment,
+    end: f32,
+    active: bool,
+    pos: f64,
+    len: f64,
+    /// Samples left before the next segment, carrying the fraction a
+    /// duration leaves so that a run of segments keeps time.
+    phase: f64,
+    /// The last shape and curvature pulled, kept when their streams end.
+    shape: i32,
+    curve: f32,
+    prev_reset: Edge,
+    /// A gate between zero and one asked for a release at the segment's end.
+    release_pending: bool,
+    /// Held at a release, until the gate is back at one.
+    released: bool,
+    /// A stream ended.
+    finished: bool,
+    action: DoneAction,
+}
+
+impl DemandEnvGen {
+    pub fn new() -> Self {
+        Self {
+            primed: false,
+            level: 0.0,
+            segment: Segment::new(SHAPE_LINEAR, 0.0, 0.0, 0.0),
+            end: 0.0,
+            active: false,
+            pos: 0.0,
+            len: 1.0,
+            phase: 0.0,
+            shape: SHAPE_LINEAR,
+            curve: 0.0,
+            prev_reset: Edge::default(),
+            release_pending: false,
+            released: false,
+            finished: false,
+            action: DoneAction::None,
+        }
+    }
+
+    /// A pulled level, scaled and biased.
+    fn scaled(inputs: &dyn DemandInputs, x: f32) -> f32 {
+        x * inputs.at(DE_SCALE) + inputs.at(DE_BIAS)
+    }
+
+    /// Pulls the next segment and starts it from the output. False when the
+    /// duration or the level stream has ended.
+    fn next_segment(&mut self, inputs: &mut dyn DemandInputs, sr: f64) -> bool {
+        let dur = inputs.pull(DE_DUR);
+        if dur.is_nan() {
+            return false;
+        }
+        self.phase += dur as f64 * inputs.at(DE_TIME) as f64 * sr;
+        let shape = inputs.pull(DE_SHAPE);
+        if !shape.is_nan() {
+            self.shape = shape as i32;
+        }
+        let curve = inputs.pull(DE_CURVE);
+        if !curve.is_nan() {
+            self.curve = curve;
+        }
+        let level = inputs.pull(DE_LEVEL);
+        if level.is_nan() {
+            return false;
+        }
+        self.end = Self::scaled(inputs, level);
+        let shape = if self.shape == SHAPE_CURVE && self.curve.abs() < 0.001 {
+            SHAPE_LINEAR
+        } else {
+            self.shape
+        };
+        self.segment = Segment::new(shape, self.curve, self.level, self.end);
+        self.len = self.phase.ceil().max(1.0);
+        self.pos = 0.0;
+        self.active = true;
+        true
+    }
+}
+
+impl Default for DemandEnvGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for DemandEnvGen {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn drive(&mut self, ctx: &ProcessCtx, inputs: &mut dyn DemandInputs, output: &mut [f32]) {
+        let sr = ctx.sample_rate as f64;
+        if !self.primed {
+            self.primed = true;
+            inputs.seek(0);
+            let first = inputs.pull(DE_LEVEL);
+            self.level = if first.is_nan() {
+                0.0
+            } else {
+                Self::scaled(inputs, first)
+            };
+            self.end = self.level;
+        }
+        for (i, out) in output.iter_mut().enumerate() {
+            inputs.seek(i);
+            let reset = inputs.at(DE_RESET);
+            if self.prev_reset.rose(reset) {
+                for k in [DE_LEVEL, DE_DUR, DE_SHAPE, DE_CURVE] {
+                    inputs.reset(k);
+                }
+                let first = inputs.pull(DE_LEVEL);
+                if reset > 1.0 && !first.is_nan() {
+                    self.level = Self::scaled(inputs, first);
+                }
+                self.active = false;
+                self.phase = 0.0;
+                self.release_pending = false;
+                self.released = false;
+                self.finished = false;
+            }
+            let gate = inputs.at(DE_GATE);
+            if gate >= 1.0 {
+                self.released = false;
+            } else if gate > 0.0 {
+                self.release_pending = true;
+            }
+            self.action = DoneAction::from_i32(inputs.at(DE_DONE) as i32);
+            let running = gate > 0.0 && !self.released && !self.finished;
+            if running && self.phase <= 0.0 {
+                // A release waits for a segment to end: one asked for before
+                // the first segment (or right after a reset) lets that segment
+                // play.
+                let landed = self.active;
+                if landed {
+                    self.level = self.end;
+                    self.active = false;
+                }
+                if landed && self.release_pending {
+                    self.release_pending = false;
+                    self.released = true;
+                } else if !self.next_segment(inputs, sr) {
+                    self.finished = true;
+                }
+            }
+            if self.active {
+                self.level = self.segment.at((self.pos / self.len) as f32);
+                if running {
+                    self.pos += 1.0;
+                    self.phase -= 1.0;
+                }
+            }
+            *out = self.level;
+        }
+    }
+
+    fn done(&self) -> DoneAction {
+        if self.finished || self.released {
+            self.action
+        } else {
+            DoneAction::None
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.finished || self.released
     }
 }

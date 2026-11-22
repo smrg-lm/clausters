@@ -93,6 +93,7 @@ def cases() -> list[dict]:
         _buffers,
         _envelopes,
         _demand,
+        _checks,
         _random,
         _sections,
         _lfugens,
@@ -672,6 +673,97 @@ def _demand() -> list[dict]:
     durs = g.add("Dseq", "dr", 1, 0.0003, 0.0005)
     g.add("Duty", "ar", durs, 0, 1, 2, sc={"inputs": [durs, 0, 2, 1]})
     out.append(case("Duty.done", g, 8))
+    # The sources scsynth has beside those.
+    out.append(pulled("Dser", ("Dser", [7, 1, 2.5, -1])))
+    out.append(pulled("Ddup", ("Dseq", [10, 1, 2, 3]), ("Ddup", [3, {"ugen": 1}])))
+    # Weights that sum to one, which is where scsynth's pick and the server's
+    # (scaled by the sum) are the same draw.
+    out.append(pulled("Dwrand", ("Dwrand", [60, 3, 0.25, 0.25, 0.5, 10, 20, 30]), seed=31))
+    # No stream is picked twice in a row and none is a plain number: there
+    # scsynth's switch ends or sticks (see `dsp::demand::Dswitch`).
+    out.append(
+        pulled(
+            "Dswitch",
+            ("Dseq", [4, 0, 1, 2, 1, 0, 2]),
+            ("Dseq", [1, 1, 2, 3]),
+            ("Dseq", [1, 10, 20]),
+            ("Dseries", [2, 100, 1]),
+            ("Dswitch", [{"ugen": 1}, {"ugen": 2}, {"ugen": 3}, {"ugen": 4}]),
+        )
+    )
+    out.append(
+        pulled(
+            "Dconst",
+            ("Dseq", [100, 0.3, 0.5, 0.45]),
+            ("Dconst", [2, {"ugen": 1}, 0.001]),
+            ("Dseq", [6, {"ugen": 2}]),
+        )
+    )
+    out.append(
+        pulled("Dreset", ("Dseries", [1000, 0, 1]), ("Dseq", [100, 0, 0, 1, 0, 0, 0, 1]), ("Dreset", [{"ugen": 1}, {"ugen": 2}]))
+    )  # fmt: skip
+    # Not running, so nothing is posted: the stream passes through. scsynth
+    # carries the label as characters after the inputs, here none.
+    g = G()
+    t = g.add("Impulse", "ar", 3100, 0)
+    d = g.add("Dseries", "dr", 20, 1, 2)
+    p = g.add("Dpoll", "dr", d, -1, 0, sc={"inputs": [d, -1, 0, 0]})
+    g.add("Demand", "ar", t, 0, p)
+    out.append(case("Dpoll", g, 8))
+    # Dbufwr writes what a Dbufrd later in the graph reads back.
+    g = G()
+    t = g.add("Impulse", "ar", 3100, 0)
+    wp = g.add("Dseries", "dr", 1000, 0, 1)
+    wv = g.add("Dseq", "dr", 100, 5, -6, 7, 0.5)
+    w = g.add("Dbufwr", "dr", 0, wp, wv, 1, 0, sc={"inputs": [0, wp, wv, 1]})
+    g.add("Demand", "ar", t, 0, w)
+    rp = g.add("Dseries", "dr", 1000, 0, 1)
+    r = g.add("Dbufrd", "dr", 0, rp, 1)
+    g.add("Demand", "ar", t, 0, r)
+    buf = [{"num": 0, "channels": 1, "frames": 6, "data": [0, 0, 0, 0, 0, 0]}]
+    out.append(case("Dbufwr", g, 8, buffers=buf))
+    # DemandEnvGen: every shape but step and hold, segments a whole number of
+    # samples long at a rate where the durations are exact, levels that run
+    # out after two passes. No duration is under two samples before the time
+    # scale, where scsynth makes any shape a line.
+    why = (
+        "scsynth advances before it writes and its constructor runs a sample, so "
+        "its output is two steps into the envelope (see `dsp::demand::DemandEnvGen`); "
+        "it steps its shapes by recurrence, the server evaluates them"
+    )
+    for rate, blocks, unit in [("ar", 14, 1 / 32768), ("kr", 24, 1 / 512)]:
+        g = G()
+        lev = g.add("Dseq", "dr", 2, 0.1, 1, 0.25, 0.6, 0.05)
+        durs = [n * unit for n in ([32, 64, 48, 16, 24] if rate == "ar" else [3, 2, 4, 2, 5])]
+        dur = g.add("Dseq", "dr", 100, *durs)
+        shape = g.add("Dseq", "dr", 100, 1, 3, 4, 5, 6, 7, 2)
+        curve = g.add("Dseq", "dr", 100, -3, 2)
+        g.add("DemandEnvGen", rate, lev, dur, shape, curve, 1, 1, 1, 0, 2, 0)
+        out.append(case(f"DemandEnvGen.{rate}", g, blocks, sr=32768, shift=2, tol=1e-4, why=why))
+    return out
+
+
+def _checks() -> list[dict]:
+    """The test UGens over a signal with every kind of number in it but the
+    denormal, which arithmetic in flush-to-zero mode cannot make: a saw
+    divided by a pulse is infinite where the pulse is zero, and that times a
+    second pulse is a NaN where both are."""
+    out = []
+    for rate, blocks, f in [("ar", 4, 997), ("kr", 32, 37)]:
+        g = G()
+        a = g.add("LFSaw", rate, f, 0.3, sc={"inputs": [f, 0.6]})
+        p = g.add("LFPulse", rate, f * 1.37, 0, 0.5)
+        q = g.add("LFPulse", rate, f * 0.61, 0, 0.5)
+        x = g.add("BinaryOpUGen", rate, g.add("BinaryOpUGen", rate, a, p, op="div"), q, op="mul")
+        g.add("CheckBadValues", rate, x, 3, 0)
+        out.append(case(f"CheckBadValues.{rate}", g, blocks))
+        g = G()
+        a = g.add("LFSaw", rate, f, 0.3, sc={"inputs": [f, 0.6]})
+        p = g.add("LFPulse", rate, f * 1.37, 0, 0.5)
+        q = g.add("LFPulse", rate, f * 0.61, 0, 0.5)
+        x = g.add("BinaryOpUGen", rate, g.add("BinaryOpUGen", rate, a, p, op="div"), q, op="mul")
+        g.add("Sanitize", rate, x, 0.25)
+        out.append(case(f"Sanitize.{rate}", g, blocks))
     return out
 
 

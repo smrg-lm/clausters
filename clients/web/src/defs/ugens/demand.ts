@@ -80,3 +80,62 @@ export const dswitch1 = (
     ...items: readonly Channel[] | [ChannelList | readonly Channel[]]
 ): Ugen => new Ugen("Dswitch1", [which, ...sources(items)], { rate: "dr" });
 
+
+/**
+ * `repeats` items read from `values` in order, round and round (`0`
+ * endlessly): where {@link dseq} counts passes over the list, this counts
+ * items -- `dser([1, 2, 3], 5)` is `1 2 3 1 2`.
+ */
+export const dser = (
+    values: ChannelList | readonly Channel[],
+    repeats: Channel = 0.0,
+): Ugen => new Ugen("Dser", [repeats, ...demandValues(values)], { rate: "dr" });
+
+/**
+ * `repeats` items drawn at random from `values`, each as likely as its share
+ * of `weights`. The weights need not sum to one; a value with no weight is
+ * never drawn, and a weight with no value is dropped.
+ */
+export const dwrand = (
+    values: ChannelList | readonly Channel[],
+    weights: ChannelList | readonly Channel[],
+    repeats: Channel = 0.0,
+): Ugen => {
+    const items = demandValues(values);
+    const given = weights instanceof ChannelList ? [...weights.items] : [...weights];
+    const w = items.map((_, i) => given[i] ?? 0.0);
+    return new Ugen("Dwrand", [repeats, items.length, ...w, ...items], { rate: "dr" });
+};
+
+/**
+ * Plays the **whole** stream `which` picks, then picks again: where
+ * {@link dswitch1} takes one item, this one drains. A plain number is a stream
+ * of one item, and a stream picked again plays again from its start. The
+ * index wraps into range. Accepts the sources as arguments or as one list.
+ */
+export const dswitch = (
+    which: Channel,
+    ...items: readonly Channel[] | [ChannelList | readonly Channel[]]
+): Ugen => new Ugen("Dswitch", [which, ...sources(items)], { rate: "dr" });
+
+/** The options of {@link dpoll}. */
+export interface DpollOptions {
+    /** What each post starts with. */
+    label?: string;
+}
+
+/**
+ * Passes the `signal` stream through and, while `run` is above zero, posts
+ * `label: value` for every item to the server console and, when
+ * `trigId >= 0`, also sends `/node_trigger nodeID trigId value` --
+ * `poll` for a stream. `run` may be a stream too.
+ *
+ * `label` is a **static** field, in the options, so the positional
+ * parameters are the wire's three inputs in the wire's order.
+ */
+export const dpoll = (
+    signal: Channel,
+    trigId: Channel = -1,
+    run: Channel = 1,
+    { label = "dpoll" }: DpollOptions = {},
+): Ugen => new Ugen("Dpoll", [signal, trigId, run], { rate: "dr", label });

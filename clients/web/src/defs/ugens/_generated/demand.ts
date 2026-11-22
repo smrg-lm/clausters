@@ -68,6 +68,28 @@ export const dstutter = (repeats: Channel, value: Channel): Ugen =>
     new Ugen("Dstutter", [repeats, value], { rate: "dr" });
 
 /**
+ * Repeats each item of the `value` stream `repeats` times: sclang's
+ * newer name for `dstutter`, and the same stream.
+ */
+export const ddup = (repeats: Channel, value: Channel): Ugen =>
+    new Ugen("Ddup", [repeats, value], { rate: "dr" });
+
+/**
+ * Yields the `signal` stream until its items add up to `sum`, the
+ * last one cut to land on it -- durations that fill a bar exactly. Within
+ * `tolerance` of the sum counts as there.
+ */
+export const dconst = (sum: Channel, signal: Channel, tolerance: Channel = 0.001): Ugen =>
+    new Ugen("Dconst", [sum, signal, tolerance], { rate: "dr" });
+
+/**
+ * Passes the `signal` stream through, and restarts it when the `reset`
+ * stream rises. The restart shows on the next item.
+ */
+export const dreset = (signal: Channel, reset: Channel = 0.0): Ugen =>
+    new Ugen("Dreset", [signal, reset], { rate: "dr" });
+
+/**
  * Reads the buffer frame the `phase` stream names -- a `dseries` phase
  * walks it as a step sequence. Out of range it wraps when `loop` is set and
  * clamps when it is not.
@@ -78,6 +100,19 @@ export const dbufrd = (
     loop: Channel = 1.0,
     channel: Channel = 0.0,
 ): Ugen => new Ugen("Dbufrd", [bufnum, phase, loop, channel], { rate: "dr" });
+
+/**
+ * Writes each item of the `signal` stream into the buffer frame the
+ * `phase` stream names, and yields it -- the writing twin of `dbufrd`. Out of
+ * range the frame wraps when `loop` is set and clamps when it is not.
+ */
+export const dbufwr = (
+    bufnum: Channel,
+    phase: Channel,
+    signal: Channel,
+    loop: Channel = 1.0,
+    channel: Channel = 0.0,
+): Ugen => new Ugen("Dbufwr", [bufnum, phase, signal, loop, channel], { rate: "dr" });
 
 /**
  * Demand driver: pulls the next value from `source` on each rising edge
@@ -116,3 +151,28 @@ export const tduty = (
     doneAction: Channel = 0.0,
     gapFirst: Channel = 0.0,
 ): Ugen => new Ugen("TDuty", [dur, reset, level, doneAction, gapFirst]);
+
+/**
+ * An envelope whose breakpoints are streams: each segment pulls its
+ * duration, shape, curvature and end level, and glides from wherever the
+ * output is. `shape` and `curve` are `envGen`'s.
+ *
+ * A `gate` at or above one runs; between zero and one releases at the end
+ * of the segment playing (holding there, and firing `doneAction`, until the
+ * gate is back at one); at or below zero holds. A rising `reset` restarts the
+ * streams: up to one it glides on from the current level, above one it jumps
+ * to the first. When the duration or the level stream ends, the envelope holds
+ * its last level and `doneAction` fires.
+ */
+export const demandEnvGen = (
+    level: Channel,
+    dur: Channel,
+    shape: Channel = 1.0,
+    curve: Channel = 0.0,
+    gate: Channel = 1.0,
+    reset: Channel = 1.0,
+    levelScale: Channel = 1.0,
+    levelBias: Channel = 0.0,
+    timeScale: Channel = 1.0,
+    doneAction: Channel = 0.0,
+): Ugen => new Ugen("DemandEnvGen", [level, dur, shape, curve, gate, reset, levelScale, levelBias, timeScale, doneAction]);

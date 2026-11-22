@@ -21,13 +21,13 @@ use crate::dsp::{
 
 /// A fixed-capacity, allocation-free buffer of the reply messages a UGen
 /// accumulates within one block; the synth drains it afterwards.
-struct ReplyBuffer {
+pub(crate) struct ReplyBuffer {
     msgs: [ReplyMsg; REPLY_BUFFER_LEN],
     len: usize,
 }
 
 impl ReplyBuffer {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             msgs: [ReplyMsg::default(); REPLY_BUFFER_LEN],
             len: 0,
@@ -36,7 +36,7 @@ impl ReplyBuffer {
 
     /// Buffers one message, dropping it once the block's capacity is reached.
     #[inline]
-    fn push(&mut self, msg: ReplyMsg) {
+    pub(crate) fn push(&mut self, msg: ReplyMsg) {
         if self.len < REPLY_BUFFER_LEN {
             self.msgs[self.len] = msg;
             self.len += 1;
@@ -44,7 +44,7 @@ impl ReplyBuffer {
     }
 
     /// Emits every buffered message stamped with `node_id`, then clears.
-    fn drain(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+    pub(crate) fn drain(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
         for msg in &mut self.msgs[..self.len] {
             msg.node_id = node_id;
             sink(*msg);

@@ -108,6 +108,26 @@ export const localOut = (channel: Channel, signal: Channel): Ugen =>
     new Ugen("LocalOut", [channel, signal]);
 
 /**
+ * The class of every sample of `signal`: 0 for an ordinary number (zero
+ * included), 1 for a NaN, 2 for an infinity, 3 for a denormal. `post` says when
+ * it is also written to the server's console: 0 never, 1 at every bad sample,
+ * 2 whenever the class changes, with how long the previous one lasted. `id`
+ * tells one check from another there.
+ */
+export const checkBadValues = (
+    signal: Channel,
+    id: Channel = 0.0,
+    post: Channel = 2.0,
+): Ugen => new Ugen("CheckBadValues", [signal, id, post]);
+
+/**
+ * `signal` with every NaN, infinity and denormal replaced by `replace`:
+ * a guard before a filter whose state one NaN would ruin for good.
+ */
+export const sanitize = (signal: Channel, replace: Channel = 0.0): Ugen =>
+    new Ugen("Sanitize", [signal, replace]);
+
+/**
  * Reads an audio bus whatever the order of the nodes: this block's samples
  * if the bus has been written this block, else the last block's -- the
  * feedback between synths `in_` cannot read.

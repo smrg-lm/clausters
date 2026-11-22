@@ -85,6 +85,13 @@ const TRAILING: Record<string, string> = {
     Rotate2: "chan is filled by the builder, once per output channel",
     MidSide: "chan is filled by the builder, once per output channel",
     StereoWidth: "chan is filled by the builder, once per output channel",
+    Pan4: "chan is filled by the builder, once per output channel",
+    PanB: "chan is filled by the builder, once per output channel",
+    PanB2: "chan is filled by the builder, once per output channel",
+    BiPanB2: "chan is filled by the builder, once per output channel",
+    FreeVerb2: "chan is filled by the builder, once per output channel",
+    GVerb: "chan is filled by the builder, once per output channel",
+    Dpoll: "the static label comes in a trailing options object",
 };
 
 /** Kinds whose parameter list cannot line up at all, and why. */
@@ -108,6 +115,20 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
     DiskOut: "path/format are static fields; only signal is an input",
     PV_Kernel: "mag/phase are static fields; the wire takes chain + params",
     PanAz: "numchans leads here and trails on the wire, beside the filled chan",
+    DecodeB2: "numchans leads here and trails on the wire, beside the filled chan",
+    GrainIn: "numchans leads here and trails on the wire, beside the filled chan",
+    GrainSin: "numchans leads here and trails on the wire, beside the filled chan",
+    GrainFM: "numchans leads here and trails on the wire, beside the filled chan",
+    GrainBuf: "numchans leads here and trails on the wire, beside the filled chan",
+    TGrains: "numchans leads here and trails on the wire, beside the filled chan",
+    Warp1: "built once a channel of the buffer; their count leads here",
+    ScopeOut: "the signals lead in TS; the buffer leads on the wire",
+    LocalBuf: "the frames lead in TS, as in every buffer's shape; the channels lead on the wire",
+    SetBuf: "the value list comes before offset in TS, after offset and its count on the wire",
+    VDiskIn: "path/loop/start are static fields; only chan and rate are inputs",
+    Dser: "repeats leads on the wire; the value list leads here",
+    Dwrand: "repeats and the size lead on the wire; the value and weight lists lead here",
+    Dswitch: "the value list is a variadic tail",
 };
 
 /**

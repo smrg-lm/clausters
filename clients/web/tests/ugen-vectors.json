@@ -393,6 +393,54 @@
       ]
     },
     {
+      "name": "Ball",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "g",
+          "default": 1.0
+        },
+        {
+          "name": "damp",
+          "default": 0.0
+        },
+        {
+          "name": "friction",
+          "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
+      "name": "BiPanB2",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "a",
+          "default": 0.0
+        },
+        {
+          "name": "b",
+          "default": 0.0
+        },
+        {
+          "name": "azimuth",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "BinaryOpUGen",
       "arity": 2,
       "inputs": [
@@ -797,6 +845,34 @@
       ]
     },
     {
+      "name": "CheckBadValues",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "id",
+          "default": 0.0
+        },
+        {
+          "name": "post",
+          "default": 2.0
+        }
+      ]
+    },
+    {
+      "name": "ClearBuf",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Clip",
       "arity": 3,
       "inputs": [
@@ -1072,6 +1148,64 @@
       ]
     },
     {
+      "name": "Dbufwr",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "loop",
+          "default": 1.0
+        },
+        {
+          "name": "channel",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Dconst",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "sum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "tolerance",
+          "default": 0.0010000000474974513
+        }
+      ]
+    },
+    {
+      "name": "Ddup",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "repeats",
+          "default": 1.0
+        },
+        {
+          "name": "value",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Decay",
       "arity": 2,
       "inputs": [
@@ -1104,6 +1238,36 @@
       ]
     },
     {
+      "name": "DecodeB2",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "w",
+          "default": 0.0
+        },
+        {
+          "name": "x",
+          "default": 0.0
+        },
+        {
+          "name": "y",
+          "default": 0.0
+        },
+        {
+          "name": "orientation",
+          "default": 0.5
+        },
+        {
+          "name": "numchans",
+          "default": 4.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "DegreeToKey",
       "arity": 3,
       "inputs": [
@@ -1118,6 +1282,42 @@
         {
           "name": "octave",
           "default": 12.0
+        }
+      ]
+    },
+    {
+      "name": "DelTapRd",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
+        },
+        {
+          "name": "deltime",
+          "default": 0.0
+        },
+        {
+          "name": "interp",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "DelTapWr",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
         }
       ]
     },
@@ -1209,6 +1409,52 @@
         },
         {
           "name": "source",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "DemandEnvGen",
+      "arity": 10,
+      "inputs": [
+        {
+          "name": "level",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 0.0
+        },
+        {
+          "name": "shape",
+          "default": 1.0
+        },
+        {
+          "name": "curve",
+          "default": 0.0
+        },
+        {
+          "name": "gate",
+          "default": 1.0
+        },
+        {
+          "name": "reset",
+          "default": 1.0
+        },
+        {
+          "name": "level_scale",
+          "default": 1.0
+        },
+        {
+          "name": "level_bias",
+          "default": 0.0
+        },
+        {
+          "name": "time_scale",
+          "default": 1.0
+        },
+        {
+          "name": "done_action",
           "default": 0.0
         }
       ]
@@ -1352,6 +1598,24 @@
       ]
     },
     {
+      "name": "Dpoll",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "trig_id",
+          "default": -1.0
+        },
+        {
+          "name": "run",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "Drand",
       "arity": -1,
       "inputs": [
@@ -1362,7 +1626,31 @@
       ]
     },
     {
+      "name": "Dreset",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "reset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Dseq",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "repeats",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Dser",
       "arity": -1,
       "inputs": [
         {
@@ -1409,6 +1697,16 @@
         },
         {
           "name": "value",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Dswitch",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "which",
           "default": 0.0
         }
       ]
@@ -1480,6 +1778,20 @@
         {
           "name": "hi",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Dwrand",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "repeats",
+          "default": 0.0
+        },
+        {
+          "name": "size",
+          "default": 0.0
         }
       ]
     },
@@ -1828,6 +2140,58 @@
       ]
     },
     {
+      "name": "FreeVerb",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "mix",
+          "default": 0.33000001311302185
+        },
+        {
+          "name": "room",
+          "default": 0.5
+        },
+        {
+          "name": "damp",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "FreeVerb2",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "signal2",
+          "default": 0.0
+        },
+        {
+          "name": "mix",
+          "default": 0.33000001311302185
+        },
+        {
+          "name": "room",
+          "default": 0.5
+        },
+        {
+          "name": "damp",
+          "default": 0.5
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "FreqShift",
       "arity": 3,
       "inputs": [
@@ -1841,6 +2205,56 @@
         },
         {
           "name": "phase",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "GVerb",
+      "arity": 11,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "roomsize",
+          "default": 10.0
+        },
+        {
+          "name": "revtime",
+          "default": 3.0
+        },
+        {
+          "name": "damping",
+          "default": 0.5
+        },
+        {
+          "name": "inputbw",
+          "default": 0.5
+        },
+        {
+          "name": "spread",
+          "default": 15.0
+        },
+        {
+          "name": "drylevel",
+          "default": 1.0
+        },
+        {
+          "name": "earlyreflevel",
+          "default": 0.699999988079071
+        },
+        {
+          "name": "taillevel",
+          "default": 0.5
+        },
+        {
+          "name": "maxroomsize",
+          "default": 300.0
+        },
+        {
+          "name": "chan",
           "default": 0.0
         }
       ]
@@ -2034,6 +2448,208 @@
         {
           "name": "knum",
           "default": 12.0
+        }
+      ]
+    },
+    {
+      "name": "GrainBuf",
+      "arity": 11,
+      "inputs": [
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 1.0
+        },
+        {
+          "name": "sndbuf",
+          "default": 0.0
+        },
+        {
+          "name": "rate",
+          "default": 1.0
+        },
+        {
+          "name": "pos",
+          "default": 0.0
+        },
+        {
+          "name": "interp",
+          "default": 2.0
+        },
+        {
+          "name": "pan",
+          "default": 0.0
+        },
+        {
+          "name": "envbufnum",
+          "default": -1.0
+        },
+        {
+          "name": "max_grains",
+          "default": 512.0
+        },
+        {
+          "name": "numchans",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "GrainFM",
+      "arity": 10,
+      "inputs": [
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 1.0
+        },
+        {
+          "name": "carfreq",
+          "default": 440.0
+        },
+        {
+          "name": "modfreq",
+          "default": 200.0
+        },
+        {
+          "name": "index",
+          "default": 1.0
+        },
+        {
+          "name": "pan",
+          "default": 0.0
+        },
+        {
+          "name": "envbufnum",
+          "default": -1.0
+        },
+        {
+          "name": "max_grains",
+          "default": 512.0
+        },
+        {
+          "name": "numchans",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "GrainIn",
+      "arity": 8,
+      "inputs": [
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 1.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "pan",
+          "default": 0.0
+        },
+        {
+          "name": "envbufnum",
+          "default": -1.0
+        },
+        {
+          "name": "max_grains",
+          "default": 512.0
+        },
+        {
+          "name": "numchans",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "GrainSin",
+      "arity": 8,
+      "inputs": [
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 1.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "pan",
+          "default": 0.0
+        },
+        {
+          "name": "envbufnum",
+          "default": -1.0
+        },
+        {
+          "name": "max_grains",
+          "default": 512.0
+        },
+        {
+          "name": "numchans",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "GrainTap",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "grain_dur",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "pch_ratio",
+          "default": 1.0
+        },
+        {
+          "name": "pch_dispersion",
+          "default": 0.0
+        },
+        {
+          "name": "time_dispersion",
+          "default": 0.0
+        },
+        {
+          "name": "overlap",
+          "default": 2.0
         }
       ]
     },
@@ -3135,6 +3751,20 @@
       ]
     },
     {
+      "name": "LocalBuf",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "channels",
+          "default": 1.0
+        },
+        {
+          "name": "frames",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "LocalIn",
       "arity": 1,
       "inputs": [
@@ -3225,6 +3855,16 @@
         {
           "name": "bits",
           "default": 3.0
+        }
+      ]
+    },
+    {
+      "name": "MaxLocalBufs",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "count",
+          "default": 0.0
         }
       ]
     },
@@ -3818,6 +4458,32 @@
       ]
     },
     {
+      "name": "Pan4",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "xpos",
+          "default": 0.0
+        },
+        {
+          "name": "ypos",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "PanAz",
       "arity": 7,
       "inputs": [
@@ -3844,6 +4510,54 @@
         {
           "name": "numchans",
           "default": 2.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PanB",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "azimuth",
+          "default": 0.0
+        },
+        {
+          "name": "elevation",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PanB2",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "azimuth",
+          "default": 0.0
+        },
+        {
+          "name": "level",
+          "default": 1.0
         },
         {
           "name": "chan",
@@ -3945,6 +4659,32 @@
       "inputs": []
     },
     {
+      "name": "PitchShift",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "window_size",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "pitch_ratio",
+          "default": 1.0
+        },
+        {
+          "name": "pitch_dispersion",
+          "default": 0.0
+        },
+        {
+          "name": "time_dispersion",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "PlayBuf",
       "arity": 7,
       "inputs": [
@@ -3975,6 +4715,36 @@
         {
           "name": "done_action",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Pluck",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 1.0
+        },
+        {
+          "name": "maxdelaytime",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "delaytime",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "decaytime",
+          "default": 1.0
+        },
+        {
+          "name": "coef",
+          "default": 0.5
         }
       ]
     },
@@ -4458,6 +5228,20 @@
       "inputs": []
     },
     {
+      "name": "Sanitize",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "replace",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Saw",
       "arity": 1,
       "inputs": [
@@ -4482,6 +5266,16 @@
         {
           "name": "hi",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "ScopeOut",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
         }
       ]
     },
@@ -4551,6 +5345,24 @@
         },
         {
           "name": "value",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "SetBuf",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "offset",
+          "default": 0.0
+        },
+        {
+          "name": "count",
           "default": 0.0
         }
       ]
@@ -4659,6 +5471,24 @@
       "inputs": [
         {
           "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Spring",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "spring",
+          "default": 1.0
+        },
+        {
+          "name": "damp",
           "default": 0.0
         }
       ]
@@ -4901,6 +5731,28 @@
       ]
     },
     {
+      "name": "TBall",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "g",
+          "default": 10.0
+        },
+        {
+          "name": "damp",
+          "default": 0.0
+        },
+        {
+          "name": "friction",
+          "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
       "name": "TDelay",
       "arity": 2,
       "inputs": [
@@ -4954,6 +5806,52 @@
         },
         {
           "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "TGrains",
+      "arity": 10,
+      "inputs": [
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "rate",
+          "default": 1.0
+        },
+        {
+          "name": "center_pos",
+          "default": 0.0
+        },
+        {
+          "name": "dur",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "pan",
+          "default": 0.0
+        },
+        {
+          "name": "amp",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "interp",
+          "default": 4.0
+        },
+        {
+          "name": "numchans",
+          "default": 2.0
+        },
+        {
+          "name": "chan",
           "default": 0.0
         }
       ]
@@ -5210,6 +6108,20 @@
       ]
     },
     {
+      "name": "VDiskIn",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "chan",
+          "default": 0.0
+        },
+        {
+          "name": "rate",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "VOsc",
       "arity": 3,
       "inputs": [
@@ -5323,6 +6235,48 @@
         },
         {
           "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Warp1",
+      "arity": 9,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "pointer",
+          "default": 0.0
+        },
+        {
+          "name": "freq_scale",
+          "default": 1.0
+        },
+        {
+          "name": "window_size",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "envbufnum",
+          "default": -1.0
+        },
+        {
+          "name": "overlaps",
+          "default": 8.0
+        },
+        {
+          "name": "window_rand_ratio",
+          "default": 0.0
+        },
+        {
+          "name": "interp",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
           "default": 0.0
         }
       ]

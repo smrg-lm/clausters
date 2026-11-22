@@ -928,6 +928,14 @@ impl Renderer {
                         crate::dsp::describe_fault(&msg)
                     ));
                 }
+                ReplyKind::BadValue => {
+                    #[cfg(feature = "synth")]
+                    tracing::warn!(
+                        target: crate::logging::OSC_TARGET,
+                        "{}",
+                        crate::dsp::bad_value_line(&msg)
+                    );
+                }
                 ReplyKind::Poll => {
                     tracing::info!(
                         target: crate::logging::OSC_TARGET,

@@ -36,6 +36,15 @@ const HALF: usize = BLOCK_SIZE * 64;
 /// The kinds with no state that outlives a block: what they output is a
 /// function of this block's inputs and the context.
 const STATELESS: &[(&str, &str)] = &[
+    ("Sanitize", "a sample in, a sample out"),
+    (
+        "Dbufwr",
+        "writes the buffer at its phase stream and holds nothing",
+    ),
+    (
+        "Dpoll",
+        "passes its stream through and posts it; holds nothing",
+    ),
     ("Add", "arithmetic"),
     ("Sub", "arithmetic"),
     ("Mul", "arithmetic"),
@@ -148,6 +157,7 @@ const STOCHASTIC: &[&str] = &[
     "Dbrown",
     "Dibrown",
     "Drand",
+    "Dwrand",
     "Dxrand",
     "Dshuf",
     "WhiteNoise",
@@ -218,7 +228,7 @@ const REPLIES: &[&str] = &["SendTrig", "SendReply", "Poll"];
 
 /// The kinds whose state shows in what they ask rather than in a signal:
 /// [`what_a_kind_asks_restarts_after_a_reset`] resets them.
-const ASKING: &[&str] = &["Free", "Pause", "SendPeakRMS"];
+const ASKING: &[&str] = &["Free", "Pause", "SendPeakRMS", "CheckBadValues"];
 
 /// A case the subject table does not hold: a def, the signal on its `In`
 /// (bus [`IN_BUS`]) and the control sets it runs with.
@@ -813,6 +823,33 @@ fn cases() -> Vec<Case> {
             ]),
         ),
         Case::new(
+            "demandlists",
+            json!([
+                {"kind": "Dser", "inputs": [c(1000.0), c(1.0), c(2.0), c(3.0)]},
+                {"kind": "Ddup", "inputs": [c(2.0), u(0)]},
+                {"kind": "Dseries", "inputs": [c(1000.0), c(10.0), c(1.0)]},
+                {"kind": "Dconst", "inputs": [c(500.0), u(2), c(0.001)]},
+                {"kind": "Dseq", "inputs": [c(0.0), c(0.0), c(0.0), c(1.0)]},
+                {"kind": "Dreset", "inputs": [u(3), u(4)]},
+                {"kind": "Dseq", "inputs": [c(0.0), c(0.0), c(1.0)]},
+                {"kind": "Dswitch", "inputs": [u(6), u(1), u(5)]},
+                {"kind": "Impulse", "inputs": [c(3000.0)]},
+                {"kind": "Demand", "inputs": [u(8), c(0.0), u(7)]},
+                out(9),
+            ]),
+        ),
+        gated(Case::new(
+            "demandenvgen",
+            json!([
+                {"kind": "Dseq", "inputs": [c(0.0), c(0.1), c(1.0), c(0.4)]},
+                {"kind": "Dseq", "inputs": [c(0.0), c(0.003), c(0.002), c(0.005)]},
+                {"kind": "Dseq", "inputs": [c(0.0), c(1.0), c(3.0), c(5.0)]},
+                {"kind": "DemandEnvGen", "inputs": [u(0), u(1), u(2), c(-2.0),
+                    {"control": 0}, c(1.0), c(1.0), c(0.0), c(1.0), c(0.0)]},
+                out(3),
+            ]),
+        )),
+        Case::new(
             "dbufrd",
             json!([
                 {"kind": "Dseries", "inputs": [c(1000.0), c(0.0), c(3.0)]},
@@ -1171,6 +1208,41 @@ fn what_a_kind_asks_restarts_after_a_reset() {
         format!("{:?}", replies[1]),
         "a reset measures afresh"
     );
+}
+
+#[test]
+fn check_bad_values_counts_afresh_after_a_reset() {
+    // Its state is the run it is counting, and it shows only in what it
+    // posts: a reset forgets the run, so the same block posts the same again.
+    let buses = Buses::new(ControlBuses::new(4), 4);
+    let ctx = BuildCtx::new(SR, BLOCK_SIZE, 1);
+    let mut ugen = (lookup("CheckBadValues").unwrap().build)(&UGenConfig::default(), &ctx);
+    let x = [1.0f32, 1.0, f32::NAN, 1.0];
+    let (id, post) = ([2.0f32], [2.0f32]);
+    let mut posts = Vec::new();
+    for reset in [false, true] {
+        if reset {
+            ugen.reset();
+        }
+        let mut ctx = ProcessCtx {
+            sample_rate: SR,
+            full_sample_rate: SR,
+            buses: &buses,
+            buffers: &[],
+            local_buffers: &[],
+            offset: 0,
+            frames: BLOCK_SIZE,
+            transport: Default::default(),
+            server: clausters::dsp::ServerFacts::default(),
+        };
+        let mut output = [0.0f32; 4];
+        ugen.process(&mut ctx, &[&x, &id, &post], &mut output);
+        let mut block = Vec::new();
+        ugen.drain_replies(1, &mut |m| block.push(format!("{m:?}")));
+        posts.push(block);
+    }
+    assert_eq!(posts[0].len(), 2, "{posts:?}");
+    assert_eq!(posts[0], posts[1], "a reset counts afresh");
 }
 
 #[test]

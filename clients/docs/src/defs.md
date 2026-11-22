@@ -518,6 +518,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Demand (`dr`) | `dseq(values, repeats=0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats=0.0)` / `dxrand(...)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
 | | `dshuf(values, repeats=0.0)` | the list shuffled **once** and replayed in that order, `repeats` passes |
+| | `dser(values, repeats=0.0)` | the list in order, `repeats` **items** rather than passes |
+| | `dwrand(values, weights, repeats=0.0)` | `repeats` items drawn at random, each as likely as its share of `weights` |
 | | `dseries(repeats=0.0, start=0.0, step=1.0)` | arithmetic sequence; `step` is read per item, so it may be a stream |
 | | `dgeom(repeats=0.0, start=1.0, grow=2.0)` | geometric sequence `start`, `start * grow`, … |
 | | `dwhite(repeats=0.0, lo=0.0, hi=1.0)` / `diwhite(...)` | independent uniform draws on `[lo, hi]`; `diwhite` over the integers, both ends included |
@@ -525,9 +527,16 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `dstutter(repeats, value)` | repeats each item of `value` `repeats` times; the count is pulled per item |
 | | `dswitch1(which, *sources)` | takes **one** item from the stream `which` picks, then picks again; the unselected ones do not advance |
 | | `dbufrd(bufnum, phase, loop=1.0, channel=0.0)` | reads the buffer frame the `phase` stream names — a `dseries` phase walks a buffer as a step sequence |
+| | `ddup(repeats, value)` | `dstutter`'s newer name, the same stream |
+| | `dswitch(which, *sources)` | plays the **whole** stream `which` picks, then picks again; a number is one item |
+| | `dconst(sum, signal, tolerance=0.001)` | yields `signal` until its items add up to `sum`, the last cut to land on it |
+| | `dreset(signal, reset=0.0)` | passes `signal` through, restarting it when the `reset` stream rises |
+| | `dpoll(signal, trig_id=-1, run=1, *, label="dpoll")` | passes `signal` through, posting each item while `run` is above zero |
+| | `dbufwr(bufnum, phase, signal, loop=1.0, channel=0.0)` | writes each item of `signal` into the frame the `phase` stream names, and yields it |
 | | `demand(trig, reset, source)` | driver: pulls one value per rising edge of `trig`, holding it in between; holds the last value once the stream ends |
 | | `duty(dur, reset=0.0, level=1.0, done_action=0)` | driver with a clock of its own: pulls one `level` every `dur` seconds and holds it; `done_action` fires when either stream ends |
 | | `tduty(dur, reset=0.0, level=1.0, done_action=0, gap_first=0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
+| | `demand_env_gen(level, dur, shape=1.0, curve=0.0, gate=1.0, reset=1.0, level_scale=1.0, level_bias=0.0, time_scale=1.0, done_action=0.0)` | an envelope whose breakpoints are streams: each segment pulls its duration, shape, curvature and end level |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
 | Maps | `lin_exp(signal, srclo, srchi, dstlo, dsthi)` | linear in, exponential out, unclipped |
@@ -543,6 +552,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
 | | `send_peak_rms(*signals, reply_rate=20, peak_lag=3, cmd, reply_id)` | replies each signal's peak and RMS, a meter's ballistics |
 | | `poll(trig, signal, trig_id=-1, *, label="poll")` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
+| | `check_bad_values(signal, id=0.0, post=2.0)` | the class of every sample (0 ordinary, 1 NaN, 2 infinity, 3 denormal), posted by `post` |
+| | `sanitize(signal, replace=0.0)` | `signal` with every NaN, infinity and denormal replaced by `replace` |
 | Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pv_mag_clip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
@@ -683,6 +694,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Demand (`dr`) | `dseq(values, repeats = 0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats = 0.0)` / `dxrand(values, repeats = 0.0)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
 | | `dshuf(values, repeats = 0.0)` | the list shuffled **once** and replayed in that order, `repeats` passes |
+| | `dser(values, repeats = 0.0)` | the list in order, `repeats` **items** rather than passes |
+| | `dwrand(values, weights, repeats = 0.0)` | `repeats` items drawn at random, each as likely as its share of `weights` |
 | | `dseries(repeats = 0.0, start = 0.0, step = 1.0)` | arithmetic sequence; `step` is read per item, so it may be a stream |
 | | `dgeom(repeats = 0.0, start = 1.0, grow = 2.0)` | geometric sequence `start`, `start * grow`, … |
 | | `dwhite(repeats = 0.0, lo = 0.0, hi = 1.0)` / `diwhite(repeats = 0.0, lo = 0.0, hi = 1.0)` | independent uniform draws on `[lo, hi]`; `diwhite` over the integers, both ends included |
@@ -690,9 +703,16 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `dstutter(repeats, value)` | repeats each item of `value` `repeats` times; the count is pulled per item |
 | | `dswitch1(which, ...items)` | takes **one** item from the stream `which` picks, then picks again; the unselected ones do not advance |
 | | `dbufrd(bufnum, phase, loop = 1.0, channel = 0.0)` | reads the buffer frame the `phase` stream names — a `dseries` phase walks a buffer as a step sequence |
+| | `ddup(repeats, value)` | `dstutter`'s newer name, the same stream |
+| | `dswitch(which, ...items)` | plays the **whole** stream `which` picks, then picks again; a number is one item |
+| | `dconst(sum, signal, tolerance = 0.001)` | yields `signal` until its items add up to `sum`, the last cut to land on it |
+| | `dreset(signal, reset = 0.0)` | passes `signal` through, restarting it when the `reset` stream rises |
+| | `dpoll(signal, trigId = -1, run = 1, { label = "dpoll" })` | passes `signal` through, posting each item while `run` is above zero |
+| | `dbufwr(bufnum, phase, signal, loop = 1.0, channel = 0.0)` | writes each item of `signal` into the frame the `phase` stream names, and yields it |
 | | `demand(trig, reset, source)` | driver: pulls one value per rising edge of `trig`, holding it in between; holds the last value once the stream ends |
 | | `duty(dur, reset = 0.0, level = 1.0, doneAction = 0)` | driver with a clock of its own: pulls one `level` every `dur` seconds and holds it; `doneAction` fires when either stream ends |
 | | `tduty(dur, reset = 0.0, level = 1.0, doneAction = 0, gapFirst = 0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
+| | `demandEnvGen(level, dur, shape = 1.0, curve = 0.0, gate = 1.0, reset = 1.0, levelScale = 1.0, levelBias = 0.0, timeScale = 1.0, doneAction = 0.0)` | an envelope whose breakpoints are streams: each segment pulls its duration, shape, curvature and end level |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
 | Maps | `linExp(signal, srclo, srchi, dstlo, dsthi)` | linear in, exponential out, unclipped |
@@ -708,6 +728,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `sendReply(trig, values = [], { cmd = "/reply", replyId = -1 })` | sends a custom OSC message with an arbitrary value list |
 | | `sendPeakRms(signals, { replyRate = 20, peakLag = 3, cmd, replyId })` | replies each signal's peak and RMS, a meter's ballistics |
 | | `poll(trig, signal, trigId = -1, { label = "poll" })` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
+| | `checkBadValues(signal, id = 0.0, post = 2.0)` | the class of every sample (0 ordinary, 1 NaN, 2 infinity, 3 denormal), posted by `post` |
+| | `sanitize(signal, replace = 0.0)` | `signal` with every NaN, infinity and denormal replaced by `replace` |
 | Spectral | `fft(source, active = 1.0, { fftSize = 1024, hop = 0.5, wintype = 0 })` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pvMagAbove(chain, threshold)` / `pvMagBelow(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pvMagClip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |

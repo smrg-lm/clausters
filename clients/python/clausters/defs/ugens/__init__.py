@@ -277,6 +277,8 @@ from .pan import (
 )
 from .io import (
     vdisk_in,
+    check_bad_values,
+    sanitize,
     clip_count,
     disk_in,
     disk_out,
@@ -426,6 +428,15 @@ from .demand import (
     dwhite,
     dxrand,
     tduty,
+    ddup,
+    dconst,
+    dreset,
+    dbufwr,
+    demand_env_gen,
+    dser,
+    dwrand,
+    dswitch,
+    dpoll,
 )
 from .env import (
     Bpf,
@@ -463,7 +474,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "SendPeakRMS", "Dseq", "Poll", "DiskIn", "VDiskIn", "DiskOut", "PV_Kernel", "ScopeOut", "LocalBuf", "SetBuf"}
+    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "SendPeakRMS", "Dseq", "Poll", "DiskIn", "VDiskIn", "DiskOut", "PV_Kernel", "ScopeOut", "LocalBuf", "SetBuf", "Dser", "Dwrand"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -664,6 +675,8 @@ __all__ = [
     "out_ctl",
     "meter",
     "poll",
+    "check_bad_values",
+    "sanitize",
     "replace_out",
     "send_reply",
     "send_trig",
@@ -758,6 +771,15 @@ __all__ = [
     "dwhite",
     "dxrand",
     "tduty",
+    "ddup",
+    "dconst",
+    "dreset",
+    "dbufwr",
+    "demand_env_gen",
+    "dser",
+    "dwrand",
+    "dswitch",
+    "dpoll",
     # env
     "Bpf",
     "DoneAction",

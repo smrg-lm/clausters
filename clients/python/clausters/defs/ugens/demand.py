@@ -71,3 +71,39 @@ def dswitch1(which, *sources) -> Ugen:
     return Ugen("Dswitch1", [which, *_sources(sources)], rate="dr")
 
 
+
+
+def dser(values, repeats=0.0) -> Ugen:
+    """``repeats`` items read from ``values`` in order, round and round (``0``
+    endlessly): where `dseq` counts passes over the list, this counts items --
+    ``dser([1, 2, 3], 5)`` is ``1 2 3 1 2``."""
+    return Ugen("Dser", [repeats, *_values(values)], rate="dr")
+
+
+def dwrand(values, weights, repeats=0.0) -> Ugen:
+    """``repeats`` items drawn at random from ``values``, each as likely as its
+    share of ``weights``. The weights need not sum to one; a value with no
+    weight is never drawn, and a weight with no value is dropped."""
+    items = _values(values)
+    w = list(weights.items if isinstance(weights, ChannelList) else weights)
+    w = (w + [0.0] * len(items))[: len(items)]
+    return Ugen("Dwrand", [repeats, len(items), *w, *items], rate="dr")
+
+
+def dswitch(which, *sources) -> Ugen:
+    """Plays the **whole** stream ``which`` picks, then picks again: where
+    `dswitch1` takes one item, this one drains. A plain number is a stream of
+    one item, and a stream picked again plays again from its start. The index
+    wraps into range. Accepts the sources as arguments or as one list."""
+    return Ugen("Dswitch", [which, *_sources(sources)], rate="dr")
+
+
+def dpoll(signal, trig_id=-1, run=1, *, label="dpoll") -> Ugen:
+    """Passes the ``signal`` stream through and, while ``run`` is above zero,
+    posts ``label: value`` for every item to the server console and, when
+    ``trig_id >= 0``, also sends ``/node_trigger nodeID trig_id value`` --
+    `poll` for a stream. ``run`` may be a stream too.
+
+    ``label`` is a **static** field and is keyword-only, so the positional
+    parameters are the wire's three inputs in the wire's order."""
+    return Ugen("Dpoll", [signal, trig_id, run], rate="dr", label=label)

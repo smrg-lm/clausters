@@ -30,6 +30,7 @@ mod audio_io;
 mod buffer_commands;
 mod capacity;
 mod chaos;
+mod checks;
 mod controls;
 mod conv;
 mod core_parity;

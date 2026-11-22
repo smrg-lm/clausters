@@ -1680,7 +1680,9 @@ holds what is open.
     reverbs and the physical models: `Pan4`, `PanB`, `PanB2`, `BiPanB2`,
     `DecodeB2`, `FreeVerb`, `FreeVerb2`, `GVerb`, `Spring`, `Ball`, `TBall`;
     the grains: `GrainBuf`, `GrainFM`, `GrainIn`, `GrainSin`, `Warp1`,
-    `TGrains`, `GrainTap`.
+    `TGrains`, `GrainTap`; the rest of the demand family and the test
+    UGens: `Dbufwr`, `Dconst`, `Ddup`, `DemandEnvGen`, `Dpoll`, `Dreset`,
+    `Dser`, `Dswitch`, `Dwrand`, `CheckBadValues`, `Sanitize`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1708,9 +1710,6 @@ holds what is open.
     names, 19 of them out of scope above, 188 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **11. Demand and test:** `Dbufwr`, `Dconst`, `Ddup`,
-      `DemandEnvGen`, `Dpoll`, `Dreset`, `Dser`, `Dswitch`, `Dwrand`;
-      `CheckBadValues`, `Sanitize`.
     - ⬜ **12. The FFT chain and convolution:** `FFTTrigger`, `PackFFT`,
       `Unpack1FFT`, the remaining `PV_*` (`PV_BinScramble`, `PV_BinWipe`,
       `PV_ConformalMap`, `PV_Conj`, `PV_Copy`, `PV_Diffuser`, `PV_Div`,

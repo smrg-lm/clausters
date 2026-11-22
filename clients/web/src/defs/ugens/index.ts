@@ -298,8 +298,11 @@ export {
     sharedOut,
     offsetOut,
     xOut,
+    checkBadValues,
+    sanitize,
 } from "./io.ts";
 export type { DiskInOptions, DiskOutOptions, PollOptions, SendPeakRmsOptions } from "./io.ts";
+export type { DpollOptions } from "./demand.ts";
 
 export {
     scopeOut,
@@ -407,6 +410,15 @@ export {
     dwhite,
     dxrand,
     tduty,
+    ddup,
+    dconst,
+    dreset,
+    dbufwr,
+    demandEnvGen,
+    dser,
+    dwrand,
+    dswitch,
+    dpoll,
 } from "./demand.ts";
 
 export {
@@ -483,6 +495,8 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "ScopeOut",
     "LocalBuf",
     "SetBuf",
+    "Dser",
+    "Dwrand",
 ]);
 
 /** Lazily built `kind -> [parameter name, ...]` -- see {@link ugenInputNames}. */

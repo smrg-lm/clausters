@@ -18,6 +18,8 @@ __all__ = [
     "send_trig",
     "local_in",
     "local_out",
+    "check_bad_values",
+    "sanitize",
     "in_feedback",
     "in_trig",
     "lag_in",
@@ -117,6 +119,23 @@ def local_out(channel, signal) -> Ugen:
     SynthDef output to keep the write in the graph).
     """
     return Ugen("LocalOut", [channel, signal])
+
+
+def check_bad_values(signal, id=0.0, post=2.0) -> Ugen:
+    """The class of every sample of `signal`: 0 for an ordinary number (zero
+    included), 1 for a NaN, 2 for an infinity, 3 for a denormal. `post` says when
+    it is also written to the server's console: 0 never, 1 at every bad sample,
+    2 whenever the class changes, with how long the previous one lasted. `id`
+    tells one check from another there.
+    """
+    return Ugen("CheckBadValues", [signal, id, post])
+
+
+def sanitize(signal, replace=0.0) -> Ugen:
+    """`signal` with every NaN, infinity and denormal replaced by `replace`:
+    a guard before a filter whose state one NaN would ruin for good.
+    """
+    return Ugen("Sanitize", [signal, replace])
 
 
 def in_feedback(bus=0.0) -> Ugen:

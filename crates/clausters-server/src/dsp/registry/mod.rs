@@ -25,8 +25,8 @@ use crate::dsp::chaos::{Chaos, ChaosInterp, ChaosMap, Logistic};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{
-    Dbufrd, Demand, Dlist, Dramp, Drandom, Dstutter, Dswitch1, Duty, DutyKind, ListOrder, RampKind,
-    RandKind,
+    Dbufrd, Dbufwr, Dconst, Demand, DemandEnvGen, Dlist, Dpoll, Dramp, Drandom, Dreset, Dstutter,
+    Dswitch, Dswitch1, Duty, DutyKind, ListOrder, RampKind, RandKind,
 };
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::dynamics::{Amplitude, Compander, Lookahead, LookaheadKind};

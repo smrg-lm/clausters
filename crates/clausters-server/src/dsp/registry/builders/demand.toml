@@ -70,6 +70,37 @@ is pulled per item, so it may vary.
 '''
 
 [[ugen]]
+kind = "Ddup"
+builder = "ddup"
+rate = "dr"
+required = ["repeats", "value"]
+doc = '''
+Repeats each item of the `value` stream `repeats` times: sclang's
+newer name for `dstutter`, and the same stream.
+'''
+
+[[ugen]]
+kind = "Dconst"
+builder = "dconst"
+rate = "dr"
+required = ["sum", "signal"]
+doc = '''
+Yields the `signal` stream until its items add up to `sum`, the
+last one cut to land on it -- durations that fill a bar exactly. Within
+`tolerance` of the sum counts as there.
+'''
+
+[[ugen]]
+kind = "Dreset"
+builder = "dreset"
+rate = "dr"
+required = ["signal"]
+doc = '''
+Passes the `signal` stream through, and restarts it when the `reset`
+stream rises. The restart shows on the next item.
+'''
+
+[[ugen]]
 kind = "Dbufrd"
 builder = "dbufrd"
 rate = "dr"
@@ -78,6 +109,17 @@ doc = '''
 Reads the buffer frame the `phase` stream names -- a `dseries` phase
 walks it as a step sequence. Out of range it wraps when `loop` is set and
 clamps when it is not.
+'''
+
+[[ugen]]
+kind = "Dbufwr"
+builder = "dbufwr"
+rate = "dr"
+required = ["bufnum", "phase", "signal"]
+doc = '''
+Writes each item of the `signal` stream into the buffer frame the
+`phase` stream names, and yields it -- the writing twin of `dbufrd`. Out of
+range the frame wraps when `loop` is set and clamps when it is not.
 '''
 
 [[ugen]]
@@ -115,6 +157,23 @@ first duration is spent before the first level, so the stream opens with a
 gap instead of a trigger.
 '''
 
+[[ugen]]
+kind = "DemandEnvGen"
+builder = "demand_env_gen"
+required = ["level", "dur"]
+doc = '''
+An envelope whose breakpoints are streams: each segment pulls its
+duration, shape, curvature and end level, and glides from wherever the
+output is. `shape` and `curve` are `env_gen`'s.
+
+A `gate` at or above one runs; between zero and one releases at the end
+of the segment playing (holding there, and firing `done_action`, until the
+gate is back at one); at or below zero holds. A rising `reset` restarts the
+streams: up to one it glides on from the current level, above one it jumps
+to the first. When the duration or the level stream ends, the envelope holds
+its last level and `done_action` fires.
+'''
+
 [[hand]]
 kind = "Dseq"
 why = "the value list leads, where `repeats` leads on the wire"
@@ -134,3 +193,19 @@ why = "the value list leads, where `repeats` leads on the wire"
 [[hand]]
 kind = "Dswitch1"
 why = "the value list is a variadic tail"
+
+[[hand]]
+kind = "Dser"
+why = "the value list leads, where `repeats` leads on the wire"
+
+[[hand]]
+kind = "Dwrand"
+why = "the value and weight lists lead, where `repeats` and the size lead on the wire"
+
+[[hand]]
+kind = "Dswitch"
+why = "the value list is a variadic tail"
+
+[[hand]]
+kind = "Dpoll"
+why = "the label is a static field"

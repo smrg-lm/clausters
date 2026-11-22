@@ -1719,3 +1719,27 @@ What the comparison allows is part of the decision:
     table at a truncated index; here the angle is computed. (`PanB`'s help
     gives its angles in radians; its code, kept, takes half and quarter
     turns.)
+  - `DemandEnvGen` advances before it writes and its constructor runs a
+    sample, so its output starts two steps into its first segment; its
+    segments step by a fractional length while running a whole number of
+    samples, so every shape but the custom curve overshoots its end level;
+    it leaves the first level unscaled, restarts on every sample of a
+    control-rate reset's block, acts on a control-rate gate a block late,
+    turns an ended duration stream into a segment that never ends, never
+    leaves the start level in the hold shape, and makes a line of any
+    segment shorter than two samples before its time scale. Here the first
+    sample is the first level, each segment lands on its end, every level
+    is scaled, a reset restarts once, the gate acts on its block, either
+    stream ending ends the envelope, and hold is `EnvGen`'s.
+  - `Dswitch` reads a plain number again on every pull, so a switch that
+    picks one never leaves it, and resets the stream it leaves after
+    reading the one it enters, so picking the same stream twice ends the
+    switch; its first index wraps into one slot too many. Here a number is
+    one item, a stream is restarted on entry, and every index wraps into
+    the list.
+  - `Dwrand` compares its draw with the bare weights, so weights summing
+    to less than one leave the rest to the value drawn last; here the draw
+    is scaled by their sum.
+  - `Dpoll` sends its trigger with `run` off; here `run` gates the trigger
+    as it gates the post. `Dbufwr` writes the first channel only; here it
+    takes a `channel`, as `Dbufrd` does.

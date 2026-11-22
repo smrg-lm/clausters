@@ -115,4 +115,28 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |c, _| Box::new(SendPeakRMS::new(c)),
     ),
+    // --- the test UGens (`dsp::check`): what kind of number a signal
+    //     carries, and a signal with the bad kinds replaced. ---
+    desc(
+        "CheckBadValues",
+        Fixed(3),
+        &[inp("signal", 0.0), inp_opt("id", 0.0), inp_opt("post", 2.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(crate::dsp::check::CheckBadValues::new()),
+    ),
+    desc(
+        "Sanitize",
+        Fixed(2),
+        &[inp("signal", 0.0), inp_opt("replace", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(crate::dsp::check::Sanitize),
+    ),
 ];

@@ -34,6 +34,8 @@ pub mod bound;
 pub mod buf;
 #[cfg(feature = "synth")]
 pub mod chaos;
+#[cfg(feature = "synth")]
+pub mod check;
 // `conv` is listed with the core modules below: its kernel layout is data
 // the `/buffer_gen prepare_partconv` routine (feature-independent) writes; only
 // the UGen inside it is synth-gated.
@@ -1421,6 +1423,11 @@ pub enum ReplyKind {
     Reply,
     /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid >= 0.
     Poll,
+    /// `CheckBadValues` -- a console line saying what kind of number a
+    /// signal carried: the id is the check's own, the values the class, and
+    /// the previous class and how long it lasted when the check counts runs.
+    /// [`bad_value_line`] writes it.
+    BadValue,
     /// A UGen refusing what it was given -- a configuration it cannot honour
     /// exactly, so it plays silence instead of a wrong result. The name is
     /// the UGen's kind, the id a fault code of that kind and the values its
@@ -1440,6 +1447,28 @@ pub fn poll_line(msg: &ReplyMsg) -> String {
         msg.name(),
         msg.values().first().copied().unwrap_or(0.0)
     )
+}
+
+/// The console line a [`ReplyKind::BadValue`] posts, for the live server and
+/// the offline render alike.
+#[cfg(feature = "synth")]
+pub fn bad_value_line(msg: &ReplyMsg) -> String {
+    let v = msg.values();
+    let name = |i: usize| check::class_name(v.get(i).copied().unwrap_or(0.0) as u8);
+    let head = format!(
+        "CheckBadValues: {} found in node {}, id {}",
+        name(0),
+        msg.node_id,
+        msg.id
+    );
+    match v.get(2) {
+        Some(count) => format!(
+            "{head} (the {} values before were {})",
+            *count as u64,
+            name(1)
+        ),
+        None => head,
+    }
 }
 
 /// The sentence for a [`ReplyKind::Fault`], built off the audio thread from

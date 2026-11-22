@@ -27,7 +27,9 @@ use std::sync::Arc;
 use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::dsp::buffer::Buffer;
 use clausters::dsp::demand::{Drandom, RandKind};
-use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, DemandInputs, ProcessCtx};
+use clausters::dsp::{
+    BLOCK_SIZE, Buses, ControlBuses, DemandInputs, ProcessCtx, ReplyKind, ReplyMsg,
+};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
@@ -103,6 +105,15 @@ fn ugen_wired(kind: &str, args: &[f32], wires: &[(usize, usize)]) -> String {
 
 /// Renders `frames` samples of audio bus 0 from a def.
 fn render(json: &str, frames: usize, buffers: &[Option<Arc<Buffer>>]) -> Vec<f32> {
+    render_replies(json, frames, buffers).0
+}
+
+/// [`render`], with the replies the synth drained after each block.
+fn render_replies(
+    json: &str,
+    frames: usize,
+    buffers: &[Option<Arc<Buffer>>],
+) -> (Vec<f32>, Vec<ReplyMsg>) {
     let def = compile(
         serde_json::from_str::<SynthDefSpec>(json).unwrap_or_else(|e| {
             panic!("bad json: {e}\n{json}");
@@ -112,6 +123,7 @@ fn render(json: &str, frames: usize, buffers: &[Option<Arc<Buffer>>]) -> Vec<f32
     let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = Vec::with_capacity(frames);
+    let mut replies = Vec::new();
     for _ in 0..frames.div_ceil(BLOCK_SIZE) {
         buses.clear_audio();
         let mut ctx = ProcessCtx {
@@ -126,10 +138,11 @@ fn render(json: &str, frames: usize, buffers: &[Option<Arc<Buffer>>]) -> Vec<f32
             server: clausters::dsp::ServerFacts::default(),
         };
         synth.process(&mut ctx);
+        synth.drain_replies(1000, &mut |m| replies.push(m));
         out.extend_from_slice(buses.audio(0));
     }
     out.truncate(frames);
-    out
+    (out, replies)
 }
 
 /// The first `n` items of a demand stream, one every other sample.
@@ -546,6 +559,270 @@ fn dbufrd_not_looping_holds_the_last_frame_instead_of_wrapping() {
     ];
     let v = stream_over(&g, 1, 5, &buffers);
     assert_eq!(v, vec![100.0, 100.0, 100.0, 100.0, 101.0]);
+}
+
+// ---------------------------------------------------------------------------
+// Dser, Dwrand, Ddup, Dswitch, Dconst, Dreset, Dpoll, Dbufwr
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dser_counts_items_where_dseq_counts_passes() {
+    // Five items of a three-value list: one pass and two thirds of another.
+    let v = stream1("Dser", &[5.0, 1.0, 2.0, 3.0], 7);
+    assert_eq!(v, vec![1.0, 2.0, 3.0, 1.0, 2.0, 2.0, 2.0]);
+}
+
+#[test]
+fn ddup_is_dstutter_under_its_new_name() {
+    let g = [
+        ugen("Dseries", &[3.0, 0.0, 1.0]),
+        ugen_wired("Ddup", &[2.0, 0.0], &[(1, 0)]),
+    ];
+    assert_eq!(stream(&g, 1, 6), vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+}
+
+/// How often each of `values` comes up in `v`.
+fn shares(v: &[f32], values: &[f32]) -> Vec<f32> {
+    values
+        .iter()
+        .map(|x| v.iter().filter(|y| *y == x).count() as f32 / v.len() as f32)
+        .collect()
+}
+
+#[test]
+fn dwrand_picks_each_value_as_often_as_its_weight() {
+    let v = stream1("Dwrand", &[0.0, 3.0, 0.1, 0.2, 0.7, 1.0, 2.0, 3.0], 4000);
+    let got = shares(&v, &[1.0, 2.0, 3.0]);
+    for (g, w) in got.iter().zip([0.1, 0.2, 0.7]) {
+        assert!((g - w).abs() < 0.03, "shares {got:?}, weights 0.1 0.2 0.7");
+    }
+}
+
+#[test]
+fn dwrand_weights_that_do_not_sum_to_one_are_shares_of_their_sum() {
+    // scsynth gives the missing half to whichever value came up last; here
+    // 0.1 and 0.4 are a fifth and four fifths.
+    let v = stream1("Dwrand", &[0.0, 2.0, 0.1, 0.4, 1.0, 2.0], 4000);
+    let got = shares(&v, &[1.0, 2.0]);
+    assert!(
+        (got[0] - 0.2).abs() < 0.03 && (got[1] - 0.8).abs() < 0.03,
+        "shares {got:?}, weights 0.1 0.4"
+    );
+}
+
+#[test]
+fn dswitch_drains_the_stream_it_picks_and_replays_one_picked_again() {
+    // Index 0 twice: scsynth reads the drained stream the second time and
+    // ends; here it is restarted on entry and plays again. Index 1 is a plain
+    // number, one item, and then the index stream is spent.
+    let g = [
+        ugen("Dseq", &[1.0, 0.0, 0.0, 1.0]),
+        ugen("Dseq", &[1.0, 1.0, 2.0]),
+        ugen_wired("Dswitch", &[0.0, 0.0, 7.0], &[(0, 0), (1, 1)]),
+    ];
+    let v = stream(&g, 2, 7);
+    assert_eq!(v, vec![1.0, 2.0, 1.0, 2.0, 7.0, 7.0, 7.0]);
+}
+
+#[test]
+fn dconst_cuts_the_last_item_to_land_on_its_sum() {
+    let g = [
+        ugen("Dseq", &[0.0, 0.75]),
+        ugen_wired("Dconst", &[2.0, 0.0, 0.001], &[(1, 0)]),
+    ];
+    let v = stream(&g, 1, 5);
+    assert_eq!(v, vec![0.75, 0.75, 0.5, 0.5, 0.5]);
+    assert_eq!(v[..3].iter().sum::<f32>(), 2.0);
+}
+
+#[test]
+fn dreset_restarts_its_stream_on_the_reset_streams_rise() {
+    // The rise comes with the third item, and the restart shows on the next.
+    let g = [
+        ugen("Dseries", &[0.0, 0.0, 1.0]),
+        ugen("Dseq", &[0.0, 0.0, 0.0, 1.0]),
+        ugen_wired("Dreset", &[0.0, 0.0], &[(0, 0), (1, 1)]),
+    ];
+    let v = stream(&g, 2, 7);
+    assert_eq!(v, vec![0.0, 1.0, 2.0, 0.0, 1.0, 2.0, 0.0]);
+}
+
+/// A `Demand` on every other sample pulling a `Dpoll` of a `Dseries`, with
+/// the given `trig_id` and `run`.
+fn dpoll(trig_id: f32, run: f32) -> (Vec<f32>, Vec<ReplyMsg>) {
+    let json = format!(
+        r#"{{"name":"x","ugens":[{},
+            {{"kind":"Dpoll","rate":"dr","label":"step","inputs":[{{"ugen":0}},
+              {{"const":{trig_id}}},{{"const":{run}}}]}},
+            {{"kind":"Impulse","inputs":[{{"const":{}}}]}},
+            {{"kind":"Demand","inputs":[{{"ugen":2}},{{"const":0.0}},{{"ugen":1}}]}},
+            {{"kind":"Out","inputs":[{{"const":0.0}},{{"ugen":3}}]}}]}}"#,
+        ugen("Dseries", &[3.0, 10.0, 1.0]),
+        SR / 2.0
+    );
+    render_replies(&json, 8, &[])
+}
+
+#[test]
+fn dpoll_posts_each_item_it_passes_through() {
+    let (v, replies) = dpoll(5.0, 1.0);
+    assert_eq!(
+        v.iter().step_by(2).copied().collect::<Vec<_>>(),
+        vec![10.0, 11.0, 12.0, 12.0]
+    );
+    // Three items and the end of the stream.
+    let posted: Vec<(i32, &str, f32)> = replies
+        .iter()
+        .map(|m| {
+            assert_eq!(m.kind, ReplyKind::Poll);
+            assert_eq!(m.node_id, 1000);
+            (m.id, m.name(), m.values()[0])
+        })
+        .collect();
+    assert_eq!(
+        &posted[..3],
+        &[(5, "step", 10.0), (5, "step", 11.0), (5, "step", 12.0)]
+    );
+    assert!(posted[3].2.is_nan(), "the end of the stream is posted too");
+}
+
+#[test]
+fn dpoll_not_running_posts_and_sends_nothing() {
+    // scsynth still sends the trigger with `run` off.
+    let (v, replies) = dpoll(5.0, 0.0);
+    assert_eq!(v[0], 10.0, "the stream still passes through");
+    assert!(replies.is_empty(), "{replies:?}");
+}
+
+#[test]
+fn dbufwr_writes_each_item_where_its_phase_points() {
+    let buffers = [Some(Arc::new(Buffer::new(vec![0.0; 8], 2, 4, SR as f64)))];
+    let g = [
+        ugen("Dseries", &[6.0, 0.0, 1.0]),
+        ugen("Dseries", &[0.0, 1.0, 1.0]),
+        // Channel 1, looping: frames 0 1 2 3 0 1.
+        ugen_wired("Dbufwr", &[0.0, 0.0, 0.0, 1.0, 1.0], &[(1, 0), (2, 1)]),
+    ];
+    let v = stream_over(&g, 2, 8, &buffers);
+    assert_eq!(v, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 6.0, 6.0]);
+    let buf = buffers[0].as_ref().unwrap();
+    let written: Vec<(f32, f32)> = (0..4)
+        .map(|f| (buf.sample(f, 0), buf.sample(f, 1)))
+        .collect();
+    assert_eq!(
+        written,
+        vec![(0.0, 5.0), (0.0, 6.0), (0.0, 3.0), (0.0, 4.0)]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DemandEnvGen
+// ---------------------------------------------------------------------------
+
+/// A `DemandEnvGen` through `levels` (one pass of a `Dseq`) with a constant
+/// duration, shape and curvature, and the remaining inputs (`gate`, `reset`,
+/// `level_scale`, `level_bias`, `time_scale`, `done_action`) as given.
+fn demand_env(levels: &[f32], dur: f32, shape: f32, rest: [f32; 6], frames: usize) -> Vec<f32> {
+    let mut lev = vec![1.0];
+    lev.extend_from_slice(levels);
+    let consts: Vec<String> = [dur, shape, 0.0]
+        .iter()
+        .chain(rest.iter())
+        .map(|a| format!(r#"{{"const":{a}}}"#))
+        .collect();
+    let json = format!(
+        r#"{{"name":"x","ugens":[{},
+            {{"kind":"DemandEnvGen","inputs":[{{"ugen":0}},{}]}},
+            {{"kind":"Out","inputs":[{{"const":0.0}},{{"ugen":1}}]}}]}}"#,
+        ugen("Dseq", &lev),
+        consts.join(",")
+    );
+    render(&json, frames, &[])
+}
+
+const RUN: [f32; 6] = [1.0, 1.0, 1.0, 0.0, 1.0, 0.0];
+
+#[test]
+fn demand_env_gen_starts_at_its_first_level_and_lands_on_each() {
+    // Ten samples a segment. scsynth's first sample is two steps in, and its
+    // segments overshoot when their length is not whole; here the first
+    // sample is the first level, and each level is met where its segment
+    // ends.
+    let dur = 10.0 / SR;
+    let v = demand_env(&[0.0, 1.0, 0.5], dur, 1.0, RUN, 64);
+    assert_eq!(v[0], 0.0);
+    let top = v.iter().position(|x| *x == 1.0).expect("reaches 1 exactly");
+    assert!((9..=11).contains(&top), "1.0 first at {top}");
+    assert!(v[..top].windows(2).all(|w| w[1] > w[0]), "rises to it");
+    assert!(v[top..].windows(2).all(|w| w[1] <= w[0]), "then falls");
+    assert!(
+        v[30..].iter().all(|x| *x == 0.5),
+        "and holds the last level"
+    );
+    assert!(
+        v.iter().all(|x| (0.0..=1.0).contains(x)),
+        "never past a level"
+    );
+}
+
+#[test]
+fn demand_env_gen_scales_its_first_level_like_the_rest() {
+    // scsynth leaves the first level raw.
+    let rest = [1.0, 1.0, 0.5, 0.1, 1.0, 0.0];
+    let v = demand_env(&[1.0, 2.0], 10.0 / SR, 1.0, rest, 32);
+    assert!(close(v[0], 0.6), "{}", v[0]);
+    assert!(close(v[31], 1.1), "{}", v[31]);
+}
+
+#[test]
+fn demand_env_gen_releases_at_the_end_of_the_segment_and_holds() {
+    // A gate between zero and one: the segment playing finishes, and the next
+    // is never taken.
+    let rest = [0.5, 1.0, 1.0, 0.0, 1.0, 0.0];
+    let v = demand_env(&[0.0, 1.0, 0.0], 10.0 / SR, 1.0, rest, 64);
+    assert!(v[11..].iter().all(|x| *x == 1.0), "{:?}", &v[..20]);
+}
+
+#[test]
+fn demand_env_gen_holds_where_it_is_with_the_gate_closed() {
+    let rest = [0.0, 1.0, 1.0, 0.0, 1.0, 0.0];
+    let v = demand_env(&[0.25, 1.0], 10.0 / SR, 1.0, rest, 64);
+    assert!(v.iter().all(|x| *x == 0.25), "{:?}", &v[..12]);
+}
+
+#[test]
+fn demand_env_gen_plays_the_hold_shape_as_env_gen_does() {
+    // Hold the start level for the segment, then reach the end. scsynth has
+    // no case for it and never leaves the start.
+    let v = demand_env(&[0.0, 1.0, 0.5], 10.0 / SR, 8.0, RUN, 64);
+    let first = v.iter().position(|x| *x != 0.0).expect("leaves the start");
+    assert!((9..=11).contains(&first), "left at {first}");
+    assert_eq!(v[first], 1.0, "straight to the end level");
+    assert_eq!(v[63], 0.5);
+}
+
+#[test]
+fn demand_env_gen_a_reset_restarts_its_streams() {
+    // An endless rise by tens, five samples a segment, restarted every 100
+    // samples: without the reset it would be past 200 by the first one.
+    let json = format!(
+        r#"{{"name":"x","ugens":[{},
+            {{"kind":"Impulse","inputs":[{{"const":{}}}]}},
+            {{"kind":"DemandEnvGen","inputs":[{{"ugen":0}},{{"const":{}}},{{"const":1}},
+              {{"const":0}},{{"const":1}},{{"ugen":1}},{{"const":1}},{{"const":0}},
+              {{"const":1}},{{"const":0}}]}},
+            {{"kind":"Out","inputs":[{{"const":0.0}},{{"ugen":2}}]}}]}}"#,
+        ugen("Dseries", &[0.0, 10.0, 10.0]),
+        SR / 100.0,
+        5.0 / SR
+    );
+    let v = render(&json, 256, &[]);
+    assert!(v[95] > 150.0, "{}", v[95]);
+    // The reset discards the restarted stream's first level and glides from
+    // where it is to its second, 20, within a segment; the rise by tens then
+    // starts over from there.
+    assert!((v[106] - 20.0).abs() < 1e-3, "{:?}", &v[100..110]);
+    assert!((v[156] - 120.0).abs() < 1e-2, "{}", v[156]);
 }
 
 // ---------------------------------------------------------------------------

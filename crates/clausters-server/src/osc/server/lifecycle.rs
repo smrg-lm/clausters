@@ -874,6 +874,10 @@ impl OscServer {
                     let addr = msg.name().to_string();
                     self.notify(&addr, args);
                 }
+                ReplyKind::BadValue => {
+                    #[cfg(feature = "synth")]
+                    warn!(target: crate::logging::OSC_TARGET, "{}", crate::dsp::bad_value_line(&msg));
+                }
                 ReplyKind::Poll => {
                     info!(target: crate::logging::OSC_TARGET, "{}", crate::dsp::poll_line(&msg));
                     if msg.id >= 0 {
