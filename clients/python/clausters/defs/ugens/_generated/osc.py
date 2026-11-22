@@ -37,6 +37,11 @@ __all__ = [
     "lf_par",
     "sync_saw",
     "vibrato",
+    "fsin_osc",
+    "sin_osc_fb",
+    "psin_grain",
+    "blip",
+    "formant",
 ]
 
 
@@ -301,3 +306,42 @@ def vibrato(
         "Vibrato",
         [freq, rate, depth, delay, onset, ratevariation, depthvariation, iphase, trig],
     )
+
+
+def fsin_osc(freq=440.0, iphase=0.0) -> Ugen:
+    """A sine by the two-pole recurrence, the cheapest there is: for a fixed
+    tone. `iphase` is the initial phase in cycles. The frequency is read once
+    a block, and changing it moves the amplitude too: modulate `sine` instead.
+    """
+    return Ugen("FSinOsc", [freq, iphase])
+
+
+def sin_osc_fb(freq=440.0, feedback=0.0) -> Ugen:
+    """A sine phase-modulated by its own last sample, `feedback` in radians:
+    a sine at 0, brighter as it rises, towards a sawtooth near 1.5 and noise
+    beyond.
+    """
+    return Ugen("SinOscFB", [freq, feedback])
+
+
+def psin_grain(freq=440.0, dur=0.2, amp=0.1) -> Ugen:
+    """One sine grain of `dur` seconds under a parabola peaking at `amp`, its
+    inputs read at the start. The synth is freed when the grain ends.
+    """
+    return Ugen("PSinGrain", [freq, dur, amp])
+
+
+def blip(freq=440.0, numharm=200.0) -> Ugen:
+    """A band-limited impulse train: `numharm` harmonics of `freq` of equal
+    amplitude, peak 1, kept below Nyquist. Changing `numharm` crossfades
+    across a block.
+    """
+    return Ugen("Blip", [freq, numharm])
+
+
+def formant(fundfreq=440.0, formfreq=1760.0, bwfreq=880.0) -> Ugen:
+    """A formant over a fundamental: at each cycle of `fundfreq`, a burst of a
+    sine at `formfreq` under a raised-cosine window `bwfreq` Hz wide, so the
+    spectrum peaks at `formfreq` whatever the fundamental.
+    """
+    return Ugen("Formant", [fundfreq, formfreq, bwfreq])

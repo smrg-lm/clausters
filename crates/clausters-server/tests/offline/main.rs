@@ -51,6 +51,7 @@ mod noise;
 mod nrt_session;
 mod ops;
 mod oscillators;
+mod oscugens;
 mod pan;
 mod pv_reference;
 mod rates;

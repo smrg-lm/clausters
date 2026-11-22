@@ -322,6 +322,45 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "fsinosc",
+            json!([{"kind": "FSinOsc", "inputs": [c(431.0), c(0.1)]}, out(0)]),
+        ),
+        Case::new(
+            "sinoscfb",
+            json!([{"kind": "SinOscFB", "inputs": [c(431.0), c(0.8)]}, out(0)]),
+        ),
+        Case::new(
+            "psingrain",
+            json!([{"kind": "PSinGrain", "inputs": [c(1500.0), c(0.05), c(0.4)]}, out(0)]),
+        ),
+        Case::new(
+            "blip",
+            json!([{"kind": "Blip", "inputs": [c(301.0), c(12.0)]}, out(0)]),
+        ),
+        Case::new(
+            "formant",
+            json!([{"kind": "Formant", "inputs": [c(211.0), c(1300.0), c(600.0)]}, out(0)]),
+        ),
+        Case::new(
+            "cosc",
+            json!([{"kind": "COsc", "inputs": [c(0.0), c(301.0), c(2.0)]}, out(0)]),
+        ),
+        Case::new(
+            "vosc3",
+            json!([{"kind": "VOsc3", "inputs": [c(0.4), c(101.0), c(202.0), c(303.0)]}, out(0)]),
+        ),
+        Case::new(
+            "klang",
+            json!([{"kind": "Klang", "inputs": [c(1.0), c(0.0),
+                c(300.0), c(0.3), c(0.0), c(451.0), c(0.2), c(0.25)]}, out(0)]),
+        ),
+        Case::new(
+            "klank",
+            json!([input(), {"kind": "Klank", "inputs": [u(0), c(1.0), c(0.0), c(1.0),
+                c(800.0), c(0.3), c(0.05), c(1231.0), c(0.2), c(0.02)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
             "lfcub",
             json!([{"kind": "LFCub", "inputs": [c(431.0), c(0.1)]}, out(0)]),
         ),

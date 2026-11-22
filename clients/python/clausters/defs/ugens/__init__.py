@@ -123,6 +123,12 @@ from .osc import (
     lf_par,
     sync_saw,
     vibrato,
+    fsin_osc,
+    sin_osc_fb,
+    psin_grain,
+    blip,
+    formant,
+    klang,
 )
 from .filter import (
     allpass_c,
@@ -191,6 +197,7 @@ from .filter import (
     buf_delay_c,
     buf_delay_l,
     buf_delay_n,
+    klank,
 )
 from .pan import (
     balance2,
@@ -251,6 +258,8 @@ from .buf import (
     shaper,
     vosc,
     record_buf,
+    vosc3,
+    cosc,
 )
 from .spectral import (
     conv,
@@ -344,7 +353,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "IEnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+    {"EnvGen", "IEnvGen", "Klang", "Klank", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -628,6 +637,15 @@ __all__ = [
     "points_to_env",
     "quads",
     "x_line",
+    "fsin_osc",
+    "sin_osc_fb",
+    "psin_grain",
+    "blip",
+    "formant",
+    "klang",
+    "klank",
+    "vosc3",
+    "cosc",
     "lf_cub",
     "lf_par",
     "sync_saw",

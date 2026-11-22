@@ -1657,7 +1657,9 @@ holds what is open.
     `Lag2UD`, `Lag3UD` and the eight `B*` cookbook biquads; `LFUGens.cpp`'s
     rest: `LFCub`, `LFPar`, `LFGauss`, `SyncSaw`, `Vibrato`, `Linen`,
     `IEnvGen`, `LinExp`, `InRange`, `InRect`, `ModDif`, `Unwrap`, `AmpComp`,
-    `AmpCompA`, `K2A`, `A2K`, `T2A`, `T2K`, `DC`.
+    `AmpCompA`, `K2A`, `A2K`, `T2A`, `T2K`, `DC`; `OscUGens.cpp`'s
+    oscillators: `FSinOsc`, `SinOscFB`, `Blip`, `Formant`, `COsc`, `VOsc3`,
+    `Klang`, `Klank`, `PSinGrain`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1679,8 +1681,6 @@ holds what is open.
     names, 17 of them out of scope above, 190 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **2. `OscUGens.cpp`, the oscillators:** `FSinOsc`, `SinOscFB`,
-      `Blip`, `Formant`, `COsc`, `VOsc3`, `Klang`, `Klank`, `PSinGrain`.
     - ⬜ **3. Tables and the small noises:** `OscUGens.cpp`'s `Index`,
       `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
       `DegreeToKey`, `TWindex`; `NoiseUGens.cpp`'s `Hasher`,

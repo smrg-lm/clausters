@@ -395,6 +395,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Group | Callable | Does |
 | --- | --- | --- |
 | Sources | `sine(freq=440.0, phase=0.0)` | sine by f64 phase accumulation, starting at phase 0; `phase` is a running offset in cycles |
+| | `fsin_osc(freq, iphase)`, `sin_osc_fb(freq, feedback)`, `psin_grain(freq, dur, amp)` | a recurrence sine for fixed tones; a self-modulated sine; one grain that frees its synth |
+| | `blip(freq, numharm)`, `formant(fundfreq, formfreq, bwfreq)` | a band-limited impulse train; a formant over a fundamental |
+| | `klang(freqs, amps=None, phases=None, freqscale=1, freqoffset=0)`, `klank(signal, freqs, amps=None, times=None, ...)` | banks of fixed sines and of fixed resonators |
 | | `impulse(freq=1.0, phase=0.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence); `phase` offsets the train in cycles |
 | | `white_noise()` | uniform white noise in ±1 |
 | | `saw(freq=440.0)` | **band-limited** sawtooth: the harmonics that belong there, not aliases folded down from above Nyquist |
@@ -463,6 +466,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Tables | `osc(bufnum, freq=440.0, phase=0.0)` | interpolating wavetable oscillator over a **wavetable-format** buffer (`/buffer_gen`); `phase` in radians |
 | | `oscn(bufnum, freq=440.0, phase=0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq=440.0, phase=0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
+| | `vosc3(bufpos, freq1, freq2, freq3)`, `cosc(bufnum, freq, beats)` | three voices of one morphing table; two detuned voices of one table |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
 | Disk | `disk_in(chan=0.0, *, path, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
 | | `disk_out(signal, *, path, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
@@ -524,6 +528,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Group | Callable | Does |
 | --- | --- | --- |
 | Sources | `sine(freq = 440.0, phase = 0.0)` | sine by f64 phase accumulation, starting at phase 0; `phase` is a running offset in cycles |
+| | `fsinOsc(freq, iphase)`, `sinOscFb(freq, feedback)`, `psinGrain(freq, dur, amp)` | a recurrence sine for fixed tones; a self-modulated sine; one grain that frees its synth |
+| | `blip(freq, numharm)`, `formant(fundfreq, formfreq, bwfreq)` | a band-limited impulse train; a formant over a fundamental |
+| | `klang(freqs, amps = null, phases = null, freqscale = 1, freqoffset = 0)`, `klank(signal, freqs, amps = null, times = null, ...)` | banks of fixed sines and of fixed resonators |
 | | `impulse(freq = 1.0, phase = 0.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence); `phase` offsets the train in cycles |
 | | `whiteNoise()` | uniform white noise in ±1 |
 | | `saw(freq = 440.0)` | **band-limited** sawtooth: the harmonics that belong there, not aliases folded down from above Nyquist |
@@ -592,6 +599,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Tables | `osc(bufnum, freq = 440.0, phase = 0.0)` | interpolating wavetable oscillator over a **wavetable-format** buffer (`/buffer_gen`); `phase` in radians |
 | | `oscN(bufnum, freq = 440.0, phase = 0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq = 440.0, phase = 0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
+| | `vosc3(bufpos, freq1, freq2, freq3)`, `cosc(bufnum, freq, beats)` | three voices of one morphing table; two detuned voices of one table |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
 | Disk | `diskIn(chan = 0.0, { path, loop = false, start = 0 })` | streams a file from disk, one channel per UGen, no resampling |
 | | `diskOut(signal, { path, format = "int16" })` | streams `signal` to a mono WAV on disk; passes `signal` through |

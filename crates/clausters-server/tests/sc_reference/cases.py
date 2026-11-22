@@ -92,6 +92,7 @@ def cases() -> list[dict]:
         _random,
         _sections,
         _lfugens,
+        _oscugens,
     ]:
         out.extend(f())
     return out
@@ -848,4 +849,89 @@ def _lfugens() -> list[dict]:
     out.append(case("T2A.ar", g, 32))
     for rate in ["ar", "kr"]:
         out.append(one(f"DC.{rate}", "DC", rate, 0.37))
+    return out
+
+
+def _wavetables(*harmonics: tuple, first: int = 2) -> list[dict]:
+    """Wavetable buffers from `first` on, scsynth's format: one per tuple of
+    harmonic amplitudes, 512 points each."""
+    import math
+
+    n = 512
+    out = []
+    for k, amps in enumerate(harmonics):
+        sig = [sum(a * math.sin(2 * math.pi * (h + 1) * i / n) for h, a in enumerate(amps)) for i in range(n)]
+        wt = []
+        for i in range(n):
+            a, b = sig[i], sig[(i + 1) % n]
+            wt += [2 * a - b, b - a]
+        out.append({"num": first + k, "channels": 1, "frames": 2 * n, "data": wt})
+    return out
+
+
+def _oscugens() -> list[dict]:
+    """`OscUGens.cpp`'s oscillators."""
+    import math
+
+    out = []
+    fixed = "scsynth's table oscillators keep their phase in 16.16 fixed point"
+    # FSinOsc: the recurrence, scsynth's; its initial phase is in radians.
+    for rate, blocks, f in [("ar", 8, 441.3), ("kr", 64, 7.7)]:
+        out.append(one(f"FSinOsc.{rate}", "FSinOsc", rate, f, 0.1, blocks=blocks, sc={"inputs": [f, 0.2 * math.pi]}))
+    g = G()
+    f = g.add("LFPulse", "kr", 30, 0, 0.5)
+    f = g.add("MulAdd", "kr", f, 300, 500)
+    g.add("FSinOsc", "ar", f, 0)
+    out.append(case("FSinOsc.step", g, 24))
+    # SinOscFB: computed against scsynth's 8192-point table. Not a feedback
+    # above 1: there the loop's gain passes 1 over part of the cycle and
+    # amplifies any rounding, so two correct computations part.
+    for fb in [0.0, 0.5, 0.95]:
+        out.append(one(f"SinOscFB.{fb}", "SinOscFB", "ar", 331.7, fb, blocks=8, tol=5e-5, why="scsynth's SinOscFB reads an 8192-point table"))
+    g = G()
+    fb = g.add("LFTri", "kr", 9, 0)
+    fb = g.add("MulAdd", "kr", fb, 0.4, 0.5)
+    g.add("SinOscFB", "ar", 231.7, fb)
+    out.append(case("SinOscFB.mod", g, 16, tol=2e-5, why="scsynth's SinOscFB reads an 8192-point table"))
+    out.append(one("PSinGrain.ar", "PSinGrain", "ar", 1500, 0.004, 0.5, blocks=6, tol=2e-5, why="scsynth runs the grain's recurrence in f32"))
+    # Blip: the Dirichlet kernel against scsynth's sine and cosecant tables.
+    tables = "scsynth reads Blip's kernel from interpolated sine and cosecant tables"
+    for f, n in [(201.3, 10), (1201.7, 200), (97.1, 1)]:
+        out.append(one(f"Blip.{f}.{n}", "Blip", "ar", f, n, blocks=8, tol=4e-3, why=tables))
+    g = G()
+    n = g.add("LFPulse", "kr", 40, 0, 0.5)
+    n = g.add("MulAdd", "kr", n, 6, 4)
+    g.add("Blip", "ar", 301.3, n)
+    out.append(case("Blip.crossfade", g, 16, tol=4e-3, why=tables))
+    # Formant: the first period only. scsynth restarts each burst at a
+    # phase its 32-bit product overflows; the server's restart is held by
+    # `tests/offline/oscugens.rs`.
+    out.append(one("Formant.ar", "Formant", "ar", 100, 1300, 700, blocks=7, tol=2e-3, why="scsynth reads Formant's sines from its table without interpolation"))
+    out.append(one("Formant.wide", "Formant", "ar", 100, 2100, 50, blocks=7, tol=2e-3, why="scsynth reads Formant's sines from its table without interpolation"))
+    # The wavetable oscillators.
+    tables = _wavetables((1.0, 0.0, 0.3), (0.5, 0.5, 0.0, 0.25), (0.2, 0.0, 0.0, 0.0, 0.6))
+    out.append(one("COsc.ar", "COsc", "ar", 2, 300.7, 3.3, blocks=8, buffers=tables, tol=4e-4, why=fixed))
+    for pos in [2.0, 2.4, 3.7]:
+        out.append(one(f"VOsc3.{pos}", "VOsc3", "ar", pos, 101.3, 202.9, 303.1, blocks=8, buffers=tables, tol=6e-4, why=fixed))
+    g = G()
+    pos = g.add("LFTri", "kr", 11, 0)
+    pos = g.add("MulAdd", "kr", pos, 0.9, 3.0)
+    g.add("VOsc3", "ar", pos, 101.3, 202.9, 303.1)
+    out.append(case("VOsc3.sweep", g, 32, buffers=tables, tol=2e-3, why=fixed + ", and segments a table sweep by rounded counts"))
+    g = G()
+    pos = g.add("LFTri", "kr", 11, 0)
+    pos = g.add("MulAdd", "kr", pos, 0.9, 3.0)
+    g.add("VOsc", "ar", pos, 101.3, 0)
+    out.append(case("VOsc.sweep", g, 32, buffers=tables, tol=1e-3, why=fixed + ", and segments a table sweep by rounded counts"))
+    # Klang: phases in cycles, scsynth's in radians.
+    spec = [(300.0, 0.3, 0.0), (451.7, 0.2, 0.15), (1203.1, 0.1, 0.6)]
+    ins, sc_ins = [1.1, 7.0], [1.1, 7.0]
+    for f, a, p in spec:
+        ins += [f, a, p]
+        sc_ins += [f, a, 2 * math.pi * p]
+    out.append(one("Klang.ar", "Klang", "ar", *ins, blocks=8, sc={"inputs": sc_ins}, tol=2e-4, why="scsynth runs Klang's recurrences in f32, its coefficients rounded to f32"))
+    # Klank, excited by impulses and by a broadband signal.
+    spec = [800.0, 0.3, 0.05, 1231.7, 0.2, 0.02, 2900.0, 0.1, 0.004]
+    out.append(through("Klank.imp", "Klank", "ar", 1.0, 0.0, 1.0, *spec, source=impulse, blocks=8, tol=2e-5, why="scsynth runs Klank's resonators in f32"))
+    out.append(through("Klank.sig", "Klank", "ar", 0.9, 13.0, 0.7, *spec, blocks=8, tol=5e-5, why="scsynth runs Klank's resonators in f32"))
     return out

@@ -623,6 +623,12 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | kind | inputs | output |
 |---|---|---|
 | `Sine` | freq (Hz), phase (cycles, optional) | sine by f64 phase accumulation, starts at phase 0 — scsynth's `SinOsc`, computed rather than read from a table. `phase` is a **running** offset (an audio-rate one is phase modulation; a control-rate one moves across the block rather than stepping), in cycles where `SinOsc` takes radians |
+| `FSinOsc` | freq (Hz), iphase (cycles) | a sine by the two-pole recurrence `y = 2cos(w)·y₁ − y₂`; the frequency read once a block, and a change moves the amplitude with it (the recurrence's price), so it is for a fixed tone. scsynth's `iphase` is in radians |
+| `SinOscFB` | freq (Hz), feedback (rad) | `y = sin(phase + feedback·y₁)`, computed where scsynth reads a table; a control-rate `feedback` is a line across the block |
+| `PSinGrain` | freq (Hz), dur (s), amp | one sine grain under a parabola peaking at `amp`, its inputs read at the start; frees its synth at the end |
+| `Blip` | freq (Hz), numharm | `numharm` equal cosine harmonics, peak 1, kept below Nyquist: the Dirichlet kernel computed where scsynth reads sine and cosecant tables. A change of the count crossfades over the block; both inputs read once a block. scsynth advances a clipped block at the larger of the old and new frequency; here at the frequency |
+| `Formant` | fundfreq, formfreq, bwfreq (Hz) | at every cycle of `fundfreq`, a burst of a sine at `formfreq` under a raised cosine `bwfreq` wide (never longer than the period). Each burst restarts within the sample; scsynth's restart overflows a 32-bit product, so its carrier starts each burst at a phase that is noise |
+| `Klang` | freqscale, freqoffset, *(freq, amp, phase) per partial* | a bank of fixed sines by the recurrence, read at the start; `phase` in cycles (scsynth's in radians) |
 | `Impulse` | freq (Hz), phase (cycles, optional) | single-sample `1.0` every `freq` Hz, `0.0` between; with `phase` 0 the first output sample is an impulse, so a `/sched_at`'d `/synth_new` places it on an exact frame; `freq` 0 emits one impulse then silence (f64 phase, drift-free). `phase` offsets the train and is a running offset: moving it moves the train, firing where that carries it across a cycle. A negative `freq` runs the train backwards. A control-rate `freq` or `phase` moves across the block, as scsynth's does |
 | `WhiteNoise` | — | uniform white noise in ±1 |
 | `Saw` | freq (Hz) | band-limited rising sawtooth in ±1, starting at 0 (no onset step, no DC). Anti-aliased with PolyBLEP — see the note below |
@@ -642,6 +648,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `Resonz` | signal, freq (Hz), rq | scsynth's two-pole resonator, its zeros at DC and Nyquist and its poles placed by radius: near unity at the centre for a narrow bandwidth, and not the same response as `BPF` at a wide one |
 | `BRF` | signal, freq (Hz), rq | band reject: unity in both passbands, a true null at `freq` |
 | `Svf` | signal, freq (Hz), rq, low, band, high | the state-variable filter with its three tap gains as **signal inputs**, so the response is modulable. Lowpass = `1,0,0`; bandpass (unity peak) = `0,rq,0`; highpass = `0,0,1`; notch = `1,0,1`; peak = `-1,0,1`; allpass = `1,-rq,1` |
+| `Klank` | signal, freqscale, freqoffset, decayscale, *(freq, amp, time) per partial* | a bank of fixed resonators, each ringing `time` to −60 dB with its response's peak at `freq` (`cos θ = 2R·cos w / (1 + R²)`), the sum through zeros at DC and Nyquist; read at the start |
 | `LPZ1`, `HPZ1`, `LPZ2`, `HPZ2`, `BPZ2`, `BRZ2` | signal | scsynth's fixed FIRs: two-point average and difference, and the two-zero low, high, band and band-reject sections |
 | `Slope` | signal | the rate of change per second, `rate·(x0 − x1)` |
 | `Flip` | signal | every other sample negated, the first among them: the spectrum mirrored about a quarter of the rate |
@@ -707,7 +714,9 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `BufDur` | bufnum | duration in seconds (`frames / file_sr`), block-constant |
 | `Osc` | bufnum, freq (Hz), phase (rad) | interpolating wavetable oscillator; `bufnum` must hold a **wavetable-format** buffer (see `/buffer_gen` below); `phase` is an offset in radians |
 | `OscN` | bufnum, freq (Hz), phase (rad) | non-interpolating oscillator over a **plain** (non-wavetable) buffer; rawer/cheaper than `Osc` |
-| `VOsc` | bufpos, freq (Hz), phase (rad) | like `Osc` but the buffer number is a signal: reads wavetables `bufpos` and `bufpos+1` and crossfades by its fractional part, so sweeping `bufpos` morphs a bank of adjacent tables (allocate them contiguously, same size) |
+| `VOsc` | bufpos, freq (Hz), phase (rad) | like `Osc` but the buffer number is a signal: reads wavetables `bufpos` and `bufpos+1` and crossfades by its fractional part, so sweeping `bufpos` morphs a bank of adjacent tables (allocate them contiguously, same size). A control-rate `bufpos` is a line across the block, as scsynth's is |
+| `VOsc3` | bufpos, freq1, freq2, freq3 (Hz) | `VOsc`'s morphing table read at three frequencies and summed |
+| `COsc` | bufnum, freq (Hz), beats (Hz) | `Osc` twice, at `freq ± beats/2`, summed: two voices beating `beats` times a second; peak twice the table's |
 | `Shaper` | bufnum, signal | waveshaper: maps `signal` (in ±1, clamped) through a transfer table in wavetable format (typically `/buffer_gen cheby`); the table's first point is `signal = −1` and the end of its last pair `signal = +1`, as scsynth's |
 | `DiskIn` | chan | streams a file from disk (mono per UGen — `chan` picks the channel); needs a `path` field; `start` is the file frame it begins at (default 0); `loop` restarts at the file's top at end of stream; a W64 or an RF64 is read by arithmetic, its start a seek; see streaming note below |
 | `DiskOut` | signal | streams `signal` to a mono sound file on disk — a WAV, closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the `path` ends in `.w64` or `.rf64`; needs a `path` field; `format` is the sample format; passes `signal` through as its output |

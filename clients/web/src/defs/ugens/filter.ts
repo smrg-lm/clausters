@@ -19,6 +19,7 @@
 
 import { Ugen, channelBinop, channelUnop } from "./graph.ts";
 import type { Channel } from "./graph.ts";
+import { partials } from "./osc.ts";
 export * from "./_generated/filter.ts";
 
 /** Resolves the mutually exclusive `rq`/`q` pair into a wire `rq`. */
@@ -263,3 +264,20 @@ export const allpassC = (
  */
 export const varLag = (signal: Channel, time: Channel = 0.1, start?: Channel): Ugen =>
     new Ugen("VarLag", [signal, time, start ?? signal]);
+
+/**
+ * A bank of fixed resonators `signal` excites: one per entry of `freqs`, at
+ * `amps` (1 unless given), each ringing `times` seconds (1 unless given) to
+ * -60 dB; the frequencies times `freqscale` plus `freqoffset`, the times
+ * times `decayscale`. Read at the synth's start.
+ */
+export const klank = (
+    signal: Channel,
+    freqs: readonly Channel[],
+    amps: readonly Channel[] | null = null,
+    times: readonly Channel[] | null = null,
+    freqscale: Channel = 1.0,
+    freqoffset: Channel = 0.0,
+    decayscale: Channel = 1.0,
+): Ugen =>
+    new Ugen("Klank", [signal, freqscale, freqoffset, decayscale, ...partials(freqs, amps, times, 1.0)]);

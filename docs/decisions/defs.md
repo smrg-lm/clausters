@@ -1617,3 +1617,10 @@ What the comparison allows is part of the decision:
   - `Vibrato` reads `freq` as a buffer of the block, so a constant there is
     read past its one value (its own documentation feeds it a `DC.ar`); here
     any rate is read as itself.
+  - `Formant` restarts each burst by multiplying two 32-bit phases, which
+    overflows, so its carrier starts every burst at a phase that is noise;
+    and it restarts the window by `bwfreq` where it advances it by the larger
+    of `bwfreq` and the fundamental. Here both restart within the sample.
+  - `Blip`, in a block where the harmonic count is clipped to Nyquist,
+    advances its phase at the larger of the last and the new frequency; here
+    at the frequency.

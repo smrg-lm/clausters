@@ -474,3 +474,7 @@ required = ["signal"]
 doc = '''
 Three `lag_ud`s in a row.
 '''
+
+[[hand]]
+kind = "Klank"
+why = "the partials' lists lead, where their triples trail on the wire"

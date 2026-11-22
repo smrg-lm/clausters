@@ -16,6 +16,7 @@ inputs means a line can be moved between buffers with a `node.set`.
 """
 
 from .graph import Ugen, _channel_binop, _channel_unop
+from .osc import _partials
 from ._generated.filter import *  # noqa: F403 -- the builders that mirror the wire
 
 # ---- filters ----------------------------------------------------------------
@@ -204,6 +205,17 @@ def allpass_c(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
     """Schroeder allpass with cubic interpolation -- the one to modulate."""
     return Ugen("AllpassC", [signal, delaytime, decaytime],
                 static=_line("AllpassC", delaytime, max_delay))
+
+
+# ---- banks -------------------------------------------------------------------
+
+
+def klank(signal, freqs, amps=None, times=None, freqscale=1.0, freqoffset=0.0, decayscale=1.0) -> Ugen:
+    """A bank of fixed resonators `signal` excites: one per entry of `freqs`,
+    at `amps` (1 unless given), each ringing `times` seconds (1 unless given)
+    to -60 dB; the frequencies times `freqscale` plus `freqoffset`, the times
+    times `decayscale`. Read at the synth's start."""
+    return Ugen("Klank", [signal, freqscale, freqoffset, decayscale, *_partials(freqs, amps, times, 1.0)])
 
 
 # ---- smoothers --------------------------------------------------------------

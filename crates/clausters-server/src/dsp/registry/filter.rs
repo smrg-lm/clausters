@@ -267,6 +267,24 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     plain("BHiShelf", I_B_SHELF, |_, _| {
         Box::new(Svf::new(SvfMode::BHiShelf))
     }),
+    // A bank of fixed resonators: the input, the scales, then (freq, amp,
+    // ring time) per partial.
+    desc(
+        "Klank",
+        Variadic,
+        &[
+            inp("signal", 0.0),
+            inp("freqscale", 1.0),
+            inp("freqoffset", 0.0),
+            inp("decayscale", 1.0),
+        ],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, _| Box::new(Klank::new(c.inputs)),
+    ),
 ];
 
 const I_RADIUS: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("radius", 0.8)];

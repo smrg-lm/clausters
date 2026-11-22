@@ -117,6 +117,12 @@ export {
     lfPar,
     syncSaw,
     vibrato,
+    fsinOsc,
+    sinOscFb,
+    psinGrain,
+    blip,
+    formant,
+    klang,
 } from "./osc.ts";
 
 export {
@@ -186,6 +192,7 @@ export {
     bufAllpassN,
     bufAllpassL,
     bufAllpassC,
+    klank,
 } from "./filter.ts";
 export type { Resonance } from "./filter.ts";
 
@@ -251,6 +258,8 @@ export {
     sampleRate,
     shaper,
     vosc,
+    vosc3,
+    cosc,
 } from "./buf.ts";
 
 export {
@@ -350,6 +359,8 @@ export type { SynthLeaf } from "./graph.ts";
 const INPUT_NAMES_MISALIGNED = new Set([
     "EnvGen",
     "IEnvGen",
+    "Klang",
+    "Klank",
     "SendReply",
     "Dseq",
     "Poll",

@@ -848,6 +848,7 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
         mag_prog: None,
         phase_prog: None,
         max_delay: u.max_delay,
+        inputs: u.inputs.len(),
     };
     // Any kind that takes an `fft_size` (the spectral chain's FFT, the
     // partitioned convolver) must name a supported transform size.

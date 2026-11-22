@@ -262,3 +262,48 @@ export const vibrato = (
     iphase: Channel = 0.0,
     trig: Channel = 0.0,
 ): Ugen => new Ugen("Vibrato", [freq, rate, depth, delay, onset, ratevariation, depthvariation, iphase, trig]);
+
+/**
+ * A sine by the two-pole recurrence, the cheapest there is: for a fixed
+ * tone. `iphase` is the initial phase in cycles. The frequency is read once
+ * a block, and changing it moves the amplitude too: modulate `sine` instead.
+ */
+export const fsinOsc = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
+    new Ugen("FSinOsc", [freq, iphase]);
+
+/**
+ * A sine phase-modulated by its own last sample, `feedback` in radians:
+ * a sine at 0, brighter as it rises, towards a sawtooth near 1.5 and noise
+ * beyond.
+ */
+export const sinOscFb = (freq: Channel = 440.0, feedback: Channel = 0.0): Ugen =>
+    new Ugen("SinOscFB", [freq, feedback]);
+
+/**
+ * One sine grain of `dur` seconds under a parabola peaking at `amp`, its
+ * inputs read at the start. The synth is freed when the grain ends.
+ */
+export const psinGrain = (
+    freq: Channel = 440.0,
+    dur: Channel = 0.2,
+    amp: Channel = 0.1,
+): Ugen => new Ugen("PSinGrain", [freq, dur, amp]);
+
+/**
+ * A band-limited impulse train: `numharm` harmonics of `freq` of equal
+ * amplitude, peak 1, kept below Nyquist. Changing `numharm` crossfades
+ * across a block.
+ */
+export const blip = (freq: Channel = 440.0, numharm: Channel = 200.0): Ugen =>
+    new Ugen("Blip", [freq, numharm]);
+
+/**
+ * A formant over a fundamental: at each cycle of `fundfreq`, a burst of a
+ * sine at `formfreq` under a raised-cosine window `bwfreq` Hz wide, so the
+ * spectrum peaks at `formfreq` whatever the fundamental.
+ */
+export const formant = (
+    fundfreq: Channel = 440.0,
+    formfreq: Channel = 1760.0,
+    bwfreq: Channel = 880.0,
+): Ugen => new Ugen("Formant", [fundfreq, formfreq, bwfreq]);

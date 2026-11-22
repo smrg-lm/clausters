@@ -389,6 +389,20 @@
       ]
     },
     {
+      "name": "Blip",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "numharm",
+          "default": 200.0
+        }
+      ]
+    },
+    {
       "name": "BrownNoise",
       "arity": 0,
       "inputs": []
@@ -714,6 +728,24 @@
         {
           "name": "signal",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "COsc",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "beats",
+          "default": 0.5
         }
       ]
     },
@@ -1411,6 +1443,20 @@
       ]
     },
     {
+      "name": "FSinOsc",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "iphase",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Flip",
       "arity": 1,
       "inputs": [
@@ -1435,6 +1481,24 @@
         {
           "name": "hi",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Formant",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "fundfreq",
+          "default": 440.0
+        },
+        {
+          "name": "formfreq",
+          "default": 1760.0
+        },
+        {
+          "name": "bwfreq",
+          "default": 880.0
         }
       ]
     },
@@ -1674,6 +1738,42 @@
         {
           "name": "signal",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Klang",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "freqscale",
+          "default": 1.0
+        },
+        {
+          "name": "freqoffset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Klank",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "freqscale",
+          "default": 1.0
+        },
+        {
+          "name": "freqoffset",
+          "default": 0.0
+        },
+        {
+          "name": "decayscale",
+          "default": 1.0
         }
       ]
     },
@@ -2350,6 +2450,24 @@
         {
           "name": "signal",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PSinGrain",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "dur",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "amp",
+          "default": 0.10000000149011612
         }
       ]
     },
@@ -3156,6 +3274,20 @@
       ]
     },
     {
+      "name": "SinOscFB",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "feedback",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Sine",
       "arity": 2,
       "inputs": [
@@ -3695,6 +3827,28 @@
         {
           "name": "phase",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "VOsc3",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "bufpos",
+          "default": 0.0
+        },
+        {
+          "name": "freq1",
+          "default": 110.0
+        },
+        {
+          "name": "freq2",
+          "default": 220.0
+        },
+        {
+          "name": "freq3",
+          "default": 440.0
         }
       ]
     },

@@ -295,3 +295,51 @@ by `ratevariation` and `depthvariation`, from the synth's random
 generator. It starts after `delay` seconds and fades in over `onset`;
 a rising `trig` starts it again from `iphase` (in cycles).
 '''
+
+[[ugen]]
+kind = "FSinOsc"
+builder = "fsin_osc"
+doc = '''
+A sine by the two-pole recurrence, the cheapest there is: for a fixed
+tone. `iphase` is the initial phase in cycles. The frequency is read once
+a block, and changing it moves the amplitude too: modulate `sine` instead.
+'''
+
+[[ugen]]
+kind = "SinOscFB"
+builder = "sin_osc_fb"
+doc = '''
+A sine phase-modulated by its own last sample, `feedback` in radians:
+a sine at 0, brighter as it rises, towards a sawtooth near 1.5 and noise
+beyond.
+'''
+
+[[ugen]]
+kind = "PSinGrain"
+builder = "psin_grain"
+doc = '''
+One sine grain of `dur` seconds under a parabola peaking at `amp`, its
+inputs read at the start. The synth is freed when the grain ends.
+'''
+
+[[ugen]]
+kind = "Blip"
+builder = "blip"
+doc = '''
+A band-limited impulse train: `numharm` harmonics of `freq` of equal
+amplitude, peak 1, kept below Nyquist. Changing `numharm` crossfades
+across a block.
+'''
+
+[[ugen]]
+kind = "Formant"
+builder = "formant"
+doc = '''
+A formant over a fundamental: at each cycle of `fundfreq`, a burst of a
+sine at `formfreq` under a raised-cosine window `bwfreq` Hz wide, so the
+spectrum peaks at `formfreq` whatever the fundamental.
+'''
+
+[[hand]]
+kind = "Klang"
+why = "the partials' lists lead, where their triples trail on the wire"

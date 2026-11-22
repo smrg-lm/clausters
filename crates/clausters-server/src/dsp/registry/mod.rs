@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, TransportBufRd};
@@ -26,6 +27,7 @@ use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
+use crate::dsp::harmonic::{Blip, Formant};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
@@ -38,7 +40,7 @@ use crate::dsp::noise::{
     BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
     WhiteNoise,
 };
-use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
+use crate::dsp::osc::{COsc, Osc, OscN, Shaper, VOsc, VOsc3};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
 use crate::dsp::rand::SynthRand;
@@ -49,7 +51,7 @@ use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::SampleRate;
 use crate::dsp::sections::{Fir, FirKind, Flip, Fos, LineRamp, SampleDelay, Slew, Sos, TwoZero};
-use crate::dsp::sine::Sine;
+use crate::dsp::sine::{FSinOsc, PSinGrain, SinOscFb, Sine};
 use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
     PvMagFreeze, PvMagSmear,
@@ -123,6 +125,11 @@ pub struct UGenConfig {
     /// static config resolved at build time, not a signal input. Ignored by
     /// every other kind.
     pub max_delay: Option<f32>,
+    /// How many inputs the def wires to this UGen: what a variadic kind that
+    /// keeps state per group of inputs sizes that state by at build time
+    /// (`Klank`'s resonators, `Klang`'s partials), since `process` may not
+    /// allocate. Set by the compiler for every kind.
+    pub inputs: usize,
 }
 
 /// What the engine knows at **build** time, handed to every

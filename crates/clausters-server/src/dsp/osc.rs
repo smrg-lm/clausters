@@ -7,6 +7,8 @@
 //!   buffer.
 //! - [`VOsc`] -- like [`Osc`] but the buffer number is a signal, crossfading
 //!   between adjacent wavetables for morphing timbres.
+//! - [`VOsc3`] -- [`VOsc`] with three frequencies summed.
+//! - [`COsc`] -- [`Osc`] twice, detuned by a beat frequency, summed: a chorus.
 //! - [`Shaper`] -- waveshaper: maps its input signal through a `cheby`-style
 //!   transfer table (wavetable format).
 //!
@@ -15,7 +17,7 @@
 
 use crate::dsp::buffer::Buffer;
 use crate::dsp::wavetable::wt_interp;
-use crate::dsp::{ProcessCtx, UGen, at};
+use crate::dsp::{ProcessCtx, Ramp, UGen, at};
 
 /// Advances a normalized phase (cycles, `[0, 1)`) by `freq/sr` per sample,
 /// keeping it wrapped. Shared by [`Osc`], [`OscN`] and [`VOsc`].
@@ -133,14 +135,20 @@ impl UGen for OscN {
 /// Variable wavetable oscillator: the buffer number is a signal. Reads
 /// wavetable `bufpos` and `bufpos + 1` and crossfades by its fractional part,
 /// so sweeping `bufpos` morphs between a bank of adjacent tables. Inputs:
-/// 0 buffer position, 1 frequency, 2 phase offset in radians.
+/// 0 buffer position, 1 frequency, 2 phase offset in radians. A control-rate
+/// `bufpos` is a line across the block, as scsynth's is, so a sweep does not
+/// step at the block rate.
 pub struct VOsc {
     phase: f64,
+    bufpos: Ramp,
 }
 
 impl VOsc {
     pub fn new() -> Self {
-        Self { phase: 0.0 }
+        Self {
+            phase: 0.0,
+            bufpos: Ramp::default(),
+        }
     }
 }
 
@@ -150,34 +158,144 @@ impl Default for VOsc {
     }
 }
 
-impl VOsc {
-    /// One wavetable's contribution at `pos`, 0 if the slot is empty.
-    #[inline]
-    fn read(buffers: &[Option<std::sync::Arc<Buffer>>], index: usize, pos: f64) -> f32 {
-        match buffers.get(index).and_then(|b| b.as_deref()) {
-            Some(buf) => buf.cells().map_or(0.0, |t| read_wavetable(t, pos)),
-            None => 0.0,
-        }
+/// One wavetable's contribution at `pos`, 0 if the slot is empty.
+#[inline]
+fn read_slot(buffers: &[Option<std::sync::Arc<Buffer>>], index: usize, pos: f64) -> f32 {
+    match buffers.get(index).and_then(|b| b.as_deref()) {
+        Some(buf) => buf.cells().map_or(0.0, |t| read_wavetable(t, pos)),
+        None => 0.0,
     }
+}
+
+/// The table position at sample `i`: the ramp for a control-rate `bufpos`,
+/// the sample itself for an audio-rate one.
+#[inline]
+fn bufpos_at(bufpos: &[f32], line: (f64, f64), i: usize) -> f32 {
+    if bufpos.len() == 1 {
+        (line.0 + line.1 * i as f64) as f32
+    } else {
+        bufpos[i]
+    }
+    .max(0.0)
+}
+
+/// The two tables either side of `bufpos` at `pos`, crossfaded by its
+/// fraction.
+#[inline]
+fn morph(buffers: &[Option<std::sync::Arc<Buffer>>], bufpos: f32, pos: f64) -> f32 {
+    let b0 = bufpos as usize;
+    let frac = bufpos - b0 as f32;
+    let v0 = read_slot(buffers, b0, pos);
+    let v1 = read_slot(buffers, b0 + 1, pos);
+    v0 + frac * (v1 - v0)
 }
 
 impl UGen for VOsc {
     fn reset(&mut self) {
-        self.phase = 0.0;
+        *self = Self::new();
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let sr = ctx.sample_rate as f64;
+        let line = self.bufpos.toward(inputs[0][0] as f64, output.len());
         for (i, s) in output.iter_mut().enumerate() {
-            let bufpos = at(inputs[0], i).max(0.0);
-            let b0 = bufpos as usize;
-            let bfrac = bufpos - b0 as f32;
             let phase_off = at(inputs[2], i) as f64 / std::f64::consts::TAU;
-            let pos = self.phase + phase_off;
-            let v0 = Self::read(ctx.buffers, b0, pos);
-            let v1 = Self::read(ctx.buffers, b0 + 1, pos);
-            *s = v0 + bfrac * (v1 - v0);
+            *s = morph(
+                ctx.buffers,
+                bufpos_at(inputs[0], line, i),
+                self.phase + phase_off,
+            );
             advance(&mut self.phase, at(inputs[1], i), sr);
+        }
+    }
+}
+
+/// scsynth's `VOsc3(bufpos, freq1, freq2, freq3)`: [`VOsc`]'s morphing table
+/// read at three frequencies and summed -- three detuned voices of one
+/// timbre for the price of one table position.
+pub struct VOsc3 {
+    phases: [f64; 3],
+    bufpos: Ramp,
+}
+
+impl VOsc3 {
+    pub fn new() -> Self {
+        Self {
+            phases: [0.0; 3],
+            bufpos: Ramp::default(),
+        }
+    }
+}
+
+impl Default for VOsc3 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for VOsc3 {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let sr = ctx.sample_rate as f64;
+        let line = self.bufpos.toward(inputs[0][0] as f64, output.len());
+        for (i, s) in output.iter_mut().enumerate() {
+            let pos = bufpos_at(inputs[0], line, i);
+            let mut sum = 0.0;
+            for (k, phase) in self.phases.iter_mut().enumerate() {
+                sum += morph(ctx.buffers, pos, *phase);
+                advance(phase, at(inputs[1 + k], i), sr);
+            }
+            *s = sum;
+        }
+    }
+}
+
+/// scsynth's `COsc(bufnum, freq, beats)`: [`Osc`] twice, at `freq + beats/2`
+/// and `freq - beats/2`, summed -- two voices beating `beats` times a second,
+/// a chorus from one table. Its peak is twice the table's.
+pub struct COsc {
+    phases: [f64; 2],
+}
+
+impl COsc {
+    pub fn new() -> Self {
+        Self { phases: [0.0; 2] }
+    }
+}
+
+impl Default for COsc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for COsc {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let index = inputs[0][0].max(0.0) as usize;
+        let Some(table) = ctx
+            .buffers
+            .get(index)
+            .and_then(|b| b.as_deref())
+            .and_then(|b| b.cells())
+        else {
+            output.fill(0.0);
+            return;
+        };
+        let sr = ctx.sample_rate as f64;
+        for (i, s) in output.iter_mut().enumerate() {
+            let freq = at(inputs[1], i);
+            let half = at(inputs[2], i) * 0.5;
+            let [a, b] = &mut self.phases;
+            *s = read_wavetable(table, *a) + read_wavetable(table, *b);
+            advance(a, freq + half, sr);
+            advance(b, freq - half, sr);
         }
     }
 }

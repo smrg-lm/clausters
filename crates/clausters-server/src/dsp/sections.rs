@@ -377,7 +377,7 @@ impl UGen for Slew {
 /// scsynth's `zapgremlins`: a state that has decayed into the denormal range
 /// or past any sound is zero.
 #[inline]
-fn flush(x: f64) -> f64 {
+pub(crate) fn flush(x: f64) -> f64 {
     let a = x.abs();
     if a > 1e-15 && a < 1e15 { x } else { 0.0 }
 }

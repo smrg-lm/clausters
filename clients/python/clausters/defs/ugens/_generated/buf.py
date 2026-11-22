@@ -36,6 +36,8 @@ __all__ = [
     "coin_gate",
     "rand_id",
     "rand_seed",
+    "vosc3",
+    "cosc",
 ]
 
 
@@ -283,3 +285,18 @@ def rand_seed(trig=0.0, seed=56789.0) -> Ugen:
     it is a root, and is not wrapped in an `out`. Outputs 0.
     """
     return Ugen("RandSeed", [trig, seed])
+
+
+def vosc3(bufpos, freq1=110.0, freq2=220.0, freq3=440.0) -> Ugen:
+    """`vosc` read at three frequencies and summed: three detuned voices of one
+    morphing timbre.
+    """
+    return Ugen("VOsc3", [bufpos, freq1, freq2, freq3])
+
+
+def cosc(bufnum, freq=440.0, beats=0.5) -> Ugen:
+    """`osc` twice, at `freq + beats/2` and `freq - beats/2`, summed: two voices
+    beating `beats` times a second, a chorus from one wavetable. The peak is
+    twice the table's.
+    """
+    return Ugen("COsc", [bufnum, freq, beats])

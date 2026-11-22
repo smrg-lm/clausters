@@ -269,3 +269,25 @@ export const randId = (id: Channel = 0.0): Ugen => new Ugen("RandID", [id]);
  */
 export const randSeed = (trig: Channel = 0.0, seed: Channel = 56789.0): Ugen =>
     new Ugen("RandSeed", [trig, seed]);
+
+/**
+ * `vosc` read at three frequencies and summed: three detuned voices of one
+ * morphing timbre.
+ */
+export const vosc3 = (
+    bufpos: Channel,
+    freq1: Channel = 110.0,
+    freq2: Channel = 220.0,
+    freq3: Channel = 440.0,
+): Ugen => new Ugen("VOsc3", [bufpos, freq1, freq2, freq3]);
+
+/**
+ * `osc` twice, at `freq + beats/2` and `freq - beats/2`, summed: two voices
+ * beating `beats` times a second, a chorus from one wavetable. The peak is
+ * twice the table's.
+ */
+export const cosc = (
+    bufnum: Channel,
+    freq: Channel = 440.0,
+    beats: Channel = 0.5,
+): Ugen => new Ugen("COsc", [bufnum, freq, beats]);

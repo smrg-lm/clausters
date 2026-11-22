@@ -301,3 +301,22 @@ it is a root, and is not wrapped in an `out`. Outputs 0.
 [[hand]]
 kind = "RecordBuf"
 why = "`done_action` is a `DoneAction`, and TypeScript takes the optional inputs as an options object"
+
+[[ugen]]
+kind = "VOsc3"
+builder = "vosc3"
+required = ["bufpos"]
+doc = '''
+`vosc` read at three frequencies and summed: three detuned voices of one
+morphing timbre.
+'''
+
+[[ugen]]
+kind = "COsc"
+builder = "cosc"
+required = ["bufnum"]
+doc = '''
+`osc` twice, at `freq + beats/2` and `freq - beats/2`, summed: two voices
+beating `beats` times a second, a chorus from one wavetable. The peak is
+twice the table's.
+'''
