@@ -381,3 +381,185 @@ The logistic map `y = r y (1 - y)`, `r` the `chaos_param`, iterated `freq`
 times a second from `init` and held between: chaos from about 3.57 on,
 cycles below.
 '''
+
+[[ugen]]
+kind = "CuspN"
+builder = "cusp_n"
+doc = '''
+The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "CuspL"
+builder = "cusp_l"
+doc = '''
+The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "GbmanN"
+builder = "gbman_n"
+doc = '''
+The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "GbmanL"
+builder = "gbman_l"
+doc = '''
+The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "HenonN"
+builder = "henon_n"
+doc = '''
+The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "HenonL"
+builder = "henon_l"
+doc = '''
+The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "HenonC"
+builder = "henon_c"
+doc = '''
+The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by a cubic.
+'''
+
+[[ugen]]
+kind = "LatoocarfianN"
+builder = "latoocarfian_n"
+doc = '''
+Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "LatoocarfianL"
+builder = "latoocarfian_l"
+doc = '''
+Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "LatoocarfianC"
+builder = "latoocarfian_c"
+doc = '''
+Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by a cubic.
+'''
+
+[[ugen]]
+kind = "LinCongN"
+builder = "lin_cong_n"
+doc = '''
+The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "LinCongL"
+builder = "lin_cong_l"
+doc = '''
+The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "LinCongC"
+builder = "lin_cong_c"
+doc = '''
+The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by a cubic.
+'''
+
+[[ugen]]
+kind = "LorenzL"
+builder = "lorenz_l"
+doc = '''
+The Lorenz system, integrated with step `h` (Runge-Kutta), its `x` scaled by 0.04, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "QuadN"
+builder = "quad_n"
+doc = '''
+The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "QuadL"
+builder = "quad_l"
+doc = '''
+The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "QuadC"
+builder = "quad_c"
+doc = '''
+The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by a cubic.
+'''
+
+[[ugen]]
+kind = "StandardN"
+builder = "standard_n"
+doc = '''
+Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "StandardL"
+builder = "standard_l"
+doc = '''
+Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "FBSineN"
+builder = "fb_sine_n"
+doc = '''
+A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and held between steps.
+'''
+
+[[ugen]]
+kind = "FBSineL"
+builder = "fb_sine_l"
+doc = '''
+A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by lines.
+'''
+
+[[ugen]]
+kind = "FBSineC"
+builder = "fb_sine_c"
+doc = '''
+A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by a cubic.
+'''
+
+[[ugen]]
+kind = "Gendy1"
+builder = "gendy1"
+doc = '''
+Xenakis's dynamic stochastic synthesis: a cycle of `knum` control points
+(of `init_cps` in memory), each level and duration taking a random walk
+each cycle, by distribution `ampdist`/`durdist` (0 linear, 1 Cauchy,
+2 logistic, 3 hyperbolic cosine, 4 arcsine, 5 exponential, 6 the
+parameter itself) scaled by `ampscale`/`durscale`; the durations map to a
+frequency between `minfreq` and `maxfreq`.
+'''
+
+[[ugen]]
+kind = "Gendy2"
+builder = "gendy2"
+doc = '''
+`gendy1` with a second-order walk: the steps walk too, the levels' driven
+by a Lehmer congruence of `a` and `c`.
+'''
+
+[[ugen]]
+kind = "Gendy3"
+builder = "gendy3"
+doc = '''
+`gendy1`'s walks at a fixed pitch `freq`: the durations are proportions of
+the cycle, drawn together each cycle, and every cycle starts at 0.
+'''

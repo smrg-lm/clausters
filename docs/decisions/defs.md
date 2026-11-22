@@ -1637,3 +1637,15 @@ What the comparison allows is part of the decision:
   - The dynamic noises (`LFDNoise0`, `LFDNoise1`, `LFDNoise3`,
     `LFDClipNoise`) only move their phase down, so a negative frequency
     freezes them; here the rate is the frequency's magnitude.
+  - The chaotic maps' variants disagree in scsynth: `HenonN` and `HenonL`
+    iterate with their two initial values exchanged (only `HenonC` iterates
+    the map as written), the three handle divergence three ways, the cubic
+    forms start their first period at 0 or at `xi` in every coefficient,
+    `LinCongL` at `xi` unscaled, and `FBSineC` restarts `x` but not `y`.
+    Here one engine runs every map: each variant starts on the map and a
+    diverged Henon map holds its last value.
+  - `Gendy2` and `Gendy3` reflect a value below a range with a formula right
+    only for a range starting at 0, so `Gendy2`'s levels leave +/-1;
+    `Gendy3` truncates each segment's interpolation factor to an integer and
+    crosses one point a sample, so its lines miss their points. Here every
+    value is reflected into its range and each line reaches its point.

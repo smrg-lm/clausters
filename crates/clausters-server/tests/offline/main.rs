@@ -29,6 +29,7 @@ mod sine;
 mod audio_io;
 mod buffer_commands;
 mod capacity;
+mod chaos;
 mod controls;
 mod conv;
 mod core_parity;

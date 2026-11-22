@@ -430,6 +430,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `lf_clip_noise(freq)` | the held one, restricted to ±1 |
 | | `lfd_noise0`, `lfd_noise1`, `lfd_noise3`, `lfd_clip_noise(freq=500.0)` | the dynamic forms: a change of rate takes effect at once |
 | | `logistic(chaos_param=3, freq=1000, init=0.5)` | the logistic map, iterated and held |
+| | `cusp_n`, `henon_c`, `latoocarfian_l`, `lin_cong_n`, `lorenz_l`, `quad_c`, `standard_n`, `fb_sine_l` … | scsynth's chaotic maps, held (`n`), linear (`l`) or cubic (`c`) |
+| | `gendy1`, `gendy2`, `gendy3` | Xenakis's dynamic stochastic synthesis |
 | | `dust(density)` / `dust2(density)` | random impulses at a **mean** density — exponential gaps, not a clock |
 | | `crackle(chaos)` | a deterministic chaotic map; one-sided, so it carries DC |
 | Panning | `pan2(signal, pos=0.0, level=1.0)` | places a mono signal between two channels at **equal power**; returns two channels |
@@ -569,6 +571,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `lfClipNoise(freq = 500.0)` | the held one, restricted to ±1 |
 | | `lfdNoise0`, `lfdNoise1`, `lfdNoise3`, `lfdClipNoise(freq = 500.0)` | the dynamic forms: a change of rate takes effect at once |
 | | `logistic(chaosParam = 3, freq = 1000, init = 0.5)` | the logistic map, iterated and held |
+| | `cuspN`, `henonC`, `latoocarfianL`, `linCongN`, `lorenzL`, `quadC`, `standardN`, `fbSineL` … | scsynth's chaotic maps, held (`N`), linear (`L`) or cubic (`C`) |
+| | `gendy1`, `gendy2`, `gendy3` | Xenakis's dynamic stochastic synthesis |
 | | `dust(density = 1.0)` / `dust2(density = 1.0)` | random impulses at a **mean** density — exponential gaps, not a clock |
 | | `crackle(chaos = 1.5)` | a deterministic chaotic map; one-sided, so it carries DC |
 | Panning | `pan2(signal, pos = 0.0, level = 1.0)` | places a mono signal between two channels at **equal power**; returns two channels |

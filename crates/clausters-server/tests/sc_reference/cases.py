@@ -94,6 +94,7 @@ def cases() -> list[dict]:
         _lfugens,
         _oscugens,
         _tables,
+        _chaos,
     ]:
         out.extend(f())
     return out
@@ -992,4 +993,42 @@ def _tables() -> list[dict]:
         # Not a modulated rate: scsynth's priming reads the first sample's
         # rate once more, so against a moving one no shift lines them up
         # (`tests/offline/tables.rs` holds a change of rate).
+    return out
+
+
+def _chaos() -> list[dict]:
+    """`ChaosUGens.cpp`'s maps and `GendynUGens.cpp`'s Gendy."""
+    out = []
+    maps = {
+        "Cusp": ("NL", [1.0, 1.9, 0.0]),
+        "Gbman": ("NL", [1.2, 2.1]),
+        "Latoocarfian": ("NLC", [1.0, 3.0, 0.5, 0.5, 0.5, 0.5]),
+        "LinCong": ("NLC", [1.1, 0.13, 1.0, 1.0]),
+        "Lorenz": ("L", [10.0, 28.0, 2.667, 0.05, 0.1, 0.0, 0.0]),
+        "Quad": ("NLC", [-1.0, 0.0, 0.75, 0.0]),
+        "Standard": ("NL", [1.0, 0.5, 0.0]),
+        "FBSine": ("NLC", [1.0, 0.1, 1.1, 0.5, 0.1, 0.1]),
+        "Henon": ("C", [1.4, 0.3, 0.0, 0.0]),
+    }
+    # The cubic forms and LinCongL at the full rate only: their first period
+    # starts, in scsynth, from a state that is not the map's (LinCong's at an
+    # `xi` that is its own scaled value). Not HenonN or HenonL: scsynth's
+    # iterate with the initial values exchanged. `tests/offline/chaos.rs`
+    # holds the server's.
+    for name, (forms, params) in maps.items():
+        for form in forms:
+            kind = name + form
+            full = form == "C" or kind == "LinCongL"
+            freqs = [48000.0] if full else [48000.0, 4000.0, 1234.5]
+            for f in freqs:
+                chaotic = name in ("Cusp", "Latoocarfian", "Lorenz", "Standard", "FBSine", "Henon")
+                why = _PRIMED + ("; a chaotic map amplifies two correct computations' rounding" if chaotic else "")
+                kw = {"tol": 1e-4} if chaotic else {}
+                out.append(one(f"{kind}.{f}", kind, "ar", f, *params, blocks=4, shift=1, why=why, **kw))
+    out.append(one("Gendy1.ar", "Gendy1", "ar", 1, 1, 1.0, 1.0, 440, 660, 0.5, 0.5, 12, 12, blocks=8, seed=51, tol=1e-4, why="Xenakis's distributions in f32 libm against glibc's"))
+    for which in range(7):
+        out.append(one(f"Gendy1.dist{which}", "Gendy1", "ar", which, which, 0.6, 0.4, 900, 1500, 0.3, 0.3, 8, 8, blocks=8, seed=52 + which, tol=1e-4, why="Xenakis's distributions in f32 libm against glibc's"))
+    # Gendy2 with the walks' scales at 0: scsynth reflects a level below -1
+    # out of the range, so the walk itself cannot be compared.
+    out.append(one("Gendy2.ar", "Gendy2", "ar", 1, 1, 1.0, 1.0, 440, 660, 0.0, 0.0, 12, 12, 1.17, 0.31, blocks=8, seed=61))
     return out

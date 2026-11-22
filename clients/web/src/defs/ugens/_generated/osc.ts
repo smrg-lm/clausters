@@ -334,3 +334,308 @@ export const logistic = (
     freq: Channel = 1000.0,
     init: Channel = 0.5,
 ): Ugen => new Ugen("Logistic", [chaosParam, freq, init]);
+
+/**
+ * The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and held between steps.
+ */
+export const cuspN = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = 1.9,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("CuspN", [freq, a, b, xi]);
+
+/**
+ * The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and joined by lines.
+ */
+export const cuspL = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = 1.9,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("CuspL", [freq, a, b, xi]);
+
+/**
+ * The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and held between steps.
+ */
+export const gbmanN = (
+    freq: Channel = 22050.0,
+    xi: Channel = 1.2,
+    yi: Channel = 2.1,
+): Ugen => new Ugen("GbmanN", [freq, xi, yi]);
+
+/**
+ * The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and joined by lines.
+ */
+export const gbmanL = (
+    freq: Channel = 22050.0,
+    xi: Channel = 1.2,
+    yi: Channel = 2.1,
+): Ugen => new Ugen("GbmanL", [freq, xi, yi]);
+
+/**
+ * The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and held between steps.
+ */
+export const henonN = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.4,
+    b: Channel = 0.3,
+    x0: Channel = 0.0,
+    x1: Channel = 0.0,
+): Ugen => new Ugen("HenonN", [freq, a, b, x0, x1]);
+
+/**
+ * The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by lines.
+ */
+export const henonL = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.4,
+    b: Channel = 0.3,
+    x0: Channel = 0.0,
+    x1: Channel = 0.0,
+): Ugen => new Ugen("HenonL", [freq, a, b, x0, x1]);
+
+/**
+ * The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by a cubic.
+ */
+export const henonC = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.4,
+    b: Channel = 0.3,
+    x0: Channel = 0.0,
+    x1: Channel = 0.0,
+): Ugen => new Ugen("HenonC", [freq, a, b, x0, x1]);
+
+/**
+ * Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and held between steps.
+ */
+export const latoocarfianN = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = 3.0,
+    c: Channel = 0.5,
+    d: Channel = 0.5,
+    xi: Channel = 0.5,
+    yi: Channel = 0.5,
+): Ugen => new Ugen("LatoocarfianN", [freq, a, b, c, d, xi, yi]);
+
+/**
+ * Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by lines.
+ */
+export const latoocarfianL = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = 3.0,
+    c: Channel = 0.5,
+    d: Channel = 0.5,
+    xi: Channel = 0.5,
+    yi: Channel = 0.5,
+): Ugen => new Ugen("LatoocarfianL", [freq, a, b, c, d, xi, yi]);
+
+/**
+ * Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by a cubic.
+ */
+export const latoocarfianC = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = 3.0,
+    c: Channel = 0.5,
+    d: Channel = 0.5,
+    xi: Channel = 0.5,
+    yi: Channel = 0.5,
+): Ugen => new Ugen("LatoocarfianC", [freq, a, b, c, d, xi, yi]);
+
+/**
+ * The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and held between steps.
+ */
+export const linCongN = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.1,
+    c: Channel = 0.13,
+    m: Channel = 1.0,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("LinCongN", [freq, a, c, m, xi]);
+
+/**
+ * The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by lines.
+ */
+export const linCongL = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.1,
+    c: Channel = 0.13,
+    m: Channel = 1.0,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("LinCongL", [freq, a, c, m, xi]);
+
+/**
+ * The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by a cubic.
+ */
+export const linCongC = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.1,
+    c: Channel = 0.13,
+    m: Channel = 1.0,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("LinCongC", [freq, a, c, m, xi]);
+
+/**
+ * The Lorenz system, integrated with step `h` (Runge-Kutta), its `x` scaled by 0.04, stepped `freq` times a second and joined by lines.
+ */
+export const lorenzL = (
+    freq: Channel = 22050.0,
+    s: Channel = 10.0,
+    r: Channel = 28.0,
+    b: Channel = 2.667,
+    h: Channel = 0.05,
+    xi: Channel = 0.1,
+    yi: Channel = 0.0,
+    zi: Channel = 0.0,
+): Ugen => new Ugen("LorenzL", [freq, s, r, b, h, xi, yi, zi]);
+
+/**
+ * The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and held between steps.
+ */
+export const quadN = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = -1.0,
+    c: Channel = -0.75,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("QuadN", [freq, a, b, c, xi]);
+
+/**
+ * The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by lines.
+ */
+export const quadL = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = -1.0,
+    c: Channel = -0.75,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("QuadL", [freq, a, b, c, xi]);
+
+/**
+ * The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by a cubic.
+ */
+export const quadC = (
+    freq: Channel = 22050.0,
+    a: Channel = 1.0,
+    b: Channel = -1.0,
+    c: Channel = -0.75,
+    xi: Channel = 0.0,
+): Ugen => new Ugen("QuadC", [freq, a, b, c, xi]);
+
+/**
+ * Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and held between steps.
+ */
+export const standardN = (
+    freq: Channel = 22050.0,
+    k: Channel = 1.0,
+    xi: Channel = 0.5,
+    yi: Channel = 0.0,
+): Ugen => new Ugen("StandardN", [freq, k, xi, yi]);
+
+/**
+ * Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and joined by lines.
+ */
+export const standardL = (
+    freq: Channel = 22050.0,
+    k: Channel = 1.0,
+    xi: Channel = 0.5,
+    yi: Channel = 0.0,
+): Ugen => new Ugen("StandardL", [freq, k, xi, yi]);
+
+/**
+ * A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and held between steps.
+ */
+export const fbSineN = (
+    freq: Channel = 22050.0,
+    im: Channel = 1.0,
+    fb: Channel = 0.1,
+    a: Channel = 1.1,
+    c: Channel = 0.5,
+    xi: Channel = 0.1,
+    yi: Channel = 0.1,
+): Ugen => new Ugen("FBSineN", [freq, im, fb, a, c, xi, yi]);
+
+/**
+ * A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by lines.
+ */
+export const fbSineL = (
+    freq: Channel = 22050.0,
+    im: Channel = 1.0,
+    fb: Channel = 0.1,
+    a: Channel = 1.1,
+    c: Channel = 0.5,
+    xi: Channel = 0.1,
+    yi: Channel = 0.1,
+): Ugen => new Ugen("FBSineL", [freq, im, fb, a, c, xi, yi]);
+
+/**
+ * A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by a cubic.
+ */
+export const fbSineC = (
+    freq: Channel = 22050.0,
+    im: Channel = 1.0,
+    fb: Channel = 0.1,
+    a: Channel = 1.1,
+    c: Channel = 0.5,
+    xi: Channel = 0.1,
+    yi: Channel = 0.1,
+): Ugen => new Ugen("FBSineC", [freq, im, fb, a, c, xi, yi]);
+
+/**
+ * Xenakis's dynamic stochastic synthesis: a cycle of `knum` control points
+ * (of `initCps` in memory), each level and duration taking a random walk
+ * each cycle, by distribution `ampdist`/`durdist` (0 linear, 1 Cauchy,
+ * 2 logistic, 3 hyperbolic cosine, 4 arcsine, 5 exponential, 6 the
+ * parameter itself) scaled by `ampscale`/`durscale`; the durations map to a
+ * frequency between `minfreq` and `maxfreq`.
+ */
+export const gendy1 = (
+    ampdist: Channel = 1.0,
+    durdist: Channel = 1.0,
+    adparam: Channel = 1.0,
+    ddparam: Channel = 1.0,
+    minfreq: Channel = 440.0,
+    maxfreq: Channel = 660.0,
+    ampscale: Channel = 0.5,
+    durscale: Channel = 0.5,
+    initCps: Channel = 12.0,
+    knum: Channel = 12.0,
+): Ugen => new Ugen("Gendy1", [ampdist, durdist, adparam, ddparam, minfreq, maxfreq, ampscale, durscale, initCps, knum]);
+
+/**
+ * `gendy1` with a second-order walk: the steps walk too, the levels' driven
+ * by a Lehmer congruence of `a` and `c`.
+ */
+export const gendy2 = (
+    ampdist: Channel = 1.0,
+    durdist: Channel = 1.0,
+    adparam: Channel = 1.0,
+    ddparam: Channel = 1.0,
+    minfreq: Channel = 440.0,
+    maxfreq: Channel = 660.0,
+    ampscale: Channel = 0.5,
+    durscale: Channel = 0.5,
+    initCps: Channel = 12.0,
+    knum: Channel = 12.0,
+    a: Channel = 1.17,
+    c: Channel = 0.31,
+): Ugen => new Ugen("Gendy2", [ampdist, durdist, adparam, ddparam, minfreq, maxfreq, ampscale, durscale, initCps, knum, a, c]);
+
+/**
+ * `gendy1`'s walks at a fixed pitch `freq`: the durations are proportions of
+ * the cycle, drawn together each cycle, and every cycle starts at 0.
+ */
+export const gendy3 = (
+    ampdist: Channel = 1.0,
+    durdist: Channel = 1.0,
+    adparam: Channel = 1.0,
+    ddparam: Channel = 1.0,
+    freq: Channel = 440.0,
+    ampscale: Channel = 0.5,
+    durscale: Channel = 0.5,
+    initCps: Channel = 12.0,
+    knum: Channel = 12.0,
+): Ugen => new Ugen("Gendy3", [ampdist, durdist, adparam, ddparam, freq, ampscale, durscale, initCps, knum]);

@@ -142,6 +142,9 @@ const STOCHASTIC: &[&str] = &[
     "LFDNoise1",
     "LFDNoise3",
     "LFDClipNoise",
+    "Gendy1",
+    "Gendy2",
+    "Gendy3",
 ];
 
 /// Kinds whose state is not the voice's to reset.
@@ -722,6 +725,45 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
     ]
+    .into_iter()
+    .chain(chaos_cases())
+    .collect()
+}
+
+/// Every chaotic map, at a rate that steps it every few samples.
+fn chaos_cases() -> Vec<Case> {
+    let params: &[(&'static str, &[f32])] = &[
+        ("CuspN", &[1.0, 1.9, 0.0]),
+        ("CuspL", &[1.0, 1.9, 0.0]),
+        ("GbmanN", &[1.2, 2.1]),
+        ("GbmanL", &[1.2, 2.1]),
+        ("HenonN", &[1.4, 0.3, 0.0, 0.0]),
+        ("HenonL", &[1.4, 0.3, 0.0, 0.0]),
+        ("HenonC", &[1.4, 0.3, 0.0, 0.0]),
+        ("LatoocarfianN", &[1.0, 3.0, 0.5, 0.5, 0.5, 0.5]),
+        ("LatoocarfianL", &[1.0, 3.0, 0.5, 0.5, 0.5, 0.5]),
+        ("LatoocarfianC", &[1.0, 3.0, 0.5, 0.5, 0.5, 0.5]),
+        ("LinCongN", &[1.1, 0.13, 1.0, 0.0]),
+        ("LinCongL", &[1.1, 0.13, 1.0, 0.0]),
+        ("LinCongC", &[1.1, 0.13, 1.0, 0.0]),
+        ("LorenzL", &[10.0, 28.0, 2.667, 0.05, 0.1, 0.0, 0.0]),
+        ("QuadN", &[-1.0, 0.0, 0.75, 0.0]),
+        ("QuadL", &[-1.0, 0.0, 0.75, 0.0]),
+        ("QuadC", &[-1.0, 0.0, 0.75, 0.0]),
+        ("StandardN", &[1.0, 0.5, 0.0]),
+        ("StandardL", &[1.0, 0.5, 0.0]),
+        ("FBSineN", &[1.0, 0.1, 1.1, 0.5, 0.1, 0.1]),
+        ("FBSineL", &[1.0, 0.1, 1.1, 0.5, 0.1, 0.1]),
+        ("FBSineC", &[1.0, 0.1, 1.1, 0.5, 0.1, 0.1]),
+    ];
+    params
+        .iter()
+        .map(|&(kind, p)| {
+            let mut inputs = vec![c(9000.0)];
+            inputs.extend(p.iter().map(|&v| c(v)));
+            Case::new(kind, json!([{"kind": kind, "inputs": inputs}, out(0)]))
+        })
+        .collect()
 }
 
 #[test]

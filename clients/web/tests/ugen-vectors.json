@@ -897,6 +897,50 @@
       ]
     },
     {
+      "name": "CuspL",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 1.899999976158142
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "CuspN",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 1.899999976158142
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "DC",
       "arity": 1,
       "inputs": [
@@ -1439,6 +1483,108 @@
       ]
     },
     {
+      "name": "FBSineC",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "im",
+          "default": 1.0
+        },
+        {
+          "name": "fb",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "yi",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "FBSineL",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "im",
+          "default": 1.0
+        },
+        {
+          "name": "fb",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "yi",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "FBSineN",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "im",
+          "default": 1.0
+        },
+        {
+          "name": "fb",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "yi",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
       "name": "FFT",
       "arity": 2,
       "inputs": [
@@ -1605,6 +1751,184 @@
       ]
     },
     {
+      "name": "GbmanL",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "xi",
+          "default": 1.2000000476837158
+        },
+        {
+          "name": "yi",
+          "default": 2.0999999046325684
+        }
+      ]
+    },
+    {
+      "name": "GbmanN",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "xi",
+          "default": 1.2000000476837158
+        },
+        {
+          "name": "yi",
+          "default": 2.0999999046325684
+        }
+      ]
+    },
+    {
+      "name": "Gendy1",
+      "arity": 10,
+      "inputs": [
+        {
+          "name": "ampdist",
+          "default": 1.0
+        },
+        {
+          "name": "durdist",
+          "default": 1.0
+        },
+        {
+          "name": "adparam",
+          "default": 1.0
+        },
+        {
+          "name": "ddparam",
+          "default": 1.0
+        },
+        {
+          "name": "minfreq",
+          "default": 440.0
+        },
+        {
+          "name": "maxfreq",
+          "default": 660.0
+        },
+        {
+          "name": "ampscale",
+          "default": 0.5
+        },
+        {
+          "name": "durscale",
+          "default": 0.5
+        },
+        {
+          "name": "init_cps",
+          "default": 12.0
+        },
+        {
+          "name": "knum",
+          "default": 12.0
+        }
+      ]
+    },
+    {
+      "name": "Gendy2",
+      "arity": 12,
+      "inputs": [
+        {
+          "name": "ampdist",
+          "default": 1.0
+        },
+        {
+          "name": "durdist",
+          "default": 1.0
+        },
+        {
+          "name": "adparam",
+          "default": 1.0
+        },
+        {
+          "name": "ddparam",
+          "default": 1.0
+        },
+        {
+          "name": "minfreq",
+          "default": 440.0
+        },
+        {
+          "name": "maxfreq",
+          "default": 660.0
+        },
+        {
+          "name": "ampscale",
+          "default": 0.5
+        },
+        {
+          "name": "durscale",
+          "default": 0.5
+        },
+        {
+          "name": "init_cps",
+          "default": 12.0
+        },
+        {
+          "name": "knum",
+          "default": 12.0
+        },
+        {
+          "name": "a",
+          "default": 1.1699999570846558
+        },
+        {
+          "name": "c",
+          "default": 0.3100000023841858
+        }
+      ]
+    },
+    {
+      "name": "Gendy3",
+      "arity": 9,
+      "inputs": [
+        {
+          "name": "ampdist",
+          "default": 1.0
+        },
+        {
+          "name": "durdist",
+          "default": 1.0
+        },
+        {
+          "name": "adparam",
+          "default": 1.0
+        },
+        {
+          "name": "ddparam",
+          "default": 1.0
+        },
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "ampscale",
+          "default": 0.5
+        },
+        {
+          "name": "durscale",
+          "default": 0.5
+        },
+        {
+          "name": "init_cps",
+          "default": 12.0
+        },
+        {
+          "name": "knum",
+          "default": 12.0
+        }
+      ]
+    },
+    {
       "name": "GrayNoise",
       "arity": 0,
       "inputs": []
@@ -1649,6 +1973,84 @@
       "inputs": [
         {
           "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "HenonC",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.399999976158142
+        },
+        {
+          "name": "b",
+          "default": 0.30000001192092896
+        },
+        {
+          "name": "x0",
+          "default": 0.0
+        },
+        {
+          "name": "x1",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "HenonL",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.399999976158142
+        },
+        {
+          "name": "b",
+          "default": 0.30000001192092896
+        },
+        {
+          "name": "x0",
+          "default": 0.0
+        },
+        {
+          "name": "x1",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "HenonN",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.399999976158142
+        },
+        {
+          "name": "b",
+          "default": 0.30000001192092896
+        },
+        {
+          "name": "x0",
+          "default": 0.0
+        },
+        {
+          "name": "x1",
           "default": 0.0
         }
       ]
@@ -2200,6 +2602,108 @@
       ]
     },
     {
+      "name": "LatoocarfianC",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 3.0
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "d",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.5
+        },
+        {
+          "name": "yi",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "LatoocarfianL",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 3.0
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "d",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.5
+        },
+        {
+          "name": "yi",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "LatoocarfianN",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": 3.0
+        },
+        {
+          "name": "c",
+          "default": 0.5
+        },
+        {
+          "name": "d",
+          "default": 0.5
+        },
+        {
+          "name": "xi",
+          "default": 0.5
+        },
+        {
+          "name": "yi",
+          "default": 0.5
+        }
+      ]
+    },
+    {
       "name": "LeakDC",
       "arity": 2,
       "inputs": [
@@ -2210,6 +2714,84 @@
         {
           "name": "coef",
           "default": 0.9950000047683716
+        }
+      ]
+    },
+    {
+      "name": "LinCongC",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.12999999523162842
+        },
+        {
+          "name": "m",
+          "default": 1.0
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "LinCongL",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.12999999523162842
+        },
+        {
+          "name": "m",
+          "default": 1.0
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "LinCongN",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.100000023841858
+        },
+        {
+          "name": "c",
+          "default": 0.12999999523162842
+        },
+        {
+          "name": "m",
+          "default": 1.0
+        },
+        {
+          "name": "xi",
+          "default": 0.0
         }
       ]
     },
@@ -2388,6 +2970,44 @@
         {
           "name": "init",
           "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "LorenzL",
+      "arity": 8,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "s",
+          "default": 10.0
+        },
+        {
+          "name": "r",
+          "default": 28.0
+        },
+        {
+          "name": "b",
+          "default": 2.6670000553131104
+        },
+        {
+          "name": "h",
+          "default": 0.05000000074505806
+        },
+        {
+          "name": "xi",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "yi",
+          "default": 0.0
+        },
+        {
+          "name": "zi",
+          "default": 0.0
         }
       ]
     },
@@ -3051,6 +3671,84 @@
       ]
     },
     {
+      "name": "QuadC",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": -1.0
+        },
+        {
+          "name": "c",
+          "default": -0.75
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "QuadL",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": -1.0
+        },
+        {
+          "name": "c",
+          "default": -0.75
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "QuadN",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "a",
+          "default": 1.0
+        },
+        {
+          "name": "b",
+          "default": -1.0
+        },
+        {
+          "name": "c",
+          "default": -0.75
+        },
+        {
+          "name": "xi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "RHPF",
       "arity": 3,
       "inputs": [
@@ -3495,6 +4193,50 @@
       "inputs": [
         {
           "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "StandardL",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "k",
+          "default": 1.0
+        },
+        {
+          "name": "xi",
+          "default": 0.5
+        },
+        {
+          "name": "yi",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "StandardN",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 22050.0
+        },
+        {
+          "name": "k",
+          "default": 1.0
+        },
+        {
+          "name": "xi",
+          "default": 0.5
+        },
+        {
+          "name": "yi",
           "default": 0.0
         }
       ]

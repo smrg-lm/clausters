@@ -47,6 +47,31 @@ __all__ = [
     "lfd_noise3",
     "lfd_clip_noise",
     "logistic",
+    "cusp_n",
+    "cusp_l",
+    "gbman_n",
+    "gbman_l",
+    "henon_n",
+    "henon_l",
+    "henon_c",
+    "latoocarfian_n",
+    "latoocarfian_l",
+    "latoocarfian_c",
+    "lin_cong_n",
+    "lin_cong_l",
+    "lin_cong_c",
+    "lorenz_l",
+    "quad_n",
+    "quad_l",
+    "quad_c",
+    "standard_n",
+    "standard_l",
+    "fb_sine_n",
+    "fb_sine_l",
+    "fb_sine_c",
+    "gendy1",
+    "gendy2",
+    "gendy3",
 ]
 
 
@@ -380,3 +405,260 @@ def logistic(chaos_param=3.0, freq=1000.0, init=0.5) -> Ugen:
     cycles below.
     """
     return Ugen("Logistic", [chaos_param, freq, init])
+
+
+def cusp_n(freq=22050.0, a=1.0, b=1.9, xi=0.0) -> Ugen:
+    """The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("CuspN", [freq, a, b, xi])
+
+
+def cusp_l(freq=22050.0, a=1.0, b=1.9, xi=0.0) -> Ugen:
+    """The cusp map `x = a - b sqrt(|x|)`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("CuspL", [freq, a, b, xi])
+
+
+def gbman_n(freq=22050.0, xi=1.2, yi=2.1) -> Ugen:
+    """The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("GbmanN", [freq, xi, yi])
+
+
+def gbman_l(freq=22050.0, xi=1.2, yi=2.1) -> Ugen:
+    """The gingerbread man map, `x = 1 - y + |x|` with `y` the last `x`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("GbmanL", [freq, xi, yi])
+
+
+def henon_n(freq=22050.0, a=1.4, b=0.3, x0=0.0, x1=0.0) -> Ugen:
+    """The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("HenonN", [freq, a, b, x0, x1])
+
+
+def henon_l(freq=22050.0, a=1.4, b=0.3, x0=0.0, x1=0.0) -> Ugen:
+    """The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("HenonL", [freq, a, b, x0, x1])
+
+
+def henon_c(freq=22050.0, a=1.4, b=0.3, x0=0.0, x1=0.0) -> Ugen:
+    """The Henon map `x = 1 - a x^2 + b x'` from `x0` and `x1`, starting at `x1`, stepped `freq` times a second and joined by a cubic.
+    """
+    return Ugen("HenonC", [freq, a, b, x0, x1])
+
+
+def latoocarfian_n(
+    freq=22050.0,
+    a=1.0,
+    b=3.0,
+    c=0.5,
+    d=0.5,
+    xi=0.5,
+    yi=0.5,
+) -> Ugen:
+    """Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("LatoocarfianN", [freq, a, b, c, d, xi, yi])
+
+
+def latoocarfian_l(
+    freq=22050.0,
+    a=1.0,
+    b=3.0,
+    c=0.5,
+    d=0.5,
+    xi=0.5,
+    yi=0.5,
+) -> Ugen:
+    """Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("LatoocarfianL", [freq, a, b, c, d, xi, yi])
+
+
+def latoocarfian_c(
+    freq=22050.0,
+    a=1.0,
+    b=3.0,
+    c=0.5,
+    d=0.5,
+    xi=0.5,
+    yi=0.5,
+) -> Ugen:
+    """Latoocarfian's map, `x = sin(b y) + c sin(b x)`, `y = sin(a x) + d sin(a y)`, stepped `freq` times a second and joined by a cubic.
+    """
+    return Ugen("LatoocarfianC", [freq, a, b, c, d, xi, yi])
+
+
+def lin_cong_n(freq=22050.0, a=1.1, c=0.13, m=1.0, xi=0.0) -> Ugen:
+    """The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("LinCongN", [freq, a, c, m, xi])
+
+
+def lin_cong_l(freq=22050.0, a=1.1, c=0.13, m=1.0, xi=0.0) -> Ugen:
+    """The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("LinCongL", [freq, a, c, m, xi])
+
+
+def lin_cong_c(freq=22050.0, a=1.1, c=0.13, m=1.0, xi=0.0) -> Ugen:
+    """The linear congruential generator `x = (a x + c) mod m`, scaled to +/-1, stepped `freq` times a second and joined by a cubic.
+    """
+    return Ugen("LinCongC", [freq, a, c, m, xi])
+
+
+def lorenz_l(
+    freq=22050.0,
+    s=10.0,
+    r=28.0,
+    b=2.667,
+    h=0.05,
+    xi=0.1,
+    yi=0.0,
+    zi=0.0,
+) -> Ugen:
+    """The Lorenz system, integrated with step `h` (Runge-Kutta), its `x` scaled by 0.04, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("LorenzL", [freq, s, r, b, h, xi, yi, zi])
+
+
+def quad_n(freq=22050.0, a=1.0, b=-1.0, c=-0.75, xi=0.0) -> Ugen:
+    """The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("QuadN", [freq, a, b, c, xi])
+
+
+def quad_l(freq=22050.0, a=1.0, b=-1.0, c=-0.75, xi=0.0) -> Ugen:
+    """The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("QuadL", [freq, a, b, c, xi])
+
+
+def quad_c(freq=22050.0, a=1.0, b=-1.0, c=-0.75, xi=0.0) -> Ugen:
+    """The quadratic map `x = a x^2 + b x + c`, stepped `freq` times a second and joined by a cubic.
+    """
+    return Ugen("QuadC", [freq, a, b, c, xi])
+
+
+def standard_n(freq=22050.0, k=1.0, xi=0.5, yi=0.0) -> Ugen:
+    """Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("StandardN", [freq, k, xi, yi])
+
+
+def standard_l(freq=22050.0, k=1.0, xi=0.5, yi=0.0) -> Ugen:
+    """Chirikov's standard map, its `x` scaled to +/-1, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("StandardL", [freq, k, xi, yi])
+
+
+def fb_sine_n(
+    freq=22050.0,
+    im=1.0,
+    fb=0.1,
+    a=1.1,
+    c=0.5,
+    xi=0.1,
+    yi=0.1,
+) -> Ugen:
+    """A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and held between steps.
+    """
+    return Ugen("FBSineN", [freq, im, fb, a, c, xi, yi])
+
+
+def fb_sine_l(
+    freq=22050.0,
+    im=1.0,
+    fb=0.1,
+    a=1.1,
+    c=0.5,
+    xi=0.1,
+    yi=0.1,
+) -> Ugen:
+    """A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by lines.
+    """
+    return Ugen("FBSineL", [freq, im, fb, a, c, xi, yi])
+
+
+def fb_sine_c(
+    freq=22050.0,
+    im=1.0,
+    fb=0.1,
+    a=1.1,
+    c=0.5,
+    xi=0.1,
+    yi=0.1,
+) -> Ugen:
+    """A feedback sine map, `x = sin(im y + fb x)`, `y = (a y + c) mod 2 pi`, stepped `freq` times a second and joined by a cubic.
+    """
+    return Ugen("FBSineC", [freq, im, fb, a, c, xi, yi])
+
+
+def gendy1(
+    ampdist=1.0,
+    durdist=1.0,
+    adparam=1.0,
+    ddparam=1.0,
+    minfreq=440.0,
+    maxfreq=660.0,
+    ampscale=0.5,
+    durscale=0.5,
+    init_cps=12.0,
+    knum=12.0,
+) -> Ugen:
+    """Xenakis's dynamic stochastic synthesis: a cycle of `knum` control points
+    (of `init_cps` in memory), each level and duration taking a random walk
+    each cycle, by distribution `ampdist`/`durdist` (0 linear, 1 Cauchy,
+    2 logistic, 3 hyperbolic cosine, 4 arcsine, 5 exponential, 6 the
+    parameter itself) scaled by `ampscale`/`durscale`; the durations map to a
+    frequency between `minfreq` and `maxfreq`.
+    """
+    return Ugen(
+        "Gendy1",
+        [ampdist, durdist, adparam, ddparam, minfreq, maxfreq, ampscale, durscale, init_cps, knum],
+    )
+
+
+def gendy2(
+    ampdist=1.0,
+    durdist=1.0,
+    adparam=1.0,
+    ddparam=1.0,
+    minfreq=440.0,
+    maxfreq=660.0,
+    ampscale=0.5,
+    durscale=0.5,
+    init_cps=12.0,
+    knum=12.0,
+    a=1.17,
+    c=0.31,
+) -> Ugen:
+    """`gendy1` with a second-order walk: the steps walk too, the levels' driven
+    by a Lehmer congruence of `a` and `c`.
+    """
+    return Ugen(
+        "Gendy2",
+        [ampdist, durdist, adparam, ddparam, minfreq, maxfreq, ampscale, durscale, init_cps, knum, a, c],
+    )
+
+
+def gendy3(
+    ampdist=1.0,
+    durdist=1.0,
+    adparam=1.0,
+    ddparam=1.0,
+    freq=440.0,
+    ampscale=0.5,
+    durscale=0.5,
+    init_cps=12.0,
+    knum=12.0,
+) -> Ugen:
+    """`gendy1`'s walks at a fixed pitch `freq`: the durations are proportions of
+    the cycle, drawn together each cycle, and every cycle starts at 0.
+    """
+    return Ugen(
+        "Gendy3",
+        [ampdist, durdist, adparam, ddparam, freq, ampscale, durscale, init_cps, knum],
+    )

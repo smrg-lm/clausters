@@ -17,7 +17,7 @@ use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, TransportBufRd};
-use crate::dsp::chaos::Logistic;
+use crate::dsp::chaos::{Chaos, ChaosInterp, ChaosMap, Logistic};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{
@@ -28,6 +28,7 @@ use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
+use crate::dsp::gendy::{Gendy, Gendy3, GendyKind};
 use crate::dsp::harmonic::{Blip, Formant};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
@@ -136,6 +137,19 @@ pub struct UGenConfig {
     /// (`Klank`'s resonators, `Klang`'s partials), since `process` may not
     /// allocate. Set by the compiler for every kind.
     pub inputs: usize,
+    /// The value of each input the def wires to a constant, `None` for one
+    /// it wires to a control or a UGen: what a kind that sizes memory by an
+    /// input reads at build time (`Gendy1`'s control points), as scsynth's
+    /// constructor reads it. Set by the compiler for every kind.
+    pub constants: Vec<Option<f32>>,
+}
+
+impl UGenConfig {
+    /// Input `k`'s constant value, or `default` where the def does not wire
+    /// it to a constant.
+    pub fn constant(&self, k: usize, default: f32) -> f32 {
+        self.constants.get(k).copied().flatten().unwrap_or(default)
+    }
 }
 
 /// What the engine knows at **build** time, handed to every
