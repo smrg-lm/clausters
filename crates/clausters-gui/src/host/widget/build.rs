@@ -55,6 +55,7 @@ pub(super) fn build_kind(
                 .and_then(Value::as_str)
                 .and_then(super::DockEdge::parse),
             dock_tab: props.get("dock_tab").and_then(truthy).unwrap_or(false),
+            dock_fold: props.get("dock_fold").and_then(truthy).unwrap_or(false),
             menu_shown: Default::default(),
             header: props
                 .get("header")

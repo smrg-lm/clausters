@@ -265,6 +265,20 @@ impl Node {
         })
     }
 
+    /// **Opens every folded group for which `folds` says no**: what a layout
+    /// read back keeps only where its panel's window still says it folds.
+    pub fn open_unless(&mut self, folds: &dyn Fn(&Group) -> bool) {
+        match self {
+            Node::Tabs(g) if g.folded && !folds(g) => g.folded = false,
+            Node::Tabs(_) => {}
+            Node::Split { parts, .. } => {
+                for (_, part) in parts.iter_mut() {
+                    part.open_unless(folds);
+                }
+            }
+        }
+    }
+
     /// Whether this node is a folded group.
     pub fn folded(&self) -> bool {
         matches!(self, Node::Tabs(g) if g.folded)

@@ -2005,6 +2005,7 @@ impl Host {
         };
         if let Some(WidgetKind::Window {
             dock_tab,
+            dock_fold,
             closable,
             modified,
             dock_tip,
@@ -2012,6 +2013,7 @@ impl Host {
         }) = self.window_def(def_id).map(|tree| &tree.kind)
         {
             look.tab = *dock_tab;
+            look.fold = *dock_fold;
             look.closable = *closable;
             look.modified = *modified;
             look.tip = dock_tip.clone();

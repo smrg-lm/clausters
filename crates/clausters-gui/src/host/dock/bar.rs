@@ -20,33 +20,12 @@
 //! ([`Dock::floating`]): its title, its menu and its close mark, with no
 //! grip, and a menu whose first entry puts it back into the dock.
 
-use clausters_gui_draw::font;
+use crate::host::graphics::bar;
 use clausters_gui_draw::rect::Rect;
 
-use super::{Dock, Grip, GroupPlace, Landing, Side};
+use super::{BarPart, Dock, Grip, GroupPlace, Landing, Side};
 use crate::host::menu::{Entry, EntryKind};
 use crate::host::popup::{self, Anchor, Owner, Stack};
-
-/// One thing a hand can land on in a panel's bar.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BarPart {
-    /// The handle the panel is dragged by.
-    Grip,
-    /// The mark that folds the panel to its bar and opens it again, on a
-    /// panel that may fold ([`super::tree::Node::foldable`]).
-    Fold,
-    /// What a panel showing no tabs shows: its window's title. Dragged as
-    /// the grip is.
-    Title,
-    /// The tab of the panel's window at this index.
-    Tab(usize),
-    /// That tab's close mark.
-    TabClose(usize),
-    /// The button that opens the panel's menu.
-    Menu,
-    /// The close mark of a panel showing no tabs.
-    Close,
-}
 
 /// Where a menu opens: under a button, or at the pointer.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -70,96 +49,55 @@ pub struct DockMenu {
 }
 
 impl Dock {
+    /// **A panel's bar, described** ([`bar::Bar`]): what its windows say
+    /// it shows. A floating panel is a window of its own: its title and its
+    /// buttons, no grip, no fold. A panel of several windows or of a
+    /// document shows a tab each; over a pane that fills the header the
+    /// middle is the pane's, and its tabs keep to half of it.
+    pub(super) fn bar_of(&self, group: &GroupPlace) -> bar::Bar {
+        let shown = group.panes.get(group.active).copied();
+        let headed = shown.is_some_and(|p| self.is_headed(p));
+        let single = self.floating || !self.shows_tabs(&group.panes);
+        let middle = if !single {
+            bar::Middle::Tabs {
+                tabs: group
+                    .panes
+                    .iter()
+                    .map(|&p| bar::Tab {
+                        name: self.title(p),
+                        closable: self.closable(p),
+                        modified: self.is_modified(p),
+                    })
+                    .collect(),
+                active: group.active,
+                half: headed,
+            }
+        } else if headed {
+            bar::Middle::Pane
+        } else {
+            bar::Middle::Title(shown.map(|p| self.title(p)).unwrap_or_default())
+        };
+        bar::Bar {
+            // a floating panel has nowhere to be dragged to, so no grip
+            grip: !self.floating,
+            fold: self.shows_fold(group).then(|| bar::Fold {
+                folded: group.folded,
+                enabled: self.tree.foldable(&group.path),
+            }),
+            middle,
+            menu: true,
+            // with tabs, each has its own close mark
+            close: single && shown.is_some_and(|p| self.closable(p)),
+            focused: self.focus().is_some_and(|f| shown == Some(f)),
+        }
+    }
+
     /// **The parts of a panel's bar**, each with the rectangle it is drawn
-    /// in: the grip, the title or the tabs (each tab's close mark before the
-    /// tab, so it is hit first), the menu button and, with no tabs, the
-    /// close mark. A floating panel shows its title. Tabs that do not fit are cut to an ellipsis down to a
-    /// least, and those past the bar's end are left out -- the menu lists
+    /// in, as [`bar::parts`] places the bar [`bar_of`](Self::bar_of)
+    /// describes. Tabs past the bar's end are left out -- the menu lists
     /// them all.
     pub fn bar_parts(&self, group: &GroupPlace) -> Vec<(BarPart, Rect)> {
-        let r = group.strip;
-        let m = self.metrics();
-        let h = r.h;
-        let size = self.text_size();
-        // a floating panel has nowhere to be dragged to, so no grip
-        let grip_w = if self.floating { 0.0 } else { m.panel_grip };
-        let mut out = Vec::new();
-        if !self.floating {
-            out.push((BarPart::Grip, Rect::new(r.x, r.y, grip_w, h)));
-        }
-        // the fold mark after the grip, on a panel in a column
-        let fold_w = if !self.floating && self.tree.in_column(&group.path) {
-            out.push((BarPart::Fold, Rect::new(r.x + grip_w, r.y, h, h)));
-            h
-        } else {
-            0.0
-        };
-        // what the start of the bar holds before its title or its tabs
-        let grip_w = grip_w + fold_w;
-        // a floating panel is a window of its own: its title, no tabs
-        let single = self.floating || !self.shows_tabs(&group.panes);
-        // a pane that fills the header has the middle: no title over it
-        let headed = group
-            .panes
-            .get(group.active)
-            .is_some_and(|&p| self.is_headed(p));
-        let buttons = if single { 2.0 } else { 1.0 };
-        let end = (r.x + r.w - buttons * h).max(r.x + grip_w);
-        if single {
-            if !headed {
-                out.push((
-                    BarPart::Title,
-                    Rect::new(r.x + grip_w, r.y, end - r.x - grip_w, h),
-                ));
-            }
-            let shown = group.panes.get(group.active).copied();
-            if shown.is_some_and(|p| self.closable(p)) {
-                out.push((BarPart::Menu, Rect::new(end, r.y, h, h)));
-                out.push((BarPart::Close, Rect::new(end + h, r.y, h, h)));
-            } else {
-                // no close mark: the menu button at the bar's end
-                out.push((BarPart::Menu, Rect::new(end + h, r.y, h, h)));
-            }
-            return out;
-        }
-        // a tab: its inset, its name, a gap, its close mark and a gap -- a
-        // long name is cut, not followed, at the widest a tab grows
-        let close = m.tab_close;
-        let around = m.tab_inset + 2.0 * m.tab_end + close;
-        let natural: Vec<f32> = group
-            .panes
-            .iter()
-            .map(|&p| (font::width(&self.title(p), size) + around).min(m.tab_w))
-            .collect();
-        let room = (end - r.x - grip_w).max(0.0);
-        // a pane filling the header keeps half the bar for its tools
-        let room = if headed { room * 0.5 } else { room };
-        let least = around + font::width("\u{2026}", size);
-        let total: f32 = natural.iter().sum();
-        let each = (room / natural.len() as f32).max(least);
-        let mut x = r.x + grip_w;
-        for (i, w) in natural.iter().enumerate() {
-            let w = if total <= room { *w } else { w.min(each) };
-            if x + w > r.x + grip_w + room + 0.5 {
-                break;
-            }
-            let tab = Rect::new(x, r.y, w, h);
-            if self.closable(group.panes[i]) {
-                out.push((
-                    BarPart::TabClose(i),
-                    Rect::new(
-                        x + w - close - m.tab_end,
-                        r.y + (h - close) * 0.5,
-                        close,
-                        close,
-                    ),
-                ));
-            }
-            out.push((BarPart::Tab(i), tab));
-            x += w;
-        }
-        out.push((BarPart::Menu, Rect::new(end, r.y, h, h)));
-        out
+        bar::parts(&self.bar_of(group), group.strip, self.metrics())
     }
 
     /// Where pane `pane`'s tab is, when its panel shows tabs.
@@ -172,22 +110,10 @@ impl Dock {
             .map(|(_, r)| r)
     }
 
-    /// **The middle of `group`'s bar**, from where its start's parts end (the
-    /// grip, the tabs) to where its end's begin (the buttons), as x: what a
-    /// pane filling the header draws its tools in.
+    /// **The middle of `group`'s bar**, as x: what a pane filling the
+    /// header draws its tools in ([`bar::slot`]).
     pub(super) fn slot(&self, group: &GroupPlace) -> (f32, f32) {
-        let parts = self.bar_parts(group);
-        let to = parts
-            .iter()
-            .filter(|(p, _)| matches!(p, BarPart::Menu | BarPart::Close))
-            .map(|(_, r)| r.x)
-            .fold(group.strip.x + group.strip.w, f32::min);
-        let from = parts
-            .iter()
-            .filter(|(p, _)| matches!(p, BarPart::Grip | BarPart::Fold | BarPart::Tab(_)))
-            .map(|(_, r)| r.x + r.w)
-            .fold(group.strip.x, f32::max);
-        (from, to.max(from))
+        bar::slot(&self.bar_parts(group), group.strip)
     }
 
     /// The panel whose bar holds `(x, y)`, and the part of it there.

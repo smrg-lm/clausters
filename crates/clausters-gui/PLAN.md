@@ -1566,19 +1566,25 @@ holds what is open.
   a narrow one, not a panel class. Folding a pane in the dock also
   asks what its group gives up and to whom, which the dock's layout
   decides, as it does for a divider moved.
-  **Built so far** *(2026-11-22)*: the bar is drawn once
-  (`host/graphics/bar.rs`: the ground and its line, the title, a button,
-  the grip, the fold mark), the dock's chrome calls it, and a titled
-  group's strip is that bar, a line of control of the bar's text tall, a
-  section's beginning with the fold mark (a chevron, lit while the pointer
-  is over the bar). A dock's panel in a column folds too: the fold mark
-  after its grip folds it to its bar, the open parts of its column share
-  the room it gave up, its pane is not shown, the layout keeps the fold
-  (`"folded": true`) and the dock's door has the verb (`fold`); a panel
-  folds only where something takes its room, so the last open part of a
-  column shows its mark quiet and a panel side by side with others has
-  none. **Still open**: resizing a section and turning it off, and the
-  spacing option.
+  **Built so far** *(2026-11-22)*. **Every addition is an option, off
+  by default, and what was there keeps its behavior**: the bar is one
+  configured piece (`host/graphics/bar.rs`: a `Bar` says which parts it
+  shows, grip, fold mark, title or tabs, menu, close, and one function
+  places them for the drawing and the hit test alike), the dock describes
+  each panel's bar from what its windows say and draws it through it, and
+  a titled group's strip is the same bar with its title alone, and its
+  fold mark for a section (a chevron, lit while the pointer is over the
+  bar). A dock's panel folds only when its window says `dock_fold`: in a
+  column, the fold mark after its grip folds it to its bar, the open parts
+  of its column share the room, its pane is not shown, the layout keeps
+  the fold and the dock's door has the verb (`fold`); the last open part
+  of a column shows its mark quiet. Without `dock_fold` a dock draws
+  exactly what it drew before (a capture compared byte for byte).
+  **Decided** *(the user, 2026-11-22)*: an application's sections (the
+  spectrogram's settings, the notes editor's panels, the score's
+  palettes) are not resized, only folded, as now; resizing stays the
+  dock's. **Still open**: the spacing between sections, an option of the
+  column, with the score's palettes' spacing as its default.
   **Related:** "The spectrogram's settings read as two panels" in
   `crates/clausters-apps/PLAN.md`, Found by use, which wants a panel with
   sections inside it, a level this design has to leave room for.

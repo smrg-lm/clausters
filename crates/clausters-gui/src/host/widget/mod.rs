@@ -168,6 +168,10 @@ pub enum WidgetKind {
         /// bar with its title, as a tool's panel does, and tabs appear when
         /// it holds several.
         dock_tab: bool,
+        /// The `dock_fold` prop: **its panel may fold to its bar** in a dock,
+        /// where it stands in a column, by a fold mark after the grip. Off by
+        /// default, so a panel's bar is what it always was.
+        dock_fold: bool,
         /// The `header` prop: **the element whose strip of tools is the
         /// window's header** ([`crate::host::header`]), drawn in a band along
         /// the window's top -- in a dock, in its panel's bar -- rather than

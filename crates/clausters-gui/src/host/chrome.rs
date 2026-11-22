@@ -9,6 +9,7 @@
 //! draw it and by the gesture machine to hit it, so a divider is grabbed where
 //! it is drawn.
 
+use super::graphics::bar;
 use super::layout::{self, Placed};
 use super::scroll;
 use super::widget::{Axis, Flow, Group, Layout, WidgetKind};
@@ -26,10 +27,17 @@ pub fn title_strip(p: &Placed) -> Option<Rect> {
     (h > 0.0).then(|| Rect::new(p.rect.x, p.rect.y, p.rect.w, h))
 }
 
-/// **The fold mark of a section's strip** `strip`: the square at the strip's
-/// start, where a dock's bar has its grip.
-pub fn fold_mark(strip: Rect) -> Rect {
-    Rect::new(strip.x, strip.y, strip.h, strip.h)
+/// **The bar a titled group's strip is** ([`bar::Bar`]): its title, and
+/// for a section the fold mark, every other part off. A dialog's title is
+/// in its card ([`Head`]), not on a strip.
+pub fn strip_bar(group: &Group, title: &str) -> bar::Bar {
+    bar::Bar {
+        fold: group.collapsed.map(|folded| bar::Fold {
+            folded,
+            enabled: true,
+        }),
+        ..bar::Bar::titled(title)
+    }
 }
 
 /// The **close mark** of a dialog: its close button at the top right corner

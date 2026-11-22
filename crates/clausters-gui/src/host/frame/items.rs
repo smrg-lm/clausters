@@ -433,27 +433,16 @@ fn draw_group(
         mesh.rect(p.rect, th.panel);
     }
     if let (Some(title), Some(strip)) = (&group.title, chrome::title_strip(p)) {
-        // **A titled group's strip is a panel's bar**: the dock's ground and
-        // line, and of its parts the fold mark, for a section, and the title
-        let size = bar::text_size(m);
-        bar::ground(mesh, strip, m, th);
-        let mut rest = strip;
-        if let Some(folded) = group.collapsed {
-            let mark = chrome::fold_mark(strip);
-            bar::fold(mesh, mark, folded, lit.fold, size, th);
-            rest.x = mark.x + mark.w;
-            rest.w = (strip.x + strip.w - rest.x).max(0.0);
-        }
-        // A dialog's strip ends in its close mark, and the title stops short
-        // of it.
-        let close = chrome::close_mark(p);
-        if let Some(c) = close {
-            rest.w = (c.x - rest.x).max(0.0);
-        }
-        bar::title(mesh, rest, title, size, m, th);
-        if let Some(c) = close {
-            font::text_centered(mesh, &font::symbol::CLOSE.to_string(), c, size, th.text_dim);
-        }
+        // **A titled group's strip is a panel's bar**, described with its
+        // title alone, and its fold mark when it is a section
+        bar::draw(
+            mesh,
+            &chrome::strip_bar(group, title),
+            strip,
+            lit.fold.then_some(bar::Part::Fold),
+            m,
+            th,
+        );
     }
     if group.frame && !in_card {
         mesh.border(p.rect, m.divider_w, th.separator);

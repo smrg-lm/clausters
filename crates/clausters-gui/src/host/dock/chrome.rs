@@ -12,16 +12,12 @@
 
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font::{self, symbol};
-use clausters_gui_draw::metrics::Metrics;
-use clausters_gui_draw::paint::Mesh;
 use clausters_gui_draw::rect::Rect;
-use clausters_gui_draw::theme::{Color, Theme};
 
-use super::{BarPart, Dock, GroupPlace, Landing, PagePart, Side};
+use super::{Dock, GroupPlace, Landing, PagePart, Side};
 use crate::host::frame::{draw_stack, draw_tip};
-use crate::host::graphics::bar::{self, button, grip};
+use crate::host::graphics::bar;
 use crate::host::graphics::choice;
-use crate::host::graphics::controls::icon;
 use crate::host::popup::Tip;
 
 impl Dock {
@@ -135,105 +131,17 @@ impl Dock {
         }
     }
 
-    /// **One panel's bar**: its ground and the line under it, the grip, the
-    /// title or the tabs, the buttons. Over a pane that fills the header
-    /// ([`Dock::set_header`]) the middle is the pane's: its ground and its
+    /// **One panel's bar**: the bar its windows describe
+    /// ([`Dock::bar_of`]), drawn by the one drawing of a bar. Over a pane
+    /// that fills the header the middle is the pane's: its ground and its
     /// tools are drawn by the pane, under this.
     fn draw_bar(&self, d: &mut Draw, group: &GroupPlace) {
-        let size = self.text_size();
         let lit = self.lit_bar(&group.path);
-        let shown = group.panes.get(group.active).copied();
-        let focused = self.focus().is_some_and(|f| shown == Some(f));
-        let headed = shown.is_some_and(|p| self.is_headed(p));
-        let (from, to) = if headed {
-            self.slot(group)
-        } else {
-            (group.strip.x, group.strip.x)
-        };
-        let parts = self.bar_parts(group);
+        let described = self.bar_of(group);
         let (mesh, m, theme) = d.parts();
-        let strip = group.strip;
-        mesh.set_clip(Some(strip));
-        // the ground at the bar's ends, and under a middle that is not a pane's
-        if headed {
-            mesh.rect(
-                Rect::new(strip.x, strip.y, from - strip.x, strip.h),
-                theme.header,
-            );
-            mesh.rect(
-                Rect::new(to, strip.y, strip.x + strip.w - to, strip.h),
-                theme.header,
-            );
-        } else {
-            mesh.rect(strip, theme.header);
-        }
-        // the close marks last, over the tabs they stand on
-        let (marks, parts): (Vec<_>, Vec<_>) = parts
-            .into_iter()
-            .partition(|(part, _)| matches!(part, BarPart::TabClose(_)));
-        for (part, r) in parts.into_iter().chain(marks) {
-            let hot = lit == Some(part);
-            match part {
-                BarPart::Grip => grip(
-                    mesh,
-                    r,
-                    size,
-                    if hot { theme.text } else { theme.text_dim },
-                    m.divider_w,
-                ),
-                // quiet on the last open part of a column, which may not fold
-                BarPart::Fold if self.tree().foldable(&group.path) => {
-                    bar::fold(mesh, r, group.folded, hot, size, theme);
-                }
-                BarPart::Fold => bar::fold(mesh, r, false, false, size, &theme.disabled()),
-                BarPart::Title => {
-                    let title = self.title(group.panes[group.active]);
-                    bar::title(mesh, r, &title, size, m, theme);
-                }
-                BarPart::Tab(i) => {
-                    let shown = i == group.active;
-                    // the tab shown stands on the panel's own ground, its
-                    // line in the ring's role while its panel has the keys
-                    let mark = shown.then_some(if focused {
-                        theme.focus
-                    } else {
-                        theme.separator
-                    });
-                    let hot = hot || lit == Some(BarPart::TabClose(i));
-                    let title = self.title(group.panes[i]);
-                    let closes = self.closable(group.panes[i]);
-                    tab(
-                        mesh,
-                        m,
-                        theme,
-                        r,
-                        &title,
-                        mark,
-                        hot,
-                        closes,
-                        choice::TabEdge::Top,
-                        size,
-                    );
-                }
-                // a tab's close mark shows on the tab shown and under the
-                // hand; a tab whose work has changes not kept shows a dot in
-                // its place, which turns into the mark under the hand
-                BarPart::TabClose(i) => {
-                    let under = lit == Some(BarPart::Tab(i)) || lit == Some(BarPart::TabClose(i));
-                    if !under && self.is_modified(group.panes[i]) {
-                        let dot = (r.h * 0.18).max(2.0 * m.divider_w);
-                        mesh.disc(r.x + r.w * 0.5, r.y + r.h * 0.5, dot, theme.text);
-                    } else if under || i == group.active {
-                        tab_cross(mesh, r, hot, size, theme);
-                    }
-                }
-                BarPart::Menu => button(mesh, r, icon("menu", symbol::MENU), hot, size, theme),
-                BarPart::Close => button(mesh, r, icon("x", symbol::CLOSE), hot, size, theme),
-            }
-        }
+        mesh.set_clip(Some(group.strip));
+        bar::draw(mesh, &described, group.strip, lit, m, theme);
         mesh.set_clip(None);
-        // the line under the bar, as under every panel's
-        bar::line(mesh, strip, m, theme);
     }
 }
 
@@ -265,7 +173,7 @@ impl Dock {
                     let mark = (i == shown).then_some(theme.separator);
                     let hot = hot || lit == Some(PagePart::Close(i));
                     let closes = self.page_closable(i);
-                    tab(
+                    bar::tab(
                         mesh,
                         m,
                         theme,
@@ -281,7 +189,7 @@ impl Dock {
                 PagePart::Close(i) => {
                     let under = lit == Some(PagePart::Tab(i)) || hot;
                     if under || i == shown {
-                        tab_cross(mesh, r, hot, size, theme);
+                        bar::tab_cross(mesh, r, hot, size, theme);
                     }
                 }
                 PagePart::More(from) => {
@@ -292,50 +200,6 @@ impl Dock {
             }
         }
     }
-}
-
-/// **A tab**, as a panel's bar and the page strip draw one: its ground,
-/// marked when `mark` says it is the one shown, and its name from its inset,
-/// cut to leave room for its cross when it has one (`closes`).
-#[allow(clippy::too_many_arguments)] // one tab: its place, its name, its state
-fn tab(
-    mesh: &mut Mesh,
-    m: &Metrics,
-    theme: &Theme,
-    r: Rect,
-    name: &str,
-    mark: Option<Color>,
-    hot: bool,
-    closes: bool,
-    edge: choice::TabEdge,
-    size: f32,
-) {
-    choice::tab_ground(mesh, m, theme, r, mark, hot, edge);
-    let after = if closes {
-        2.0 * m.tab_end + m.tab_close
-    } else {
-        m.tab_inset
-    };
-    let glyph = font::height(size);
-    font::text_ellipsis(
-        mesh,
-        name,
-        r.x + m.tab_inset,
-        r.y + (r.h - glyph) * 0.5,
-        (r.w - m.tab_inset - after).max(0.0),
-        size,
-        if mark.is_some() {
-            theme.text
-        } else {
-            theme.text_dim
-        },
-    );
-}
-
-/// **A tab's cross**: the specification's 12 of it, where a tool's icon is
-/// 16.
-fn tab_cross(mesh: &mut Mesh, r: Rect, hot: bool, size: f32, theme: &Theme) {
-    button(mesh, r, icon("x", symbol::CLOSE), hot, size * 0.75, theme);
 }
 
 /// `r` with `by` taken off every side.

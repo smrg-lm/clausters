@@ -1333,6 +1333,36 @@ fn a_textured_view_in_a_panes_dialog_is_drawn_over_it() {
     assert!(with * 10 >= area * 9, "{with} red pixels of {area}");
 }
 
+/// The look of a pane whose panel may fold (`dock_fold`).
+fn folding() -> PaneLook {
+    PaneLook {
+        closable: true,
+        fold: true,
+        ..PaneLook::default()
+    }
+}
+
+/// **A panel folds only when its window says so** (`dock_fold`): without
+/// it, a panel in a column has the bar it always had and refuses the verb.
+#[test]
+fn a_panel_folds_only_when_its_window_says_so() {
+    let mut ws = dock((400, 300), 4.0, &[1, 2, 3]);
+    ws.apply(&Call::Split {
+        pane: 2,
+        side: Side::Bottom,
+        of: 1,
+    })
+    .unwrap();
+    for g in ws.groups().to_vec() {
+        assert!(
+            !ws.bar_parts(&g).iter().any(|(p, _)| *p == BarPart::Fold),
+            "no fold mark by default"
+        );
+    }
+    assert!(ws.fold(1, true).is_err(), "nor the verb");
+    assert!(ws.shown(1));
+}
+
 /// **A panel folds to its bar where it has someone to give its room to**:
 /// in a column, the open part beside it takes what it gave up, its pane is
 /// not shown and its edge is not dragged; a panel side by side with others,
@@ -1341,6 +1371,9 @@ fn a_textured_view_in_a_panes_dialog_is_drawn_over_it() {
 #[test]
 fn a_panel_folds_to_its_bar_in_a_column() {
     let mut ws = dock((400, 300), 4.0, &[1, 2, 3]);
+    for p in [1, 2, 3] {
+        ws.describe(p, folding());
+    }
     ws.apply(&Call::Split {
         pane: 2,
         side: Side::Bottom,
@@ -1392,6 +1425,12 @@ fn a_panel_folds_to_its_bar_in_a_column() {
     ws.fold(1, true).unwrap();
     let saved = ws.state()["layout"].clone();
     let mut other = dock((400, 300), 4.0, &[1, 2, 3]);
+    for p in [1, 2, 3] {
+        other.describe(p, folding());
+    }
     other.restore(&saved).unwrap();
     assert!(!other.shown(1), "the fold comes back with the layout");
+    let mut plain = dock((400, 300), 4.0, &[1, 2, 3]);
+    plain.restore(&saved).unwrap();
+    assert!(plain.shown(1), "but only where the window still folds");
 }

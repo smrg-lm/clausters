@@ -1649,6 +1649,12 @@ export function view(
      * tool's panel does, and tabs appear when the panel holds several.
      */
     dockTab?: boolean;
+    /**
+     * **Its panel may fold to its bar** where it stands in a column of the
+     * dock, by a fold mark after the grip. Off by default, so the panel's
+     * bar is what it always was.
+     */
+    dockFold?: boolean;
     /** What its tab says under a resting pointer in a dock: a file's path. */
     dockTip?: string;
     /**
@@ -1724,7 +1730,7 @@ export function view(
 ): View {
     const {
         title, flow, layout, margin, gap, cols, hug, status, plays, keys, verbs, askClose,
-        history, dockPage, dockEdge, dockTab, dockTip, remember, header, closable, modified, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
+        history, dockPage, dockEdge, dockTab, dockFold, dockTip, remember, header, closable, modified, activation, progress, progressLabel, theme, split, menu: bar, main, glyphs,
         ...rest
     } = options;
     return node("window", {
@@ -1750,6 +1756,7 @@ export function view(
             ["dock_page", dockPage],
             ["dock_edge", dockEdge],
             ["dock_tab", flag(dockTab)],
+            ["dock_fold", flag(dockFold)],
             ["dock_tip", dockTip],
             ["remember", remember],
             ["header", header],

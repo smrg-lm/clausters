@@ -1124,6 +1124,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
          ask_close: bool | None = None, activation: bool | None = None,
          history: bool | None = None, dock_page: str | None = None,
          dock_edge: str | None = None, dock_tab: bool | None = None,
+         dock_fold: bool | None = None,
          dock_tip: str | None = None, remember: str | None = None,
          header: int | None = None,
          closable: bool | None = None, modified: bool | None = None,
@@ -1229,7 +1230,9 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     file. Without it a panel of one window shows a bar with the window's
     title, as a tool's panel does, and tabs appear when the panel holds
     several. ``dock_tip`` is what its tab says under a resting pointer (a
-    file's path).
+    file's path). ``dock_fold`` lets its panel **fold to its bar** where it
+    stands in a column of the dock, by a fold mark after the grip; off by
+    default, so the panel's bar is what it always was.
 
     ``remember`` names **the key the host keeps the window's size under**:
     a window that names one opens at the size it was last left at, closed
@@ -1306,6 +1309,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["dock_edge"] = dock_edge
     if dock_tab is not None:
         extra["dock_tab"] = 1 if dock_tab else 0
+    if dock_fold is not None:
+        extra["dock_fold"] = 1 if dock_fold else 0
     if dock_tip is not None:
         extra["dock_tip"] = dock_tip
     if remember is not None:

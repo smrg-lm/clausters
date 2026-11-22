@@ -50,7 +50,7 @@ mod menus;
 mod pages;
 pub mod tree;
 
-pub use bar::BarPart;
+pub use crate::host::graphics::bar::Part as BarPart;
 pub use edges::{DialogPlace, Edge, Overlay, PaneFloat};
 pub use pages::PagePart;
 pub use tree::{Group, Node, Path, Side};
@@ -171,7 +171,7 @@ pub struct GroupPlace {
 /// **What a dock shows of a window on its panel**: its title, whether it is
 /// a document (a tab even alone), whether it fills its panel's header with
 /// tools of its own, whether it may be closed, whether its work has changes
-/// not kept, and its tab's tip. A front reads it of the window
+/// not kept, its tab's tip, and whether its panel may fold. A front reads it of the window
 /// ([`crate::host::Host::pane_look`]) as the pane opens and whenever the
 /// window says any of it changed, and hands it over whole
 /// ([`Dock::describe`]).
@@ -183,6 +183,8 @@ pub struct PaneLook {
     pub closable: bool,
     pub modified: bool,
     pub tip: Option<String>,
+    /// Whether its panel may fold to its bar (`dock_fold`).
+    pub fold: bool,
 }
 
 pub use super::header::Band;
@@ -241,7 +243,7 @@ enum Grip {
 #[derive(Clone, Debug, PartialEq)]
 enum Hot {
     /// A part of a panel's bar.
-    Bar(Path, bar::BarPart),
+    Bar(Path, BarPart),
     Divider(usize),
     /// A part of the page strip.
     Page(PagePart),
@@ -293,6 +295,8 @@ pub struct Dock {
     headed: HashSet<i32>,
     /// The panes their owner says may not be closed ([`Dock::set_closable`]).
     fixed: HashSet<i32>,
+    /// The panes whose panel may fold to its bar ([`PaneLook::fold`]).
+    folds: HashSet<i32>,
     /// The panes whose work has changes not kept: a dot on the tab.
     modified: HashSet<i32>,
     /// Each pane's tab tip.
@@ -352,6 +356,7 @@ impl Dock {
             tabbed: HashSet::new(),
             headed: HashSet::new(),
             fixed: HashSet::new(),
+            folds: HashSet::new(),
             modified: HashSet::new(),
             tips: HashMap::new(),
             rest: None,
@@ -495,6 +500,7 @@ impl Dock {
         self.set_tab(def_id, look.tab);
         self.set_header(def_id, look.header);
         self.set_closable(def_id, look.closable);
+        self.set_fold(def_id, look.fold);
         let modified = if look.modified {
             self.modified.insert(def_id)
         } else {
@@ -527,6 +533,38 @@ impl Dock {
         if changed {
             self.dirty.chrome = true;
         }
+    }
+
+    /// **Says whether pane `def_id`'s panel may fold to its bar**
+    /// (`dock_fold`): its owner's say. Off by default, and a panel whose
+    /// pane stops saying so opens.
+    pub fn set_fold(&mut self, def_id: i32, fold: bool) {
+        let changed = if fold {
+            self.folds.insert(def_id)
+        } else {
+            self.folds.remove(&def_id)
+        };
+        if !changed {
+            return;
+        }
+        self.dirty.chrome = true;
+        if !fold
+            && let Some(path) = self.tree.group_of(def_id)
+            && self.tree.fold(&path, false)
+        {
+            self.arrange();
+        }
+    }
+
+    /// **Whether `group`'s bar shows the fold mark**: its shown pane says
+    /// it may fold (`dock_fold`) and it stands in a column.
+    pub(super) fn shows_fold(&self, group: &GroupPlace) -> bool {
+        !self.floating
+            && group
+                .panes
+                .get(group.active)
+                .is_some_and(|p| self.folds.contains(p))
+            && self.tree.in_column(&group.path)
     }
 
     /// Whether pane `def_id` may be closed ([`Dock::set_closable`]).
@@ -707,6 +745,7 @@ impl Dock {
         self.tabbed.remove(&def_id);
         self.headed.remove(&def_id);
         self.fixed.remove(&def_id);
+        self.folds.remove(&def_id);
         self.modified.remove(&def_id);
         self.tips.remove(&def_id);
         if self.tip == Some(def_id) {
@@ -1136,14 +1175,18 @@ impl Dock {
     }
 
     /// **Folds the group holding pane `def_id` to its bar, or opens it.**
-    /// Refused for a pane the layout does not hold, and for folding a group
-    /// with nobody to give its room to (alone, side by side with others, or
-    /// the last open part of its column).
+    /// Refused for a pane the layout does not hold, for folding a panel
+    /// whose window does not say it folds (`dock_fold`), and for folding a
+    /// group with nobody to give its room to (alone, side by side with
+    /// others, or the last open part of its column).
     pub fn fold(&mut self, def_id: i32, folded: bool) -> Result<(), String> {
         let path = self
             .tree
             .group_of(def_id)
             .ok_or_else(|| format!("no pane {def_id} on the page shown"))?;
+        if folded && !self.folds.contains(&def_id) {
+            return Err("this panel does not fold: its window does not say dock_fold".into());
+        }
         if folded && !self.tree.foldable(&path) {
             return Err("this panel has nothing to give its room to".into());
         }
@@ -1222,6 +1265,16 @@ impl Dock {
     /// goes on the page shown, as a column of its own, so no pane is lost.
     pub fn restore(&mut self, layout: &serde_json::Value) -> Result<(), String> {
         self.restore_pages(layout)?;
+        // a fold read back stands only where the panel's window folds
+        let folds = |g: &Group| g.shown().is_some_and(|p| self.folds.contains(&p));
+        let mut tree = std::mem::take(&mut self.tree);
+        tree.open_unless(&folds);
+        let mut pages = std::mem::take(&mut self.pages);
+        for (_, page) in &mut pages {
+            page.open_unless(&folds);
+        }
+        self.tree = tree;
+        self.pages = pages;
         self.grip = None;
         self.hot = None;
         if self.focus.is_none_or(|f| !self.tree_shows(f)) {
