@@ -1605,7 +1605,7 @@ holds what is open.
      The server hands the application what is the application's (a
      transport's cue being over), and the application's ids come from a
      share of their own that the server never gives a client.
-  2. ⬜ **The host's engine serves a segment.** A mapped segment file the
+  2. ✅ **The host's engine serves a segment.** A mapped segment file the
      engine runs over, its ring served by the loop on a thread of its own
      that sleeps while nothing arrives; booted with the host (in a headless
      host, at the first thing that asks for it), its path answered by the

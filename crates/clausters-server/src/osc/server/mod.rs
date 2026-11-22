@@ -213,6 +213,10 @@ pub struct OscServer {
     /// ([`OscServer::take_handed`]). `None` for any other server, which
     /// keeps nothing.
     handed: Option<Vec<Handed>>,
+    /// How many packets the ring has brought since the server started:
+    /// what tells a loop that drives this server ([`OscServer::step`])
+    /// whether a turn served anyone ([`OscServer::ring_packets`]).
+    ring_packets: u64,
     /// The segment itself, whether or not this server serves its rings. A
     /// server that attached to somebody else's segment reads the samples out
     /// of it and has no ring at all, so the two cannot be one field.
@@ -610,6 +614,13 @@ impl OscServer {
     /// holds.
     pub fn take_handed(&mut self) -> Vec<Handed> {
         self.handed.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    /// **How many packets the ring has brought** since the server started: a
+    /// loop driving it with [`Self::step`] reads whether a turn served
+    /// anyone, and rests longer while nobody writes.
+    pub fn ring_packets(&self) -> u64 {
+        self.ring_packets
     }
 
     /// Keeps `handed` for the embedding application, when there is one.

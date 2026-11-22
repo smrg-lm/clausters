@@ -125,6 +125,21 @@ pub struct AppEngine {
     /// hand, block by block.
     #[cfg(feature = "realtime")]
     _backend: Option<clausters::server::backend::AudioBackend>,
+    /// **The segment a client reaches the engine through**, and the file it
+    /// is mapped from, when it was opened with one ([`Self::open_at`]):
+    /// given back and removed when the engine goes.
+    #[cfg(feature = "realtime")]
+    segment: Option<(Arc<clausters::server::ipc::Segment>, std::path::PathBuf)>,
+}
+
+#[cfg(feature = "realtime")]
+impl Drop for AppEngine {
+    fn drop(&mut self) {
+        if let Some((segment, path)) = self.segment.take() {
+            segment.release_control();
+            clausters::server::ipc::remove_segment(&path);
+        }
+    }
 }
 
 impl std::fmt::Debug for AppEngine {
@@ -158,6 +173,8 @@ impl AppEngine {
             readers: Vec::new(),
             #[cfg(feature = "realtime")]
             _backend: None,
+            #[cfg(feature = "realtime")]
+            segment: None,
         }
     }
 
@@ -176,12 +193,47 @@ impl AppEngine {
     /// own rate.
     #[cfg(feature = "realtime")]
     pub fn open() -> Result<AppEngine, String> {
+        Self::open_at(None)
+    }
+
+    /// **An engine on the machine's default output device, served at `shm`**:
+    /// with a path, the engine runs over a segment mapped from that file
+    /// (made there, or adopted when it is there and nobody serves it), whose
+    /// ring a client reaches the engine through, served as a server's is
+    /// ([`Self::serve`]); the file is removed when the engine goes. Refused
+    /// when another process serves the segment.
+    #[cfg(feature = "realtime")]
+    pub fn open_at(shm: Option<&std::path::Path>) -> Result<AppEngine, String> {
+        use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES};
+        use clausters::server::ipc::{
+            DEFAULT_TAP_FRAMES, DEFAULT_TAPS, IpcPeer, Regions, Role, Segment,
+        };
+        let segment = match shm {
+            Some(path) => {
+                let regions = Regions {
+                    control_buses: DEFAULT_CONTROL_BUSES,
+                    audio_buses: DEFAULT_AUDIO_BUSES,
+                    taps: DEFAULT_TAPS,
+                    tap_frames: DEFAULT_TAP_FRAMES,
+                };
+                let (segment, _) = Segment::open_or_create(path, regions)
+                    .map_err(|e| format!("the segment at {}: {e}", path.display()))?;
+                if !segment.claim_control() {
+                    return Err(format!(
+                        "the segment at {} is served by another process",
+                        path.display()
+                    ));
+                }
+                Some(segment)
+            }
+            None => None,
+        };
         let (backend, handle) = clausters::server::backend::start(
             0,
+            segment.clone(),
             None,
-            None,
-            clausters::server::engine::DEFAULT_AUDIO_BUSES,
-            clausters::server::engine::DEFAULT_CONTROL_BUSES,
+            DEFAULT_AUDIO_BUSES,
+            DEFAULT_CONTROL_BUSES,
             clausters::dsp::Limits {
                 transports: TRANSPORTS,
                 ..clausters::dsp::Limits::default()
@@ -193,7 +245,44 @@ impl AppEngine {
         .map_err(|e| e.to_string())?;
         let mut engine = AppEngine::over(handle);
         engine._backend = Some(backend);
+        if let (Some(segment), Some(path)) = (segment, shm) {
+            engine
+                .server
+                .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+                .map_err(|e| e.to_string())?;
+            engine.segment = Some((segment, path.to_path_buf()));
+        }
         Ok(engine)
+    }
+
+    /// **The file of the segment a client reaches the engine through**, when
+    /// it was opened with one ([`Self::open_at`]).
+    #[cfg(feature = "realtime")]
+    pub fn segment_path(&self) -> Option<&std::path::Path> {
+        self.segment.as_ref().map(|(_, path)| path.as_path())
+    }
+
+    /// **Serves `segment`'s ring**: a client reaching the engine through it
+    /// is served by [`Self::serve`]. What [`Self::open_at`] does with the
+    /// segment it opens the device over; an engine driven by hand takes one
+    /// this way (a test of what a client is answered).
+    pub fn attach_ring(
+        &mut self,
+        segment: Arc<clausters::server::ipc::Segment>,
+    ) -> std::io::Result<()> {
+        use clausters::server::ipc::{IpcPeer, Role};
+        self.server.attach_ipc(IpcPeer::new(segment, Role::Server))
+    }
+
+    /// **One turn of the server's loop for its clients**: what arrived on the
+    /// ring served, and what the engine handed back collected for the
+    /// application's next [`Self::pump`]. Answers whether anything arrived.
+    /// A `/server_quit` a client sends does not end an engine an application
+    /// holds.
+    pub fn serve(&mut self) -> bool {
+        let before = self.server.ring_packets();
+        let _quit = self.server.step();
+        self.server.ring_packets() != before
     }
 
     /// The engine's rate.
@@ -584,6 +673,46 @@ impl AppEngine {
             self.feed_lane(lane);
         }
     }
+}
+
+/// How soon the ring is looked at again after a turn that served a packet.
+#[cfg(not(target_arch = "wasm32"))]
+const RING_BUSY: std::time::Duration = std::time::Duration::from_millis(1);
+/// The longest it rests while nobody writes: a script's first command after a
+/// silence waits at most this long, and a host at rest wakes for its ring
+/// about thirty times a second.
+#[cfg(not(target_arch = "wasm32"))]
+const RING_REST: std::time::Duration = std::time::Duration::from_millis(32);
+
+/// **The thread that serves `engine`'s ring** ([`AppEngine::serve`]): a
+/// client of the engine is served while the application does nothing. The
+/// segment has no signal a writer can wake a reader with, so it looks: at
+/// once again after a turn that served a packet, and at a rest that doubles
+/// up to [`RING_REST`] while nothing arrives. It ends when the engine goes.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn serve_ring(
+    engine: &Arc<Mutex<AppEngine>>,
+) -> std::io::Result<clausters_core::threads::Spawned> {
+    let weak = Arc::downgrade(engine);
+    clausters_core::threads::spawn("app-engine-ring", move || {
+        let mut rest = RING_BUSY;
+        loop {
+            let Some(engine) = weak.upgrade() else {
+                return;
+            };
+            let served = engine
+                .lock()
+                .map(|mut engine| engine.serve())
+                .unwrap_or(false);
+            drop(engine);
+            rest = if served {
+                RING_BUSY
+            } else {
+                (rest * 2).min(RING_REST)
+            };
+            std::thread::sleep(rest);
+        }
+    })
 }
 
 /// Unix seconds now: where the engine's sample 0 stands on a wall-clocked
@@ -1080,5 +1209,38 @@ mod tests {
             clausters::dsp::Limits::default().transports
         );
         assert_ne!(APPS_SHARE, CLIENT_SHARE);
+    }
+
+    /// **A client reaches the application's engine over its segment's
+    /// ring**: what it sends is served by the engine's server, its answer
+    /// comes back on the ring, and a turn with nothing on the ring says so,
+    /// which is what lets the ring's thread rest.
+    #[test]
+    fn a_client_is_served_over_the_ring() {
+        use clausters::rosc::{OscMessage, OscPacket, encoder};
+        use clausters::server::ipc::{DEFAULT_PEER, IpcPeer, Regions, Role, Segment};
+        let (mut app, _engine) = AppEngine::detached(48_000.0, 2);
+        let segment = Segment::in_memory_sized(Regions {
+            control_buses: 64,
+            audio_buses: 16,
+            taps: 0,
+            tap_frames: BLOCK_SIZE,
+        });
+        app.attach_ring(Arc::clone(&segment)).unwrap();
+        let client = IpcPeer::new(segment, Role::Client);
+        assert!(!app.serve(), "nothing on the ring");
+        let status = encoder::encode(&OscPacket::Message(OscMessage {
+            addr: "/server_status".into(),
+            args: vec![],
+        }))
+        .unwrap();
+        assert!(client.push(DEFAULT_PEER, &status));
+        assert!(app.serve(), "a packet served");
+        let mut buf = vec![0u8; 65_536];
+        let (_, len) = client.try_pop(&mut buf).expect("an answer on the ring");
+        let OscPacket::Message(reply) = clausters::osc::decode_packet(&buf[..len]).unwrap() else {
+            panic!("a message");
+        };
+        assert_eq!(reply.addr, "/server_status.reply");
     }
 }

@@ -3153,3 +3153,20 @@ fn a_quit_asks_once_over_every_application() {
         let _ = std::fs::remove_file(path);
     }
 }
+
+/// **A client asks the host for its applications' engine**: the answer
+/// waits until the engine is open, and an engine with no segment (one a
+/// test drives by hand) says a client has nothing to reach it through.
+#[test]
+fn a_client_is_told_where_the_engine_is_served() {
+    use std::net::{Ipv4Addr, SocketAddr};
+    let mut host = host();
+    let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_998)));
+    let first = door(&mut host, GUI_ENGINE, vec![OscType::Int(7)], client);
+    let answer = answered(&mut host, first, 7);
+    let message = answer["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("no segment"), "{answer}");
+    // asked again once open, it is answered at once
+    let again = door(&mut host, GUI_ENGINE, vec![OscType::Int(8)], client);
+    assert_eq!(again.len(), 1, "answered on the packet that asked");
+}

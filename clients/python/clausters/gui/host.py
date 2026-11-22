@@ -968,6 +968,24 @@ class GuiHost:
         self._open.add(window)
         return window
 
+    def engine(self, timeout: float = 10.0) -> dict:
+        """``/gui_engine``: **the applications' engine, as a client reaches
+        it** -- the engine every application this host opens plays on.
+
+        Answers ``{"shm": path, "share": [index, of]}``: the shared-memory
+        segment the engine is served at, which a session attaches to over
+        its ring (`clausters.Session.live` with ``shm=path``), and the share
+        of the engine's ids a client allocates from, beside the
+        applications' own. A host on a display opens the engine as it
+        starts; a headless host opens it at this call, and answers once it
+        is open.
+
+        Raises `clausters.errors.CommandError` when the engine could not be
+        opened or has no segment, and `clausters.errors.ReplyTimeout` past
+        ``timeout``.
+        """
+        return self._app_request("/gui_engine", timeout=timeout)
+
     def call_app(self, id, call: dict, timeout: "float | None" = None):
         """``/gui_app_call``: **one call to the application open in window
         ``id``** (an id or a handle), and its answer.

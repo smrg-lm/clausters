@@ -64,6 +64,8 @@ impl Host {
             GUI_TEXT => self.on_text(&msg.args, from, effects),
             GUI_CLIPBOARD => self.on_clipboard(&msg.args, from),
             GUI_APP_OPEN => self.on_app_open(&msg.args, from, effects),
+            #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+            GUI_ENGINE => self.on_engine(&msg.args, from, effects),
             GUI_APP_CALL => self.on_app_call(&msg.args, from, effects),
             GUI_DOCK => self.on_dock(&msg.args, from, effects),
             GUI_SERVER => self.on_server(&msg.args, from, effects),

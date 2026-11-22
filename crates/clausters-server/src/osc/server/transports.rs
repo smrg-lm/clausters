@@ -201,6 +201,7 @@ impl OscServer {
                 }
             };
             handled += 1;
+            self.ring_packets += 1;
             if let Flow::Quit = self.handle_packet(packet, ClientId::Ring(peer)) {
                 return Flow::Quit;
             }

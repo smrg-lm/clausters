@@ -55,6 +55,23 @@ pub(crate) struct AudioHost {
     /// once it is open.
     source: Option<Arc<dyn BusSource>>,
     next_structure: i64,
+    /// **What a client is told of the engine** ([`super::GUI_ENGINE`]): the
+    /// segment it reaches the engine through once it is open, or why it
+    /// could not be opened; and the clients waiting for it meanwhile.
+    pub(super) door: EngineDoor,
+}
+
+/// What a client asking for the applications' engine is answered
+/// ([`super::GUI_ENGINE`]).
+#[derive(Debug, Default)]
+pub(super) struct EngineDoor {
+    /// The engine is open, and this is the file of its segment (`None`: it
+    /// has none, as a page's has not).
+    pub(super) open: Option<Option<String>>,
+    /// The engine could not be opened.
+    pub(super) failed: Option<String>,
+    /// The clients that asked before either was known, with their `seq`.
+    pub(super) waiting: Vec<(ClientId, i32)>,
 }
 
 impl std::fmt::Debug for AudioHost {
@@ -154,11 +171,15 @@ impl AudioHost {
             windows: HashMap::new(),
             source: None,
             next_structure: 0,
+            door: EngineDoor::default(),
         }
     }
 
-    /// **Asks the application**, its thread started on the first ask.
-    pub(super) fn ask(&mut self, ask: ToApp) -> Result<(), String> {
+    /// **Starts the application's thread**, which opens the engine, if it
+    /// has not started: what a host does as it starts, so a client finds the
+    /// engine open, and what a client's ask for the engine does in a host
+    /// that waits for one.
+    pub(super) fn start(&mut self) -> Result<(), String> {
         if self.to_app.is_none() {
             let make = self.make.take().ok_or("the audio editor's thread ended")?;
             let (tx, thread) = super::audio_app::start(make, self.out.clone())
@@ -166,6 +187,12 @@ impl AudioHost {
             self.to_app = Some(tx);
             self.thread = Some(thread);
         }
+        Ok(())
+    }
+
+    /// **Asks the application**, its thread started on the first ask.
+    pub(super) fn ask(&mut self, ask: ToApp) -> Result<(), String> {
+        self.start()?;
         self.to_app
             .as_ref()
             .and_then(|tx| tx.send(ask).ok())
@@ -178,7 +205,96 @@ impl AudioHost {
     }
 }
 
+/// **The answer about the engine**, once it is known: the segment a client
+/// reaches it through and the share of its ids a client allocates from, or
+/// why there is none to reach.
+fn engine_answer(door: &EngineDoor) -> Option<Result<Value, (String, String)>> {
+    if let Some(why) = &door.failed {
+        return Some(Err((
+            "command".into(),
+            format!("the engine is not open: {why}"),
+        )));
+    }
+    match door.open.as_ref()? {
+        Some(shm) => {
+            let share = clausters_app_engine::CLIENT_SHARE;
+            Some(Ok(json!({"shm": shm, "share": [share.index, share.of]})))
+        }
+        None => Some(Err((
+            "command".into(),
+            "the engine has no segment a client reaches it through".into(),
+        ))),
+    }
+}
+
+/// **Where the applications' engine is served**: a segment file named for
+/// this process, on the RAM-backed `/dev/shm` where there is one and in the
+/// system's temporary directory otherwise, as a launched server's is. `None`
+/// where shared memory does not apply.
+#[cfg(not(target_arch = "wasm32"))]
+fn engine_segment_path() -> Option<std::path::PathBuf> {
+    if cfg!(windows) {
+        return None;
+    }
+    let shm = std::path::Path::new("/dev/shm");
+    let base = if shm.is_dir() {
+        shm.to_path_buf()
+    } else {
+        std::env::temp_dir()
+    };
+    Some(base.join(format!("clausters_gui_{}", std::process::id())))
+}
+
 impl Host {
+    /// **Opens the applications' engine now**, served at its segment, so a
+    /// client finds it ([`super::GUI_ENGINE`]): what a host started on a
+    /// display does as it starts. A headless host opens it at the first
+    /// thing that asks for it instead, an application or a client.
+    pub fn boot_engine(&mut self) {
+        if let Err(e) = self.audio_host().start() {
+            diag::warn!("the applications' engine was not opened: {e}");
+        }
+    }
+
+    /// **Answers every client waiting for the engine**, now that it is open
+    /// or could not be.
+    fn answer_engine_waiting(&mut self) {
+        let Some(audio) = self.audio.as_mut() else {
+            return;
+        };
+        let answer = engine_answer(&audio.door);
+        let Some(answer) = answer else {
+            return;
+        };
+        for (to, seq) in std::mem::take(&mut audio.door.waiting) {
+            let msg = super::apps::app_reply(seq, answer.clone());
+            self.pending_effects.push(HostEffect::Send { to, msg });
+        }
+    }
+
+    /// `/gui_engine <seq>` ([`super::GUI_ENGINE`]): the applications'
+    /// engine, as a client reaches it -- opened first in a host that waits
+    /// for one.
+    pub(super) fn on_engine(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        effects: &mut Vec<HostEffect>,
+    ) {
+        let Some(seq) = super::wire::int_arg(args, 0) else {
+            return diag::warn!("{from}: {} needs a seq", super::GUI_ENGINE);
+        };
+        let audio = self.audio_host();
+        if let Some(answer) = engine_answer(&audio.door) {
+            return effects.push(HostEffect::Reply(super::apps::app_reply(seq, answer)));
+        }
+        audio.door.waiting.push((from, seq));
+        if let Err(e) = audio.start() {
+            audio.door.failed = Some(e);
+            self.answer_engine_waiting();
+        }
+    }
+
     /// **What wakes this host's loop when an application it holds has said
     /// something**: the front's, set before the first application opens.
     pub fn set_app_wake(&mut self, wake: Wake) {
@@ -204,7 +320,7 @@ impl Host {
             AudioHost::new(
                 Box::new(|| {
                     #[cfg(not(target_arch = "wasm32"))]
-                    let engine = AppEngine::open();
+                    let engine = AppEngine::open_at(engine_segment_path().as_deref());
                     #[cfg(target_arch = "wasm32")]
                     let engine = super::web::apps_engine::open();
                     engine.map(|engine| Arc::new(Mutex::new(engine)))
@@ -623,10 +739,18 @@ impl Host {
                     self.saved_all(saved, &mut fx);
                     self.pending_effects.extend(fx);
                 }
-                FromApp::Engine(reading) => {
+                FromApp::Engine { reading, shm } => {
                     if let Some(audio) = self.audio.as_mut() {
                         audio.source = Some(Arc::new(EngineSource(reading)));
+                        audio.door.open = Some(shm);
                     }
+                    self.answer_engine_waiting();
+                }
+                FromApp::NoEngine(why) => {
+                    if let Some(audio) = self.audio.as_mut() {
+                        audio.door.failed = Some(why);
+                    }
+                    self.answer_engine_waiting();
                 }
                 FromApp::Opened {
                     def_id,

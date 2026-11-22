@@ -164,6 +164,7 @@ impl OscServer {
             clock,
             ipc: None,
             handed: None,
+            ring_packets: 0,
             segment: None,
             shm_path: None,
             owns_samples: false,

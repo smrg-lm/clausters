@@ -746,6 +746,13 @@ pub const GUI_CLOSED: &str = "/gui_closed";
 /// here and reach no client, and the client that opened it is told
 /// [`GUI_CLOSED`] when it goes.
 pub const GUI_APP_OPEN: &str = "/gui_app_open";
+/// `/gui_engine <seq>`: **the applications' engine, as a client reaches it**.
+/// Answered by [`GUI_APP_REPLY`] with the file of the segment the engine is
+/// served at and the share of its ids a client allocates from,
+/// `{"ok": {"shm": path, "share": [index, of]}}`, or why there is none. A
+/// host on a display opens the engine as it starts; a headless one opens it
+/// here, and answers once it is open.
+pub const GUI_ENGINE: &str = "/gui_engine";
 /// `/gui_app_call <seq> <window> <json>`: **one call to the application
 /// open in `window`**, the door a client is the application's handler
 /// through: `{"member": {"verb", ...}}` asks its editor something or sets

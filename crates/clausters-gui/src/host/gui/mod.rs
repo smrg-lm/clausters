@@ -204,6 +204,9 @@ pub fn run(
     let mut host = host;
     spawn_disk(&mut host, &proxy)?;
     set_app_wake(&mut host, &proxy);
+    // a host on a display opens the applications' engine as it starts, so a
+    // client finds it served
+    host.boot_engine();
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     let mut app = App::new(host, socket, bus, inflight, false);
     app.proxy = Some(proxy.clone());
@@ -309,6 +312,7 @@ pub fn run_local(
     let proxy = Proxy::Winit(event_loop.create_proxy());
     spawn_disk(&mut host, &proxy)?;
     set_app_wake(&mut host, &proxy);
+    host.boot_engine();
     let inflight = spawn_fronts(&host, &socket, &proxy, tcp, ws)?;
     let replies = link(LocalLink {
         proxy: proxy.clone(),

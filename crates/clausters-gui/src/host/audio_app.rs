@@ -283,8 +283,16 @@ pub(super) enum FromApp {
     /// (`clausters_apps::audio::shared`, the context's): sent before the answer that names
     /// them, so the host holds each one when it reads its number.
     Lists(Vec<(u64, clausters_document::parts::FileList)>),
-    /// The engine is open: what its windows' meters and play cursors read.
-    Engine(clausters_app_engine::EngineReading),
+    /// The engine is open: what its windows' meters and play cursors read,
+    /// and the file of the segment a client reaches it through, when it has
+    /// one.
+    Engine {
+        reading: clausters_app_engine::EngineReading,
+        shm: Option<String>,
+    },
+    /// The engine could not be opened, and why: every open asked of the
+    /// application says so, and so does every client that asks for it.
+    NoEngine(String),
     /// Window `def_id`'s editor opened, and the dialogs whose widget ids it
     /// needs; or why it did not.
     Opened {
@@ -439,10 +447,26 @@ pub(super) fn start(
     Ok((tx, spawned))
 }
 
+/// The file of the segment a client reaches `engine` through, when it has one.
+fn engine_segment(engine: &AppEngine) -> Option<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        engine
+            .segment_path()
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = engine;
+        None
+    }
+}
+
 fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     let engine = match make() {
         Ok(engine) => engine,
         Err(e) => {
+            out.send(Vec::new(), FromApp::NoEngine(e.clone()));
             // every open asked of an editor with no engine says why
             while let Ok(ask) = rx.recv() {
                 if let ToApp::Open { def_id, reply, .. } = ask {
@@ -459,8 +483,19 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
             return;
         }
     };
-    let reading = engine.lock().unwrap_or_else(|e| e.into_inner()).reading();
-    out.send(Vec::new(), FromApp::Engine(reading));
+    let (reading, shm) = {
+        let engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+        (engine.reading(), engine_segment(&engine))
+    };
+    // **a client of the engine is served while the application rests**: the
+    // ring has a thread of its own, which ends with the engine
+    #[cfg(not(target_arch = "wasm32"))]
+    if shm.is_some()
+        && let Err(e) = clausters_app_engine::serve_ring(&engine)
+    {
+        super::diag::warn!("the engine's ring has no thread, and no client reaches it: {e}");
+    }
+    out.send(Vec::new(), FromApp::Engine { reading, shm });
     let app = Application::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);

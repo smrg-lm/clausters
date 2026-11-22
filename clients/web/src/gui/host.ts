@@ -1173,6 +1173,25 @@ export class GuiHost {
      * scheduler.
      */
     /**
+     * `/gui_engine`: **the applications' engine, as a client reaches it** --
+     * the engine every application this host opens plays on.
+     *
+     * Answers `{ shm, share }`: the shared-memory segment the engine is
+     * served at, which a session on the same machine attaches to over its
+     * ring, and the share of the engine's ids a client allocates from
+     * (`[index, of]`), beside the applications' own. A host on a display
+     * opens the engine as it starts; a headless host opens it at this call,
+     * and answers once it is open.
+     *
+     * Rejects with a `CommandError` when the engine could not be opened or
+     * has no segment (a page's engine has none), and with `ReplyTimeout`
+     * past `timeout`.
+     */
+    async engine(timeout = 10.0): Promise<{ shm: string; share: [number, number] }> {
+        return (await this.app("/gui_engine", [], timeout)) as { shm: string; share: [number, number] };
+    }
+
+    /**
      * `/gui_app_open`: **open an application this host owns**, and answer
      * the window it opened in, the handle {@link GuiHost.callApp} names.
      *
