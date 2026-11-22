@@ -3488,6 +3488,38 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ⬜ **The roll's File menu has no file section when a client holds its
+  sequence** *(found by the user, 2026-11-22)*. Every menu bar's File is
+  `chrome::file_menu`, but `chrome::entries` gives the roll its file
+  section (New, Open..., Close File, Save, Save As...) only when the window
+  is its sequence's only holder (`saves`); otherwise File is the
+  conversions and Close. The multitrack in the same case keeps New, Open...
+  and Close File. The roll takes the multitrack's shape, and every
+  application with a menu bar is checked against `FILE_SECTION`
+  (`every_application_s_file_menu_starts_alike` tests the roll only with a
+  file).
+
+- ⬜ **The spectrogram's settings read as two panels** *(found by the user,
+  2026-11-22)*. `audio::settings` builds Analysis and Display as two framed
+  sections of the column, each with its own title strip, so they look like
+  two panels. They are one panel, the spectrogram's, with two sections
+  inside it. **Related:** "One panel, in the dock and in an application's
+  window" (`crates/clausters-gui/PLAN.md`, Future directions), which this
+  is a case of.
+
+- ⬜ **The pager's tabs name the applications by their short names** *(the
+  user, 2026-11-22)*. The pages are to read **Code** (the code editor),
+  **Roll** (the notes editor), **Score**, **Audio** and **Tracks** (the
+  multitrack). The names are `chrome::App::page`, the score's `dock_page`
+  in `score.rs` and the dock's first page, `FIRST_PAGE` ("Main"), which is
+  the code editor's page there: the editor names its own page rather than
+  the host's constant changing for every dock. `App::page` is also the
+  `remember` key the host keeps a window's size under, so a rename either
+  keeps the old key or lets the remembered sizes go once; decide which.
+  A second window still takes a number ("Tracks 2"). The window titles
+  ("Notes", "Multitrack" in `host/apps.rs`) are not pages and are not
+  part of this.
+
 - ⬜ **A roll reads its marks' symbols from the score's palettes** *(found
   2026-11-12, measuring the crate's modules by reference)*.
   `notes::Symbols` asks `score::palettes::symbol` for the codepoint and the

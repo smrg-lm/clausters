@@ -1533,6 +1533,98 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
+- ⬜ **One panel, in the dock and in an application's window** *(the
+  user, 2026-11-22)*. Two mechanisms draw a panel today. The code editor's
+  are the dock's panes (`host/dock`): each group has a bar (grip, title or
+  tabs, menu, close) and the dock's dividers resize it. The audio editor's,
+  the roll's and the score's are a column of framed sections in the window
+  (`clausters-apps/src/panels.rs`: a `layout` with `title`, `frame` and
+  `collapsed`), beside the work behind one divider, each section folded by
+  a triangle on its title strip. The two look and behave differently, and
+  the rule against two versions of one thing says they become one:
+
+  - **Resizable is an option.** A panel can be resized as a dock pane is,
+    and says so; a panel of a fixed size, or whose size a layout decides,
+    turns it off.
+  - **Folding is the bar's.** The dock's bar, already configurable, gains
+    the fold triangle, so a code editor panel folds as a section does.
+  - **A section is a panel with a thin bar.** It keeps the dock's bar's
+    look, configured to show only the fold triangle on a thinner strip,
+    with a spacing option for how far apart the panels sit in their
+    column (the score editor's palettes are the spacing to match).
+
+  **The shape: one bar, configured, not a hierarchy.** What differs between
+  the two is which parts the bar shows (grip, title, tabs, menu, close,
+  fold), how thick it is, whether the panel resizes and how far apart
+  panels sit: data, not behavior. So the bar is one description (a
+  struct of those options) drawn and hit-tested by one function, the one
+  the dock's chrome already has, and a section header is that bar with
+  everything but the fold turned off; a trait per kind would only
+  duplicate the drawing behind each implementation. A trait is the right
+  tool only at a real seam, who keeps the folded state and the size (the
+  dock's layout for a pane, the window's tree for a section), and that is
+  a narrow one, not a panel class. Folding a pane in the dock also
+  asks what its group gives up and to whom, which the dock's layout
+  decides, as it does for a divider moved.
+  **Related:** "The spectrogram's settings read as two panels" in
+  `crates/clausters-apps/PLAN.md`, Found by use, which wants a panel with
+  sections inside it, a level this design has to leave room for.
+
+- ⬜ **The GUI host's engine is a server a script reaches, and
+  clausters-editor's default** *(the user, 2026-11-22)*. **A property of the
+  host, not of the editor**: the engine a GUI host holds for its
+  applications becomes reachable from the client language, over shared
+  memory and on its sample clock, and clausters-editor's sessions use it by
+  default because the editor *is* a GUI host. It is the simplest shape: one
+  rule, held by every host, whoever booted it.
+
+  **What runs today, read 2026-11-22.** A GUI host holds one engine for all
+  its applications (`AppEngine`, the server's engine taken as a library,
+  spoken to with built commands through its FIFO, with no OSC, no socket and
+  no network thread), opened on the machine's output when the first
+  application opens (`Host::audio_host`, in `host/audio_editor.rs`) and
+  shared by every window of the audio editor, the multitrack, the roll and
+  the score. No client reaches it: the client's notes editor says that a note on a
+  roll plays a def that engine has and that a def sent to a client's server
+  is not there (`NotesEditor`, `clients/python/clausters/gui/editing/events.py`). Starting
+  clausters-editor boots no server and no engine, the standalone host's
+  embedded server (`host::native::embed`, the `standalone` feature) is not
+  linked into it, and a script's `Session.live()` there boots a separate
+  `clausters` process. So a script and the applications play on two engines.
+
+  **The two cases the rule covers.**
+  - **Applications a script opens** are a use of their own: they run
+    independently of clausters-editor, in the GUI host the script's process
+    boots, and every application that process opens shares that one host and
+    so that one engine. The script reaches that engine as a server: it can
+    send it defs, play on it, read its buses.
+  - **clausters-editor** is a GUI host with a session inside it. A session's
+    script reaches the editor's host engine by default, and the applications
+    opened in the editor, by a script or from the menus, play on it too:
+    what a script plays and what an application plays sound through one
+    engine, on one clock, with one node tree and one set of buses and
+    buffers. The session's windows already take this path for the host
+    (`CLAUSTERS_GUI_HOST`, set by `crates/clausters-editor/src/native/session.rs`,
+    makes a client attach to the editor's window instead of booting one), and
+    the server would follow the same one. In a page the session already
+    reaches the page's engine (`crates/clausters-editor/docs/page.md`), which
+    is the same rule.
+
+  **This is only the default, never a restriction.** A script may still
+  boot or name any other server, as any client may, and an application may
+  use a server of its own where its job asks for one: an offline (NRT)
+  server for the audio editor's processing or for the multitrack's render.
+  The host's engine is what a session and an application get when neither
+  names another.
+
+  To settle: which doors the engine grows to be a server (the shared-memory
+  segment and the IPC ring the embedded server already has, an OSC port or
+  none), whether it boots with the host or still with the first application
+  or session that asks, how the kernel learns of it (an environment the
+  host sets, read by `Session.live()` the way the config file is), and how
+  the default is overridden without the script and the host disagreeing
+  about which server an application opened by that script plays on.
+
 - ⬜ **Subpixel (LCD) antialiasing of text, where the desktop asks for
   it** *(found 2026-11-17, in `ST2`)*. The webview editor's text is drawn
   with a color per subpixel on a desktop whose font settings say so (an RGB
@@ -1596,6 +1688,42 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **A window rebuilt in the dock shows its own menu bar for a frame**
+  *(found by the user, 2026-11-22)*. Opening the audio editor's spectrogram
+  settings or the roll's event inspector shows the menu bar twice for an
+  instant. Both rebuild the window's tree, and a window built anew starts
+  with `menu_shown` at its default, `Own` (`host/widget/build.rs`), so it
+  draws its own bar until the next `show_menus` (`host/dock/menus.rs`)
+  marks it `Away` again, under the dock's bar that already shows its menu.
+  The fix most likely is that a redefinition of a window keeps what the
+  dock decided of its bar, or that `show_menus` runs before the rebuilt
+  window is drawn; it is one door for every application, native and in a
+  page, the standalone host's and the code editor's. Check with a capture
+  of the frame after the rebuild before believing the cause.
+
+- ⬜ **A page's tab cuts a name that was measured to fit** *(found by the
+  user, 2026-11-22)*. The pager shows "Sco..." and "Multitra..." where a
+  second multitrack's "Multitrack 2" is shown whole. `Dock::page_parts`
+  makes a closable tab the name's width plus its inset, its ends and its
+  cross, and `chrome::tab` draws the name in that width minus the same
+  terms, so the room left is the name's width only up to float rounding,
+  and `text_ellipsis` cuts when the name is wider by any amount. Which way
+  the rounding goes depends on the name, which is why one is cut and the
+  other is not. The measure and the cut want one formula with no exact
+  equality in it (the tab's text room computed once and used by both).
+
+- ⬜ **A page's tab closes an application with unsaved changes without
+  asking** *(found by the user, 2026-11-22)*. A page's cross goes
+  `Dock::close_page` -> `Dirty::close` -> the front's close of the window
+  (`user_close` natively, `close_by_hand` in a page), which is the window's
+  own close mark and asks only where the window carries `ask_close`. By
+  `clausters_apps::closing` a window asks only when it is its work's only
+  holder; one a script opened (`edit`, `open_app`) asks nothing, since the
+  script keeps the work. Which case the user hit is the first thing to
+  find: a window that should have carried `ask_close` and did not, or the
+  rule itself, which in the code editor leaves work unsaved when the
+  script that held it has already ended.
 
 - ⬜ **The host's window and drawing libraries are updated before the next
   release** (2026-11-20, the user, building the editor). Cargo warns that

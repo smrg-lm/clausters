@@ -102,6 +102,31 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
+- ⬜ **A window rebuilt in the dock shows its own menu bar for a frame**
+  *(`crates/clausters-gui/PLAN.md`, Found by use)*. A rebuilt window forgets
+  that the dock's bar shows its menu; seen opening the spectrogram settings
+  and the roll's event inspector.
+
+- ⬜ **A page's tab cuts a name that was measured to fit**
+  *(`crates/clausters-gui/PLAN.md`, Found by use)*. The measure and the cut
+  are two formulas that meet only up to rounding.
+
+- ⬜ **A page's tab closes an application with unsaved changes without
+  asking** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Which window,
+  and whether it is the closing rule or a missing `ask_close`, first.
+
+- ⬜ **The roll's File menu has no file section when a client holds its
+  sequence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Takes the
+  multitrack's shape.
+
+- ⬜ **The spectrogram's settings read as two panels**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. One panel with two
+  sections; best taken with the panel below.
+
+- ⬜ **The pager's tabs name the applications by their short names**
+  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Code, Roll, Score,
+  Audio, Tracks; with the cut names above, one visit to the pager.
+
 - ⬜ **The host's window and drawing libraries are updated before the next
   release** *(`crates/clausters-gui/PLAN.md`, Found by use)*. wgpu, naga and
   winit carry code a future Rust rejects; raised before the release is cut.
@@ -275,6 +300,18 @@ its plan; the plan is where its acceptance is read.
   notes editor's recording (`X3.10`) waits on both and is skipped for now.
 
 ### The near work
+
+- ⬜ **One panel, in the dock and in an application's window**
+  *(`crates/clausters-gui/PLAN.md`, Future directions)*. The dock's panes
+  and the applications' sections become one panel: resizable as an option,
+  folding on the bar, a section a thin bar of it. One configured bar, not a
+  hierarchy of kinds.
+
+- ⬜ **The GUI host's engine is a server a script reaches, and
+  clausters-editor's default** *(`crates/clausters-gui/PLAN.md`, Future
+  directions)*. A property of the host: the engine its applications share,
+  reached over shared memory on the sample clock, by default and never as a
+  restriction.
 
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
