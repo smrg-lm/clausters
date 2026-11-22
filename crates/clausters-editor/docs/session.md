@@ -22,6 +22,19 @@ the editor with the `CLAUSTERS_EDITOR_PYTHON` variable:
 CLAUSTERS_EDITOR_PYTHON=~/project/.venv/bin/python clausters-editor
 ```
 
+## The engine a session plays on
+
+The applications opened in the editor (the audio editor, the multitrack, the
+roll, the score) play on one engine of the editor's, and a session plays on it
+too: `Session.live()` with no server named is made on that engine, over its
+shared memory and on its sample clock. So what a script plays and what an
+application plays sound through one engine, with one node tree and one set of
+buses and buffers, and `session.gui()` is the editor's window.
+
+It is only the default. A script that names a server
+(`Session.live(host, port)`, or one it boots) plays there instead, and the
+applications keep playing on the editor's engine.
+
 ## Interrupting
 
 An infinite loop is stopped with `Ctrl+.`:

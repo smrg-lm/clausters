@@ -236,7 +236,7 @@ fn engine_answer(door: &EngineDoor) -> Option<Result<Value, (String, String)>> {
 /// system's temporary directory otherwise, as a launched server's is. `None`
 /// where shared memory does not apply.
 #[cfg(not(target_arch = "wasm32"))]
-fn engine_segment_path() -> Option<std::path::PathBuf> {
+pub fn engine_segment_path() -> Option<std::path::PathBuf> {
     if cfg!(windows) {
         return None;
     }

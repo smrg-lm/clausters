@@ -135,6 +135,12 @@ fn run(cli: Cli) -> Result<(), String> {
         named.push(format!("ws://{addr}"));
     }
     clausters_editor::native::session::set_gui_host(named.join(" "));
+    if let Some((shm, (index, of))) = clausters_gui::host::engine_for_clients() {
+        clausters_editor::native::session::set_engine(
+            shm.to_string_lossy().into_owned(),
+            format!("{index}/{of}"),
+        );
+    }
     clausters_gui::host::gui::run_local(
         host,
         Arc::new(socket),

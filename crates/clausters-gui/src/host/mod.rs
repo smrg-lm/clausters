@@ -161,6 +161,15 @@ pub use quit::DockClose;
 mod audio_app;
 #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
 mod audio_editor;
+/// **Where this process's applications' engine is served**, and the share of
+/// its ids a client takes: what a program that runs a session beside its
+/// host (clausters-editor) names to it, so the session plays on the engine
+/// ([`GUI_ENGINE`]).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn engine_for_clients() -> Option<(std::path::PathBuf, (u32, u32))> {
+    let share = clausters_app_engine::CLIENT_SHARE;
+    audio_editor::engine_segment_path().map(|path| (path, (share.index, share.of)))
+}
 mod clocks;
 mod define;
 mod dialogs;

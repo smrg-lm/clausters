@@ -353,11 +353,26 @@ class Session(Environment):
         """
         from .launch import server_is_up
 
+        made_host = False
         if engine is None and host is None and port is None:
             engine = named_engine()
+            if engine == "host":
+                # **the editor's host is asked for its engine**: it opens it
+                # if it has not, and answers once it is open
+                from .base.ids import IdShare
+                from .gui.host import GuiHost, named_host
+
+                named = named_host()
+                index, of = _engine_share()
+                engine = GuiHost(host=named[0], port=named[1], transport="tcp",
+                                 share=IdShare(index, of)).attach()
+                made_host = True
         if engine is not None:
-            return cls._on_engine(engine, clock=clock, timebase=timebase,
-                                  latency=latency, options=options)
+            session = cls._on_engine(engine, clock=clock, timebase=timebase,
+                                     latency=latency, options=options)
+            # a host it attached to for the engine is the session's to let go
+            session._own_gui = made_host
+            return session
 
         server = Server(host, port, latency=latency, options=options, transport=transport)
         if boot and not server_is_up(server.target.host, server.target.port):
@@ -756,21 +771,37 @@ ENGINE_VARIABLE = "CLAUSTERS_ENGINE_SHM"
 ENGINE_SHARE_VARIABLE = "CLAUSTERS_ENGINE_SHARE"
 
 
-def named_engine() -> "dict | None":
-    """The engine the environment names (`ENGINE_VARIABLE`), as
-    `clausters.gui.GuiHost.engine` answers one, or ``None`` when it names
-    none or its segment is not there."""
+def _engine_share() -> "tuple[int, int]":
+    """The share of the engine's ids the environment says a client takes
+    (`ENGINE_SHARE_VARIABLE`), the first half when it says none."""
     import os
 
-    shm = os.environ.get(ENGINE_VARIABLE, "")
-    if not shm or not os.path.exists(shm):
-        return None
     index, _, of = os.environ.get(ENGINE_SHARE_VARIABLE, "0/2").partition("/")
     try:
-        share = [int(index), int(of)]
+        return int(index), int(of)
     except ValueError:
-        share = [0, 2]
-    return {"shm": shm, "share": share}
+        return 0, 2
+
+
+def named_engine() -> "dict | str | None":
+    """The engine the environment names (`ENGINE_VARIABLE`): ``"host"`` when
+    it also names the host that holds it (`clausters.gui.host.named_host`),
+    which is then asked for it -- it opens its engine if it has not, which a
+    headless editor's has not -- or, with no host named, what
+    `clausters.gui.GuiHost.engine` would answer, while the segment is there.
+    ``None`` when it names none."""
+    import os
+
+    from .gui.host import named_host
+
+    shm = os.environ.get(ENGINE_VARIABLE, "")
+    if not shm:
+        return None
+    if named_host() is not None:
+        return "host"
+    if not os.path.exists(shm):
+        return None
+    return {"shm": shm, "share": list(_engine_share())}
 
 
 def _live_timebase(server, clock, timebase):

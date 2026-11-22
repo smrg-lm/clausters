@@ -37,6 +37,20 @@ pub fn set_gui_host(addr: String) {
     let _ = GUI_HOST.set(addr);
 }
 
+/// **The engine every session plays on by default**: the segment the
+/// editor's host serves its applications' engine at, and the share of its
+/// ids a session takes, told to every session it starts as
+/// `CLAUSTERS_ENGINE_SHM` and `CLAUSTERS_ENGINE_SHARE`. A session that names
+/// no server is made on it, and the applications opened in the editor play
+/// on it too; a script that names another server reaches that one.
+static ENGINE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+
+/// Names the editor's applications' engine to the sessions started from here
+/// on: its segment's file and a client's share of its ids, `index/of`.
+pub fn set_engine(shm: String, share: String) {
+    let _ = ENGINE.set((shm, share));
+}
+
 /// The session: at most one process, started when it is first needed.
 #[derive(Clone)]
 pub struct Session {
@@ -137,6 +151,12 @@ impl Session {
         // there attaches to this host rather than booting one of its own.
         if let Some(addr) = GUI_HOST.get() {
             command.env("CLAUSTERS_GUI_HOST", addr);
+        }
+        // **and what it plays sounds on the editor's engine**, the one the
+        // applications in the window play on
+        if let Some((shm, share)) = ENGINE.get() {
+            command.env("CLAUSTERS_ENGINE_SHM", shm);
+            command.env("CLAUSTERS_ENGINE_SHARE", share);
         }
         let mut child = command
             .spawn()

@@ -1615,7 +1615,7 @@ holds what is open.
      `Session.live()` attaching to the segment the environment names, and a
      host's client asking the host for its engine, so a script that booted
      a host reaches its applications' engine.
-  4. ⬜ **clausters-editor's default.** The editor names its host's engine
+  4. ✅ **clausters-editor's default.** The editor names its host's engine
      to the session it runs, and `Session.live()` there attaches to it; a
      script that names another server gets that one.
   5. ⬜ **The page is one engine too.** A page's applications play on the

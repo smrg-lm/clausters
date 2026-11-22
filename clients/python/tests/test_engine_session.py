@@ -58,3 +58,20 @@ def test_the_environment_names_the_engine(gui_host, engine, monkeypatch):
         assert session.server.shm == engine["shm"]
     finally:
         session.close()
+
+
+def test_an_editors_session_asks_its_host_for_the_engine(gui_host, engine, monkeypatch):
+    # what clausters-editor tells the session it runs: its host, and that the
+    # host's engine is the session's default -- the host is asked, so a
+    # headless editor's engine is opened by the asking
+    monkeypatch.setenv("CLAUSTERS_GUI_HOST", f"udp://127.0.0.1:{gui_host.target[1]}")
+    monkeypatch.setenv("CLAUSTERS_ENGINE_SHM", engine["shm"])
+    session = Session.live()
+    try:
+        assert session.server.on_engine
+        assert session.server.shm == engine["shm"]
+        attached = session.gui()
+        assert attached is not gui_host and attached.target[1] == gui_host.target[1]
+    finally:
+        session.close()
+    assert gui_host.engine() == engine, "the editor's host stays"
