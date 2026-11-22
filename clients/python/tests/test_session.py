@@ -377,6 +377,13 @@ _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "MidSide": "built twice, one row per output channel",
     "StereoWidth": "built twice, one row per output channel",
     "PanAz": "built numchans times; numchans leads in Python, trails on the wire",
+    "Pan4": "built four times, one row per output channel",
+    "PanB": "built four times, one row per output channel",
+    "PanB2": "built three times, one row per output channel",
+    "BiPanB2": "built three times, one row per output channel",
+    "DecodeB2": "built numchans times; numchans leads in Python, trails on the wire",
+    "FreeVerb2": "built twice, one row per output channel",
+    "GVerb": "built twice, one row per output channel",
 }
 
 _WIRE_ORDER_DIFFERS = {

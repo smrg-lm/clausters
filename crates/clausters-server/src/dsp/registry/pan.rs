@@ -131,4 +131,61 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Select::new(SelectKind::Cross)),
     ),
+    // --- a square of four, and first-order Ambisonics (`dsp::ambi`): one
+    //     row per output channel, the index last, as the pairs above ---
+    plain(
+        "Pan4",
+        &[
+            inp("signal", 0.0),
+            inp_opt("xpos", 0.0),
+            inp_opt("ypos", 0.0),
+            inp_opt("level", 1.0),
+            inp_opt("chan", 0.0),
+        ],
+        |_, _| Box::new(Pan4::default()),
+    ),
+    plain(
+        "PanB",
+        &[
+            inp("signal", 0.0),
+            inp_opt("azimuth", 0.0),
+            inp_opt("elevation", 0.0),
+            inp_opt("level", 1.0),
+            inp_opt("chan", 0.0),
+        ],
+        |_, _| Box::new(BFormat::new(BKind::PanB)),
+    ),
+    plain(
+        "PanB2",
+        &[
+            inp("signal", 0.0),
+            inp_opt("azimuth", 0.0),
+            inp_opt("level", 1.0),
+            inp_opt("chan", 0.0),
+        ],
+        |_, _| Box::new(BFormat::new(BKind::PanB2)),
+    ),
+    plain(
+        "BiPanB2",
+        &[
+            inp("a", 0.0),
+            inp("b", 0.0),
+            inp_opt("azimuth", 0.0),
+            inp_opt("level", 1.0),
+            inp_opt("chan", 0.0),
+        ],
+        |_, _| Box::new(BFormat::new(BKind::BiPanB2)),
+    ),
+    plain(
+        "DecodeB2",
+        &[
+            inp("w", 0.0),
+            inp("x", 0.0),
+            inp("y", 0.0),
+            inp("orientation", 0.5),
+            inp("numchans", 4.0),
+            inp_opt("chan", 0.0),
+        ],
+        |_, _| Box::new(DecodeB2::default()),
+    ),
 ];

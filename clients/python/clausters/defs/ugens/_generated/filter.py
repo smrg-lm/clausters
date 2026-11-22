@@ -70,6 +70,10 @@ __all__ = [
     "pitch_shift",
     "del_tap_wr",
     "del_tap_rd",
+    "free_verb",
+    "spring",
+    "ball",
+    "tball",
 ]
 
 
@@ -457,3 +461,32 @@ def del_tap_rd(bufnum, phase, deltime, interp=1.0) -> Ugen:
     cubic (4). Any number of taps read one writer.
     """
     return Ugen("DelTapRd", [bufnum, phase, deltime, interp])
+
+
+def free_verb(signal, mix=0.33, room=0.5, damp=0.5) -> Ugen:
+    """Freeverb on one channel: `mix` is the wet part of the output, `room`
+    the size (0 to 1) and `damp` how fast the highs die. Its lines are its
+    tunings for 44.1 kHz scaled to the server's rate.
+    """
+    return Ugen("FreeVerb", [signal, mix, room, damp])
+
+
+def spring(signal, spring=1.0, damp=0.0) -> Ugen:
+    """A mass on a spring driven by the force `signal`, its velocity damped by
+    `damp` a sample: the force the spring exerts. It rings at
+    `sqrt(spring * sampleRate) / 2 pi`.
+    """
+    return Ugen("Spring", [signal, spring, damp])
+
+
+def ball(signal, g=1.0, damp=0.0, friction=0.01) -> Ugen:
+    """The height of a ball falling under gravity `g` onto a floor at the
+    height `signal`, bouncing with its velocity damped by `damp` and held
+    by `friction` once close.
+    """
+    return Ugen("Ball", [signal, g, damp, friction])
+
+
+def tball(signal, g=10.0, damp=0.0, friction=0.01) -> Ugen:
+    """`ball`'s impacts: its velocity at each bounce, 0 between."""
+    return Ugen("TBall", [signal, g, damp, friction])

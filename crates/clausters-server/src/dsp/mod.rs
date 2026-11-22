@@ -22,6 +22,8 @@ pub mod wavetable;
 // core-only build carries none of it; Faust synths implement `node::SynthNode`
 // directly and only touch the core types above.
 #[cfg(feature = "synth")]
+pub mod ambi;
+#[cfg(feature = "synth")]
 pub mod analytic;
 #[cfg(feature = "synth")]
 pub mod banks;
@@ -106,6 +108,8 @@ pub mod osc;
 pub mod pan;
 #[cfg(feature = "synth")]
 pub mod phase;
+#[cfg(feature = "synth")]
+pub mod physical;
 pub mod rand;
 #[cfg(feature = "synth")]
 pub mod random;
@@ -118,6 +122,8 @@ pub mod rates;
 pub mod registry;
 #[cfg(feature = "synth")]
 pub mod reply;
+#[cfg(feature = "synth")]
+pub mod reverb;
 #[cfg(feature = "synth")]
 pub mod running;
 #[cfg(feature = "synth")]

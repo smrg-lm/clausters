@@ -289,3 +289,45 @@ export const klank = (
  */
 export const hilbert = (signal: Channel): ChannelList =>
     chans([0.0, 1.0].map((c) => new Ugen("Hilbert", [signal, c])));
+
+/**
+ * `freeVerb` of a pair: both channels' reverberators fed their sum, the
+ * right's lines a little longer. Returns the pair.
+ */
+export const freeVerb2 = (
+    signal: Channel,
+    signal2: Channel,
+    mix: Channel = 0.33,
+    room: Channel = 0.5,
+    damp: Channel = 0.5,
+): ChannelList =>
+    chans([0.0, 1.0].map((c) => new Ugen("FreeVerb2", [signal, signal2, mix, room, damp, c])));
+
+/**
+ * A room `roomsize` metres across whose tail falls 60 dB in `revtime` seconds:
+ * a feedback delay network with early reflections. `damping` lowpasses the
+ * tail and `inputbw` the input; `spread` sets the two outputs apart.
+ * `maxroomsize` is a constant that sizes the lines. Returns the pair.
+ */
+export const gverb = (
+    signal: Channel,
+    roomsize: Channel = 10.0,
+    revtime: Channel = 3.0,
+    damping: Channel = 0.5,
+    inputbw: Channel = 0.5,
+    spread: Channel = 15.0,
+    drylevel: Channel = 1.0,
+    earlyreflevel: Channel = 0.7,
+    taillevel: Channel = 0.5,
+    maxroomsize: Channel = 300.0,
+): ChannelList =>
+    chans(
+        [0.0, 1.0].map(
+            (c) =>
+                new Ugen("GVerb", [
+                    signal, roomsize, revtime, damping, inputbw, spread, drylevel,
+                    earlyreflevel, taillevel, maxroomsize, c,
+                ]),
+        ),
+    );
+

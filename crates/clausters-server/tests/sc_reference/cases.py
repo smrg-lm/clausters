@@ -11,9 +11,11 @@ an input is scsynth's output), `outputs` (how many scsynth's has) and `output`
 `tol` is the largest difference allowed, relative to the reference's
 magnitude where that is above one; `shift` how many samples the server's
 output leads scsynth's, and `skip` how many of the first values are not
-compared (a transient scsynth's constructor leaves), each with a `why`. A case whose difference is a decision
-rather than an error says so in `why`, and the comparison then checks only
-what the decision keeps.
+compared (a transient scsynth's constructor leaves), each with a `why`.
+`sr` runs a case at a sample rate of its own (48 kHz otherwise), for a UGen
+tuned for one. A case whose difference is a decision rather than an error
+says so in `why`, and the comparison then checks only what the decision
+keeps.
 """
 
 # scsynth's operator indices (`SpecialSelectorsOperatorsAndClasses.h`), by
@@ -102,6 +104,7 @@ def cases() -> list[dict]:
         _info,
         _delay_lines,
         _local_buffers,
+        _spaces,
     ]:
         out.extend(f())
     return out
@@ -1218,5 +1221,89 @@ def _local_buffers() -> list[dict]:
     x = g.add("MulAdd", "ar", x, 3, 2)
     g.add("Index", "ar", b, x)
     out.append(case("SetBuf.offset", g))
+    return out
+
+
+_TABLE_ANGLE = "scsynth reads its sine table at a truncated index; the server computes the angle"
+
+
+def _spaces() -> list[dict]:
+    """`PanUGens.cpp`'s square and Ambisonics, `ReverbUGens.cpp`'s reverbs and
+    `PhysicalModelingUGens.cpp`'s models."""
+    out = []
+    # Inside the square, moving, and outside it on each side.
+    for name, xs, ys in [("moving", None, None), ("right", 1.6, 0.7), ("back", -0.4, -2.0)]:
+        for chan in range(4):
+            g = G()
+            x = sig(g)
+            if xs is None:
+                px = g.add("LFTri", "kr", 3, 0)
+                py = g.add("LFSaw", "kr", 2, 0)
+            else:
+                px, py = xs, ys
+            g.add("Pan4", "ar", x, px, py, 0.8, chan, sc={"inputs": [x, px, py, 0.8], "outputs": 4, "output": chan})
+            out.append(case(f"Pan4.{name}.{chan}", g, 16 if xs is None else 4, **_PAN_LAW))
+    for chan in range(4):
+        g = G()
+        x = sig(g)
+        az = g.add("LFSaw", "kr", 2, 0)
+        el = g.add("LFTri", "kr", 3, 0)
+        g.add("PanB", "ar", x, az, el, 0.7, chan, sc={"inputs": [x, az, el, 0.7], "outputs": 4, "output": chan})
+        out.append(case(f"PanB.{chan}", g, 16, tol=1.5e-3, why=_TABLE_ANGLE))
+    for chan in range(3):
+        g = G()
+        x = sig(g)
+        az = g.add("LFSaw", "kr", 2, 0)
+        g.add("PanB2", "ar", x, az, 0.7, chan, sc={"inputs": [x, az, 0.7], "outputs": 3, "output": chan})
+        out.append(case(f"PanB2.{chan}", g, 16, tol=1.5e-3, why=_TABLE_ANGLE))
+        g = G()
+        x = sig(g)
+        y = g.add("LFSaw", "ar", 211, 0)
+        az = g.add("LFSaw", "kr", 2, 0)
+        g.add("BiPanB2", "ar", x, y, az, 0.7, chan, sc={"inputs": [x, y, az, 0.7], "outputs": 3, "output": chan})
+        out.append(case(f"BiPanB2.{chan}", g, 16, tol=1.5e-3, why=_TABLE_ANGLE))
+    for n, orient in [(4, 0.5), (5, 0.0)]:
+        for chan in range(n):
+            g = G()
+            w = sig(g)
+            x = g.add("LFSaw", "ar", 211, 0)
+            y = g.add("LFTri", "ar", 97, 0)
+            g.add("DecodeB2", "ar", w, x, y, orient, n, chan, sc={"inputs": [w, x, y, orient], "outputs": n, "output": chan})
+            out.append(case(f"DecodeB2.{n}.{chan}", g))
+    # At 44.1 kHz, where Freeverb's tunings are scsynth's.
+    for room, damp in [(0.5, 0.5), (0.9, 0.1)]:
+        g = G()
+        x = sig(g)
+        g.add("FreeVerb", "ar", x, 0.6, room, damp)
+        out.append(case(f"FreeVerb.{room}", g, 80, sr=44100.0))
+        for chan in [0, 1]:
+            g = G()
+            x = sig(g)
+            y = g.add("LFSaw", "ar", 211, 0)
+            g.add("FreeVerb2", "ar", x, y, 0.6, room, damp, chan, sc={"inputs": [x, y, 0.6, room, damp], "outputs": 2, "output": chan})
+            out.append(case(f"FreeVerb2.{room}.{chan}", g, 80, sr=44100.0))
+    # A room whose longest line is already prime (48000 * 9.984 / 340 is
+    # 1409.46): scsynth's first line is -1 samples long at any other. The
+    # first impulse after the first block, where scsynth's levels rise from 0.
+    for chan in [0, 1]:
+        for spread in [15.0, 40.0]:
+            g = G()
+            x = g.add("Impulse", "ar", 150, 0.69)
+            g.add("GVerb", "ar", x, 9.984, 1.5, 0.4, 0.6, spread, 0.8, 0.7, 0.5, 300, chan,
+                  sc={"inputs": [x, 9.984, 1.5, 0.4, 0.6, spread, 0.8, 0.7, 0.5, 300], "outputs": 2, "output": chan})
+            out.append(case(f"GVerb.{spread}.{chan}", g, 96))
+    for k, damp in [(40.0, 0.001), (2000.0, 0.01)]:
+        g = G()
+        x = impulse(g)
+        g.add("Spring", "ar", x, k, damp)
+        out.append(case(f"Spring.{k}", g, 16))
+    # A ball resting on the floor until it drops: at rest scsynth's
+    # constructor's sample leaves it where the server's first does.
+    for kind in ["Ball", "TBall"]:
+        g = G()
+        f = g.add("LFPulse", "ar", 30, 0, 0.5)
+        f = g.add("MulAdd", "ar", f, 0.3, 0)
+        g.add(kind, "ar", f, 10, 0.1, 0.01)
+        out.append(case(f"{kind}.ar", g, 64, seed=3))
     return out
 

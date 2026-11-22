@@ -237,3 +237,21 @@ def hilbert(signal) -> ChannelList:
     the audio band: the real part and the imaginary. Their magnitude
     `sqrt(re^2 + im^2)` is the signal's envelope."""
     return chans(*(Ugen("Hilbert", [signal, c]) for c in (0.0, 1.0)))
+
+
+def free_verb2(signal, signal2, mix=0.33, room=0.5, damp=0.5) -> ChannelList:
+    """`free_verb` of a pair: both channels' reverberators fed their sum, the
+    right's lines a little longer. Returns the pair."""
+    return chans(*(Ugen("FreeVerb2", [signal, signal2, mix, room, damp, c]) for c in (0.0, 1.0)))
+
+
+def gverb(signal, roomsize=10.0, revtime=3.0, damping=0.5, inputbw=0.5, spread=15.0,
+          drylevel=1.0, earlyreflevel=0.7, taillevel=0.5, maxroomsize=300.0) -> ChannelList:
+    """A room ``roomsize`` metres across whose tail falls 60 dB in
+    ``revtime`` seconds: a feedback delay network with early reflections.
+    ``damping`` lowpasses the tail and ``inputbw`` the input; ``spread`` sets
+    the two outputs apart. ``maxroomsize`` is a constant that sizes the
+    lines. Returns the pair."""
+    return chans(*(Ugen("GVerb", [signal, roomsize, revtime, damping, inputbw, spread, drylevel,
+                                  earlyreflevel, taillevel, maxroomsize, c]) for c in (0.0, 1.0)))
+

@@ -155,7 +155,7 @@ def build(sc: Path) -> Path:
 
 def protocol(case: dict) -> str:
     """One case as the harness's input lines."""
-    lines = [f"case {case['name']} {case['blocks']} {case.get('seed', 0)}"]
+    lines = [f"case {case['name']} {case['blocks']} {case.get('seed', 0)} {float(case.get('sr', 48000.0))!r}"]
     for b in case.get("buffers", []):
         values = " ".join(repr(float(v)) for v in b["data"])
         lines.append(f"buf {b['num']} {b['channels']} {b['frames']} {b.get('sr', 48000.0)} {values}")

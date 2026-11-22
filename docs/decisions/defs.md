@@ -1699,3 +1699,16 @@ What the comparison allows is part of the decision:
     and frame `k` plays at sample `k / rate`.
   - `LocalBuf` leaves its memory as it found it until something writes it;
     here a local buffer is zeroed at each note's start.
+  - `FreeVerb` and `FreeVerb2` keep their tunings' samples at every rate,
+    though their author's code says they are for 44.1 kHz, so the room
+    shrinks as the rate grows; here the tunings are scaled to the rate,
+    scsynth's own lines at 44.1 kHz.
+  - `GVerb`'s nearest-prime search truncates its range to 0, so its first
+    line is -1 samples long unless the room's longest line is already
+    prime, and a change of room never moves that line; here every line
+    follows the room. Its levels rise from 0 across the first block; here
+    they start at theirs.
+  - `PanB`, `PanB2`, `BiPanB2` and `Pan4` read their angle from a sine
+    table at a truncated index; here the angle is computed. (`PanB`'s help
+    gives its angles in radians; its code, kept, takes half and quarter
+    turns.)

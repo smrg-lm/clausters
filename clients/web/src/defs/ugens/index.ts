@@ -158,6 +158,12 @@ export {
 } from "./osc.ts";
 
 export {
+    freeVerb,
+    freeVerb2,
+    gverb,
+    spring,
+    ball,
+    tball,
     pluck,
     pitchShift,
     delTapWr,
@@ -241,6 +247,11 @@ export {
 export type { Resonance } from "./filter.ts";
 
 export {
+    pan4,
+    panB,
+    panB2,
+    bipanB2,
+    decodeB2,
     balance2,
     linPan2,
     linXfade2,

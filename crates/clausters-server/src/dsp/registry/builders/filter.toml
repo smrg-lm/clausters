@@ -589,3 +589,49 @@ Reads the buffer a `del_tap_wr` writes, `deltime` seconds behind the
 `phase` it outputs, with no interpolation (`interp` 1), linear (2) or
 cubic (4). Any number of taps read one writer.
 '''
+
+[[ugen]]
+kind = "FreeVerb"
+builder = "free_verb"
+required = ["signal"]
+doc = '''
+Freeverb on one channel: `mix` is the wet part of the output, `room`
+the size (0 to 1) and `damp` how fast the highs die. Its lines are its
+tunings for 44.1 kHz scaled to the server's rate.
+'''
+
+[[hand]]
+kind = "FreeVerb2"
+why = "one node a channel: the builder returns the pair"
+
+[[hand]]
+kind = "GVerb"
+why = "one node a channel: the builder returns the pair"
+
+[[ugen]]
+kind = "Spring"
+builder = "spring"
+required = ["signal"]
+doc = '''
+A mass on a spring driven by the force `signal`, its velocity damped by
+`damp` a sample: the force the spring exerts. It rings at
+`sqrt(spring * sampleRate) / 2 pi`.
+'''
+
+[[ugen]]
+kind = "Ball"
+builder = "ball"
+required = ["signal"]
+doc = '''
+The height of a ball falling under gravity `g` onto a floor at the
+height `signal`, bouncing with its velocity damped by `damp` and held
+by `friction` once close.
+'''
+
+[[ugen]]
+kind = "TBall"
+builder = "tball"
+required = ["signal"]
+doc = '''
+`ball`'s impacts: its velocity at each bounce, 0 between.
+'''

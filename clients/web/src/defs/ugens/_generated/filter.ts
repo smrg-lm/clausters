@@ -445,3 +445,46 @@ export const delTapRd = (
     deltime: Channel,
     interp: Channel = 1.0,
 ): Ugen => new Ugen("DelTapRd", [bufnum, phase, deltime, interp]);
+
+/**
+ * Freeverb on one channel: `mix` is the wet part of the output, `room`
+ * the size (0 to 1) and `damp` how fast the highs die. Its lines are its
+ * tunings for 44.1 kHz scaled to the server's rate.
+ */
+export const freeVerb = (
+    signal: Channel,
+    mix: Channel = 0.33,
+    room: Channel = 0.5,
+    damp: Channel = 0.5,
+): Ugen => new Ugen("FreeVerb", [signal, mix, room, damp]);
+
+/**
+ * A mass on a spring driven by the force `signal`, its velocity damped by
+ * `damp` a sample: the force the spring exerts. It rings at
+ * `sqrt(spring * sampleRate) / 2 pi`.
+ */
+export const spring = (
+    signal: Channel,
+    spring: Channel = 1.0,
+    damp: Channel = 0.0,
+): Ugen => new Ugen("Spring", [signal, spring, damp]);
+
+/**
+ * The height of a ball falling under gravity `g` onto a floor at the
+ * height `signal`, bouncing with its velocity damped by `damp` and held
+ * by `friction` once close.
+ */
+export const ball = (
+    signal: Channel,
+    g: Channel = 1.0,
+    damp: Channel = 0.0,
+    friction: Channel = 0.01,
+): Ugen => new Ugen("Ball", [signal, g, damp, friction]);
+
+/** `ball`'s impacts: its velocity at each bounce, 0 between. */
+export const tball = (
+    signal: Channel,
+    g: Channel = 10.0,
+    damp: Channel = 0.0,
+    friction: Channel = 0.01,
+): Ugen => new Ugen("TBall", [signal, g, damp, friction]);

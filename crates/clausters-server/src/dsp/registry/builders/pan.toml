@@ -64,3 +64,23 @@ why = "the value list is a variadic tail"
 [[hand]]
 kind = "SelectX"
 why = "the value list is a variadic tail"
+
+[[hand]]
+kind = "Pan4"
+why = "one node a channel: the builder returns the four"
+
+[[hand]]
+kind = "PanB"
+why = "one node a channel: the builder returns W, X, Y and Z"
+
+[[hand]]
+kind = "PanB2"
+why = "one node a channel: the builder returns W, X and Y"
+
+[[hand]]
+kind = "BiPanB2"
+why = "one node a channel: the builder returns W, X and Y"
+
+[[hand]]
+kind = "DecodeB2"
+why = "one node a speaker: the builder returns the ring, its size leading"

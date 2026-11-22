@@ -65,7 +65,9 @@ fn spec(case: &Value) -> (SynthDefSpec, bool) {
 fn render(case: &Value) -> Result<Vec<f32>, String> {
     let (spec, audio) = spec(case);
     let def = clausters::synthdef::compile(spec).map_err(|e| format!("compile: {e}"))?;
-    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    // A case's own rate, where its UGen's tunings are for one.
+    let rate = case.get("sr").and_then(Value::as_f64).unwrap_or(SR as f64) as f32;
+    let (mut engine, mut handle) = engine_pair(rate, CHANNELS);
     let mut out = vec![0.0f32; BLOCK_SIZE * CHANNELS];
     for b in case["buffers"].as_array().into_iter().flatten() {
         let data: Vec<f32> = b["data"]
@@ -76,7 +78,7 @@ fn render(case: &Value) -> Result<Vec<f32>, String> {
             .collect();
         let channels = b["channels"].as_u64().unwrap() as usize;
         let frames = b["frames"].as_u64().unwrap() as usize;
-        let sr = b.get("sr").and_then(Value::as_f64).unwrap_or(SR as f64);
+        let sr = b.get("sr").and_then(Value::as_f64).unwrap_or(rate as f64);
         let mut samples = vec![0.0; channels * frames];
         let n = data.len().min(samples.len());
         samples[..n].copy_from_slice(&data[..n]);
@@ -94,7 +96,7 @@ fn render(case: &Value) -> Result<Vec<f32>, String> {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::new(def), SR, seed)),
+            synth: Box::new(UGenSynth::new(Arc::new(def), rate, seed)),
             usage: Default::default(),
         })
         .ok()

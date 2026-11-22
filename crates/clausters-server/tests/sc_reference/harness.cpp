@@ -14,7 +14,8 @@
 //
 // Input, one command per line (whitespace separated):
 //
-//   case NAME BLOCKS SEED      start a graph; SEED seeds every generator
+//   case NAME BLOCKS SEED SR   start a graph; SEED seeds every generator, SR
+//                              is the sample rate
 //   buf NUM CHANNELS FRAMES SR v0 v1 ...   fill buffer NUM (interleaved)
 //   ugen KIND RATE SPECIAL NOUT NIN IN...  RATE is ir|kr|ar|dr; an IN is
 //                              c:VALUE (a constant) or u:UNIT:OUTPUT
@@ -58,7 +59,6 @@ extern float32 gInvSine[];
 extern float32 gSineWavetable[];
 
 const int kSineSizeHarness = 8192;
-const double kSampleRate = 48000.0;
 const int kBlock = 64;
 const int kAudioBuses = 128;
 const int kControlBuses = 4096;
@@ -293,12 +293,12 @@ static int parseRate(const std::string& r) {
     exit(1);
 }
 
-static void run(const std::string& name, int blocks, uint32 seed, const std::vector<USpec>& specs,
+static void run(const std::string& name, int blocks, uint32 seed, double sampleRate, const std::vector<USpec>& specs,
                 const std::vector<BufSpec>& bufs, const std::vector<std::pair<int, int>>& probes) {
     World world;
     memset(&world, 0, sizeof(world));
     world.ft = &gTable;
-    world.mSampleRate = kSampleRate;
+    world.mSampleRate = sampleRate;
     world.mBufLength = kBlock;
     world.mNumAudioBusChannels = kAudioBuses;
     world.mNumControlBusChannels = kControlBuses;
@@ -316,8 +316,8 @@ static void run(const std::string& name, int blocks, uint32 seed, const std::vec
     world.mSndBufs = (SndBuf*)calloc(kBuffers, sizeof(SndBuf));
     world.mSndBufsNonRealTimeMirror = world.mSndBufs;
     world.mSndBufUpdates = (SndBufUpdates*)calloc(kBuffers, sizeof(SndBufUpdates));
-    rateInit(&world.mFullRate, kSampleRate, kBlock);
-    rateInit(&world.mBufRate, kSampleRate / kBlock, 1);
+    rateInit(&world.mFullRate, sampleRate, kBlock);
+    rateInit(&world.mBufRate, sampleRate / kBlock, 1);
     world.mNumRGens = kRGens;
     world.mRGen = new RGen[kRGens];
     for (int i = 0; i < kRGens; ++i)
@@ -454,6 +454,7 @@ int main(int argc, char** argv) {
     std::string line, name;
     int blocks = 0;
     uint32 seed = 0;
+    double sr = 48000.0;
     std::vector<USpec> specs;
     std::vector<BufSpec> bufs;
     std::vector<std::pair<int, int>> probes;
@@ -463,7 +464,7 @@ int main(int argc, char** argv) {
         if (!(in >> cmd))
             continue;
         if (cmd == "case") {
-            in >> name >> blocks >> seed;
+            in >> name >> blocks >> seed >> sr;
             specs.clear();
             bufs.clear();
             probes.clear();
@@ -501,7 +502,7 @@ int main(int argc, char** argv) {
             in >> u >> o;
             probes.push_back({ u, o });
         } else if (cmd == "run") {
-            run(name, blocks, seed, specs, bufs, probes);
+            run(name, blocks, seed, sr, specs, bufs, probes);
         } else if (cmd == "list") {
             for (auto& d : gDefs)
                 printf("%s\n", d.first.c_str());

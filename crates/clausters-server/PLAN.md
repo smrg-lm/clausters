@@ -1676,7 +1676,9 @@ holds what is open.
     readers and writers `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`,
     `XOut`, `SharedIn`, `SharedOut`; the delay lines and buffers: `Pluck`,
     `PitchShift`, `DelTapWr`, `DelTapRd`, `LocalBuf`, `MaxLocalBufs`,
-    `SetBuf`, `ClearBuf`, `ScopeOut`, `VDiskIn`.
+    `SetBuf`, `ClearBuf`, `ScopeOut`, `VDiskIn`; the spatial UGens, the
+    reverbs and the physical models: `Pan4`, `PanB`, `PanB2`, `BiPanB2`,
+    `DecodeB2`, `FreeVerb`, `FreeVerb2`, `GVerb`, `Spring`, `Ball`, `TBall`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1704,9 +1706,6 @@ holds what is open.
     names, 19 of them out of scope above, 188 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **9. Spatial, reverbs and physical models:** `Pan4`, `PanB`,
-      `PanB2`, `BiPanB2`, `DecodeB2`; `FreeVerb`, `FreeVerb2`, `GVerb`;
-      `Spring`, `Ball`, `TBall`.
     - ⬜ **10. Grains:** `GrainBuf`, `GrainFM`, `GrainIn`, `GrainSin`,
       `Warp1`, `TGrains`, `GrainTap`.
     - ⬜ **11. Demand and test:** `Dbufwr`, `Dconst`, `Ddup`,

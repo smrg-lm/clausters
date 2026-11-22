@@ -163,6 +163,12 @@ from .osc import (
     gendy3,
 )
 from .filter import (
+    free_verb,
+    free_verb2,
+    gverb,
+    spring,
+    ball,
+    tball,
     pluck,
     pitch_shift,
     del_tap_wr,
@@ -244,6 +250,11 @@ from .filter import (
     freq_shift,
 )
 from .pan import (
+    pan4,
+    pan_b,
+    pan_b2,
+    bipan_b2,
+    decode_b2,
     balance2,
     lin_pan2,
     lin_xfade2,
@@ -499,6 +510,17 @@ def ugen_input_names(kind: str) -> "list[str] | None":
 
 
 __all__ = [
+    "free_verb",
+    "free_verb2",
+    "gverb",
+    "spring",
+    "ball",
+    "tball",
+    "pan4",
+    "pan_b",
+    "pan_b2",
+    "bipan_b2",
+    "decode_b2",
     "pluck",
     "pitch_shift",
     "del_tap_wr",

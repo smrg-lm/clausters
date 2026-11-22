@@ -89,6 +89,7 @@ export type { GraphDefSpec, MemberControlValue, MemberKind, MemberSpec } from ".
 // The UGens the Python client's `clausters.defs` names flat, by the same
 // names; the whole catalogue is `ugens` (`clausters/defs/ugens`), as there.
 export {
+    freeVerb, freeVerb2, gverb, spring, ball, tball, pan4, panB, panB2, bipanB2, decodeB2,
     pluck, pitchShift, delTapWr, delTapRd, scopeOut, localBuf, maxLocalBufs, setBuf, clearBuf, vdiskIn,
     Bpf, ChannelList, Control, DoneAction, Env, Ugen, bufAllpassC,
     bufAllpassL, bufAllpassN, bufChannels, bufCombC, bufCombL, bufCombN, bufDelayC,

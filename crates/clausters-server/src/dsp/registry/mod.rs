@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::dsp::ambi::{BFormat, BKind, DecodeB2, Pan4};
 use crate::dsp::analytic::{FreqShift, Hilbert};
 use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
@@ -54,6 +55,7 @@ use crate::dsp::noise::{
 use crate::dsp::osc::{COsc, Osc, OscN, Shaper, VOsc, VOsc3};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
+use crate::dsp::physical::{Ball, BallKind, Spring};
 use crate::dsp::rand::SynthRand;
 use crate::dsp::random::{
     CoinGate, Once, OnceKind, RandId, RandSeed, TWindex, Triggered, TriggeredKind,
@@ -62,6 +64,7 @@ use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
 use crate::dsp::reply::{Poll, SendPeakRMS, SendReply, SendTrig};
+use crate::dsp::reverb::{FreeVerb, FreeVerb2, GVerb};
 use crate::dsp::running::{
     Change, LastValue, PeakFollower, Running, RunningKind, RunningSum, ZeroCrossing,
 };
@@ -879,6 +882,7 @@ mod env;
 mod filter;
 mod io;
 mod lag;
+mod models;
 mod noise;
 mod osc;
 mod pan;
@@ -901,6 +905,7 @@ static FAMILIES: &[&[UGenDescriptor]] = &[
     filter::UGENS,
     dynamics::UGENS,
     delay::UGENS,
+    models::UGENS,
     arith::UGENS,
     io::UGENS,
     buf::UGENS,

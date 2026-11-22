@@ -168,6 +168,8 @@ const STOCHASTIC: &[&str] = &[
     "LFDNoise1",
     "LFDNoise3",
     "LFDClipNoise",
+    "Ball",
+    "TBall",
     "Gendy1",
     "Gendy2",
     "Gendy3",
@@ -908,6 +910,57 @@ fn cases() -> Vec<Case> {
                    {"kind": "Index", "inputs": [c(4.0), c(10.0)]}, out(2)]),
         )
         .source("sine"),
+        Case::new(
+            "pan4",
+            json!([input(), {"kind": "LFTri", "rate": "kr", "inputs": [c(3.0), c(0.0)]},
+                   {"kind": "Pan4", "inputs": [u(0), u(1), c(0.3), c(0.8), c(2.0)]}, out(2)]),
+        )
+        .source("sine"),
+        Case::new(
+            "pan_b",
+            json!([input(), {"kind": "LFSaw", "rate": "kr", "inputs": [c(2.0), c(0.0)]},
+                   {"kind": "PanB", "inputs": [u(0), u(1), c(0.2), c(0.8), c(1.0)]}, out(2)]),
+        )
+        .source("sine"),
+        Case::new(
+            "pan_b2",
+            json!([input(), {"kind": "LFSaw", "rate": "kr", "inputs": [c(2.0), c(0.0)]},
+                   {"kind": "PanB2", "inputs": [u(0), u(1), c(0.8), c(2.0)]}, out(2)]),
+        )
+        .source("sine"),
+        Case::new(
+            "bi_pan_b2",
+            json!([input(), {"kind": "LFSaw", "rate": "kr", "inputs": [c(2.0), c(0.0)]},
+                   {"kind": "LFSaw", "inputs": [c(211.0), c(0.0)]},
+                   {"kind": "BiPanB2", "inputs": [u(0), u(2), u(1), c(0.8), c(1.0)]}, out(3)]),
+        )
+        .source("sine"),
+        Case::new(
+            "decode_b2",
+            json!([input(), {"kind": "DecodeB2", "inputs": [u(0), u(0), u(0), c(0.5), c(5.0), c(3.0)]}, out(1)]),
+        )
+        .source("sine"),
+        Case::new(
+            "free_verb",
+            json!([input(), {"kind": "FreeVerb", "inputs": [u(0), c(0.7), c(0.8), c(0.3)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "free_verb2",
+            json!([input(), {"kind": "FreeVerb2", "inputs": [u(0), u(0), c(0.7), c(0.8), c(0.3), c(1.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "gverb",
+            json!([input(), {"kind": "GVerb", "inputs": [u(0), c(5.0), c(1.0), c(0.5), c(0.5), c(15.0),
+                   c(1.0), c(0.7), c(0.5), c(20.0), c(1.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "spring",
+            json!([input(), {"kind": "Spring", "inputs": [u(0), c(400.0), c(0.001)]}, out(1)]),
+        )
+        .source("noise"),
         Case::new(
             "conv",
             json!([input(), {"kind": "Conv", "inputs": [u(0), c(3.0)], "fft_size": 256}, out(1)]),

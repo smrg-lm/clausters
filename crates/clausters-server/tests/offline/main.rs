@@ -66,6 +66,7 @@ mod schema;
 mod seeds;
 mod signal_asserts;
 mod soundfile;
+mod spaces;
 mod spectral;
 mod subjects;
 mod synthdef;

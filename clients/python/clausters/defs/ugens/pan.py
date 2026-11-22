@@ -160,3 +160,44 @@ def splay(signals, spread=1.0, level=1.0, center=0.0) -> ChannelList:
     # Mix each side down separately, so the fold uses the fused sums instead of
     # an Add chain per channel.
     return chans(mix([p[0] for p in panned]), mix([p[1] for p in panned]))
+
+
+def pan4(signal, xpos=0.0, ypos=0.0, level=1.0) -> ChannelList:
+    """Places a mono ``signal`` on a square of four channels at ``(xpos,
+    ypos)`` (-1 left or back, 1 right or front), equal power across and
+    front to back. A position off the square is carried to its edge. Returns
+    the left front, right front, left back and right back channels."""
+    return chans(*(Ugen("Pan4", [signal, xpos, ypos, level, float(c)]) for c in range(4)))
+
+
+def pan_b(signal, azimuth=0.0, elevation=0.0, level=1.0) -> ChannelList:
+    """Encodes a mono ``signal`` into first-order B-format: W, X, Y and Z.
+    ``azimuth`` is in half turns (-1 to 1, clockwise, 0 in front),
+    ``elevation`` in quarter turns (-1 down to 1 up)."""
+    return chans(*(Ugen("PanB", [signal, azimuth, elevation, level, float(c)]) for c in range(4)))
+
+
+def pan_b2(signal, azimuth=0.0, level=1.0) -> ChannelList:
+    """Encodes a mono ``signal`` into two-dimensional B-format: W, X and Y.
+    ``azimuth`` is in half turns (-1 to 1, clockwise, 0 in front)."""
+    return chans(*(Ugen("PanB2", [signal, azimuth, level, float(c)]) for c in range(3)))
+
+
+def bipan_b2(a, b, azimuth=0.0, level=1.0) -> ChannelList:
+    """`pan_b2` of a pair: ``a`` at ``azimuth`` and ``b`` opposite it. Returns
+    W, X and Y."""
+    return chans(*(Ugen("BiPanB2", [a, b, azimuth, level, float(c)]) for c in range(3)))
+
+
+def decode_b2(numchans, w, x, y, orientation=0.5) -> ChannelList:
+    """Decodes two-dimensional B-format onto a ring of ``numchans`` speakers,
+    clockwise from the front, each a cardioid towards it. ``orientation`` 0
+    puts speaker 0 in front, 0.5 the front between two. Returns ``numchans``
+    channels."""
+    if isinstance(numchans, bool) or not isinstance(numchans, int) or numchans < 1:
+        raise ValueError(f"decode_b2 needs a speaker count of at least 1, got {numchans!r}")
+    return ChannelList([
+        Ugen("DecodeB2", [w, x, y, orientation, float(numchans), float(c)])
+        for c in range(numchans)
+    ])
+

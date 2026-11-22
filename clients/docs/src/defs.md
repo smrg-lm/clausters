@@ -422,6 +422,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `pluck(signal, trig=1.0, maxdelaytime=0.2, delaytime=0.2, decaytime=1.0, coef=0.5)` | a plucked string: a period of `signal` let into a lowpassed feedback line |
 | | `pitch_shift(signal, window_size=0.2, pitch_ratio=1.0, pitch_dispersion=0.0, time_dispersion=0.0)` | the pitch moved by four overlapping grains |
 | | `del_tap_wr(bufnum, signal)` / `del_tap_rd(bufnum, phase, deltime, interp=1.0)` | a line round a buffer: one writer, any number of taps |
+| Reverbs | `free_verb(signal, mix=0.33, room=0.5, damp=0.5)` / `free_verb2(signal, signal2, ...)` | Freeverb, mono and stereo |
+| | `gverb(signal, roomsize=10.0, revtime=3.0, ...)` | a room of a size and a decay: a feedback delay network, stereo |
+| Physical models | `spring(signal, spring=1.0, damp=0.0)` / `ball(signal, g=1.0, damp=0.0, friction=0.01)` / `tball(...)` | a damped spring; a bouncing ball's height, and its impacts |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienv_gen(env, index, offset=0.0)` | an `Env` read at a position rather than played in time |
@@ -441,6 +444,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `lin_pan2(signal, pos, level)` | the same at constant **amplitude** — the two gains sum to `level` |
 | | `balance2(left, right, pos, level)` | shifts an already stereo pair to one side; centred, it costs 3 dB |
 | | `pan_az(numchans, signal, pos, level=1.0, width=2.0, orientation=0.5)` | places a signal on a **ring** of `numchans`; returns that many channels |
+| | `pan4(signal, xpos=0.0, ypos=0.0, level=1.0)` | a signal on a square of four channels |
+| | `pan_b`, `pan_b2`, `bipan_b2(a, b, azimuth, level)`, `decode_b2(numchans, w, x, y, orientation=0.5)` | first-order Ambisonics: encode into B-format, decode onto a ring |
 | | `splay(signals, spread=1.0, level=1.0, center=0.0)` | spreads a list across the field and folds it to a pair (client-side, no UGen of its own) |
 | Stereo field | `rotate2(x, y, pos)` | rotates the plane by `pos` **half turns** — turns an image without resizing it |
 | | `mid_side(a, b)` | the mid/side matrix, **its own inverse**: encodes and decodes with one call |
@@ -580,6 +585,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `pluck(signal, trig = 1.0, maxdelaytime = 0.2, delaytime = 0.2, decaytime = 1.0, coef = 0.5)` | a plucked string: a period of `signal` let into a lowpassed feedback line |
 | | `pitchShift(signal, windowSize = 0.2, pitchRatio = 1.0, pitchDispersion = 0.0, timeDispersion = 0.0)` | the pitch moved by four overlapping grains |
 | | `delTapWr(bufnum, signal)` / `delTapRd(bufnum, phase, deltime, interp = 1.0)` | a line round a buffer: one writer, any number of taps |
+| Reverbs | `freeVerb(signal, mix = 0.33, room = 0.5, damp = 0.5)` / `freeVerb2(signal, signal2, ...)` | Freeverb, mono and stereo |
+| | `gverb(signal, roomsize = 10.0, revtime = 3.0, ...)` | a room of a size and a decay: a feedback delay network, stereo |
+| Physical models | `spring(signal, spring = 1.0, damp = 0.0)` / `ball(signal, g = 1.0, damp = 0.0, friction = 0.01)` / `tball(...)` | a damped spring; a bouncing ball's height, and its impacts |
 | Envelopes | `envGen(env, { gate = 1.0, levelScale = 1.0, levelBias = 0.0, timeScale = 1.0, doneAction = DoneAction.NONE })` | plays an `Env` breakpoint envelope; the `doneAction` can free the node |
 | | `line(start = 0.0, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` / `xLine(start = 0.01, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienvGen(env, index, offset = 0.0)` | an `Env` read at a position rather than played in time |
@@ -599,6 +607,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `linPan2(signal, pos = 0.0, level = 1.0)` | the same at constant **amplitude** — the two gains sum to `level` |
 | | `balance2(left, right, pos = 0.0, level = 1.0)` | shifts an already stereo pair to one side; centred, it costs 3 dB |
 | | `panAz(numchans, signal, pos = 0.0, level = 1.0, width = 2.0, orientation = 0.5)` | places a signal on a **ring** of `numchans`; returns that many channels |
+| | `pan4(signal, xpos = 0.0, ypos = 0.0, level = 1.0)` | a signal on a square of four channels |
+| | `panB`, `panB2`, `bipanB2(a, b, azimuth, level)`, `decodeB2(numchans, w, x, y, orientation = 0.5)` | first-order Ambisonics: encode into B-format, decode onto a ring |
 | | `splay(signals, spread = 1.0, level = 1.0, center = 0.0)` | spreads a list across the field and folds it to a pair (client-side, no UGen of its own) |
 | Stereo field | `rotate2(x, y, pos = 0.0)` | rotates the plane by `pos` **half turns** — turns an image without resizing it |
 | | `midSide(a, b)` | the mid/side matrix, **its own inverse**: encodes and decodes with one call |

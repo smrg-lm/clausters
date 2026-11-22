@@ -202,3 +202,70 @@ export function splay(
         mix(panned.map((p) => p.at(1))),
     ]);
 }
+
+/**
+ * Places a mono `signal` on a square of four channels at `(xpos, ypos)` (-1
+ * left or back, 1 right or front), equal power across and front to back. A
+ * position off the square is carried to its edge. Returns the left front,
+ * right front, left back and right back channels.
+ */
+export const pan4 = (
+    signal: Channel,
+    xpos: Channel = 0.0,
+    ypos: Channel = 0.0,
+    level: Channel = 1.0,
+): ChannelList => chans([0, 1, 2, 3].map((c) => new Ugen("Pan4", [signal, xpos, ypos, level, c])));
+
+/**
+ * Encodes a mono `signal` into first-order B-format: W, X, Y and Z. `azimuth`
+ * is in half turns (-1 to 1, clockwise, 0 in front), `elevation` in quarter
+ * turns (-1 down to 1 up).
+ */
+export const panB = (
+    signal: Channel,
+    azimuth: Channel = 0.0,
+    elevation: Channel = 0.0,
+    level: Channel = 1.0,
+): ChannelList =>
+    chans([0, 1, 2, 3].map((c) => new Ugen("PanB", [signal, azimuth, elevation, level, c])));
+
+/**
+ * Encodes a mono `signal` into two-dimensional B-format: W, X and Y.
+ * `azimuth` is in half turns (-1 to 1, clockwise, 0 in front).
+ */
+export const panB2 = (signal: Channel, azimuth: Channel = 0.0, level: Channel = 1.0): ChannelList =>
+    chans([0, 1, 2].map((c) => new Ugen("PanB2", [signal, azimuth, level, c])));
+
+/** `panB2` of a pair: `a` at `azimuth` and `b` opposite it. Returns W, X and Y. */
+export const bipanB2 = (
+    a: Channel,
+    b: Channel,
+    azimuth: Channel = 0.0,
+    level: Channel = 1.0,
+): ChannelList => chans([0, 1, 2].map((c) => new Ugen("BiPanB2", [a, b, azimuth, level, c])));
+
+/**
+ * Decodes two-dimensional B-format onto a ring of `numchans` speakers,
+ * clockwise from the front, each a cardioid towards it. `orientation` 0 puts
+ * speaker 0 in front, 0.5 the front between two. Returns `numchans` channels.
+ */
+export function decodeB2(
+    numchans: number,
+    w: Channel,
+    x: Channel,
+    y: Channel,
+    orientation: Channel = 0.5,
+): ChannelList {
+    if (!Number.isInteger(numchans) || numchans < 1) {
+        throw new TypeError(
+            `decodeB2 needs a speaker count of at least 1, got ${String(numchans)}`,
+        );
+    }
+    return new ChannelList(
+        Array.from(
+            { length: numchans },
+            (_unused, c) => new Ugen("DecodeB2", [w, x, y, orientation, numchans, c]),
+        ),
+    );
+}
+
