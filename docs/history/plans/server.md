@@ -2108,6 +2108,112 @@ have a seam".
   test holds them to. The decision is "The random UGens draw from shared
   generators, scsynth's, from one seed" (`docs/decisions/defs.md`).
 
+- ✅ **Every UGen of SuperCollider's base library, in the catalog**
+  *(asked by the user, 2026-11-21, after finding `IRand` missing)*. The
+  U track closed with the families it set out to cover, and the registry
+  holds 168 scsynth names; it never took the base library as its measure,
+  so what is missing is found by use, one UGen at a time. The `Rand`
+  family is the case that showed it: only `Rand` exists, while `IRand`,
+  `ExpRand`, `LinRand`, `NRand`, `TRand`, `TIRand`, `TExpRand` and
+  `CoinGate` do not -- and U0 had promised `Rand`'s exponential sibling
+  with U6, which shipped the noise without it. The work: an inventory of
+  the UGens the base library ships (the server's own plugins, not the
+  extensions distributed apart from it), checked against the registry
+  row by row, each missing one either added or named out of scope with
+  the reason (a platform UGen, one superseded by another already here,
+  one the document's own model replaces). Each added UGen follows the U
+  track's stances (one core per family, scsynth names on the wire, a
+  better realization allowed where the transfer function is kept, a
+  test per row), and reaches both clients' builders in the same commit,
+  as the contrast tests require.
+  - **The reference is scsynth's code** (`tests/sc_reference`, decision "A
+    UGen is held against scsynth's own code, not against its help file"):
+    each added row gets cases there, regenerated from a checkout with
+    `gen.py`.
+  - **Added so far (2026-11-21):** the `Rand` family (`IRand`, `ExpRand`,
+    `LinRand`, `NRand`, `TRand`, `TIRand`, `TExpRand`, `CoinGate`, `RandID`,
+    `RandSeed`), `LagUD` and scsynth's `VarLag`, and `FilterUGens.cpp`'s
+    sections: `Delay1`, `Delay2`, `LPZ1`, `HPZ1`, `LPZ2`, `HPZ2`, `BPZ2`,
+    `BRZ2`, `Slope`, `Flip`, `TwoPole`, `TwoZero`, `APF`, `Ringz`,
+    `Formlet`, `MidEQ`, `FOS`, `SOS`, `Ramp`, `Slew`, `Lag2`, `Lag3`,
+    `Lag2UD`, `Lag3UD` and the eight `B*` cookbook biquads; `LFUGens.cpp`'s
+    rest: `LFCub`, `LFPar`, `LFGauss`, `SyncSaw`, `Vibrato`, `Linen`,
+    `IEnvGen`, `LinExp`, `InRange`, `InRect`, `ModDif`, `Unwrap`, `AmpComp`,
+    `AmpCompA`, `K2A`, `A2K`, `T2A`, `T2K`, `DC`; `OscUGens.cpp`'s
+    oscillators: `FSinOsc`, `SinOscFB`, `Blip`, `Formant`, `COsc`, `VOsc3`,
+    `Klang`, `Klank`, `PSinGrain`; the tables and the small noises: `Index`,
+    `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
+    `DegreeToKey`, `TWindex`, `Hasher`, `MantissaMask`, `Logistic`,
+    `LFDNoise0`, `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`; the 24 chaotic
+    maps of `ChaosUGens.cpp` and `Gendy1`, `Gendy2`, `Gendy3`; the rest of
+    `FilterUGens.cpp`: `Median`, `MoogFF`, `Normalizer`, `Limiter`,
+    `Compander`, `Amplitude`, `Hilbert`, `FreqShift`; the rest of
+    `TriggerUGens.cpp` and `RunningSum`: `Free`, `Pause`,
+    `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`, `RunningMin`,
+    `RunningSum`, `LastValue`, `MostChange`, `LeastChange`, `ZeroCrossing`,
+    `SendPeakRMS`; the information UGens (`BlockSize`, `ControlRate`,
+    `ControlDur`, `SampleDur`, `RadiansPerSample`, `SubsampleOffset`,
+    `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`, `NumOutputBuses`,
+    `NumBuffers`, `NodeID`, `NumRunningSynths`, `BufSamples`) and the bus
+    readers and writers `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`,
+    `XOut`, `SharedIn`, `SharedOut`; the delay lines and buffers: `Pluck`,
+    `PitchShift`, `DelTapWr`, `DelTapRd`, `LocalBuf`, `MaxLocalBufs`,
+    `SetBuf`, `ClearBuf`, `ScopeOut`, `VDiskIn`; the spatial UGens, the
+    reverbs and the physical models: `Pan4`, `PanB`, `PanB2`, `BiPanB2`,
+    `DecodeB2`, `FreeVerb`, `FreeVerb2`, `GVerb`, `Spring`, `Ball`, `TBall`;
+    the grains: `GrainBuf`, `GrainFM`, `GrainIn`, `GrainSin`, `Warp1`,
+    `TGrains`, `GrainTap`; the rest of the demand family and the test
+    UGens: `Dbufwr`, `Dconst`, `Ddup`, `DemandEnvGen`, `Dpoll`, `Dreset`,
+    `Dser`, `Dswitch`, `Dwrand`, `CheckBadValues`, `Sanitize`; the FFT
+    chain and convolution: `FFTTrigger`, `PackFFT`, `Unpack1FFT`, the rest of
+    the `PV_*` set (`PV_BinScramble`, `PV_BinWipe`, `PV_ConformalMap`,
+    `PV_Conj`, `PV_Copy`, `PV_Diffuser`, `PV_Div`, `PV_LocalMax`,
+    `PV_MagDiv`, `PV_MagNoise`, `PV_MagSquared`, `PV_PhaseShift`,
+    `PV_PhaseShift90`, `PV_PhaseShift270`, `PV_RandComb`, `PV_RandWipe`,
+    `PV_RectComb`, `PV_RectComb2`, rows of a few implementations),
+    `PartConv`, `Convolution`, `Convolution2`, `Convolution2L`,
+    `Convolution3`, `StereoConvolution2L`; and analysis: `Pitch`, `Onsets`,
+    `PV_HainsworthFoote`, `PV_JensenAndersen`, `BeatTrack`, `BeatTrack2`,
+    `KeyTrack`, `Loudness`, `MFCC`, `SpecCentroid`, `SpecFlatness`,
+    `SpecPcile`.
+  - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
+    `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
+    `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
+    `MouseButton`, `KeyState` (the server machine's own input devices --
+    a GUI widget's `bind` is the replacement); `UnitCmdDemo` (a
+    plugin-authoring demo); `Control`, `AudioControl`, `TrigControl`,
+    `LagControl` (a def's controls, with their `kr`/`tr`/`ir` rates and
+    lags, replace them); `SinOsc` (it is `Sine`, decision "`SinOsc` is
+    renamed `Sine`"); `LinkTempo`, `LinkPhase`, `LinkJump` (an optional
+    plugin of scsynth's build that joins a network tempo session over a
+    protocol the server does not speak; the server's transport is its
+    clock); `SimpleLoopBuf` (scsynth's code has it but never registers it,
+    under `#if NOTYET`, and sclang's class is commented out: there is no
+    UGen to port, and `play_buf` loops a stretch); `ScopeOut2` (it writes
+    scsynth's scope buffers in shared memory, which here are the sample
+    rings the server assigns to a bus a client asks to see, its own
+    bookkeeping (`docs/schemas.md`, the shared segment's sample rings): a
+    def writes the signal to a bus).
+  - **Done in batches** *(the user, 2026-11-21: by batches, each family
+    in its own file where possible, each algorithm checked against the
+    theory as well as against scsynth's code, which has known faults, and
+    the most faithful realization that is also efficient; a difference
+    from scsynth is recorded with its reason)*. The inventory was
+    `server/plugins/*.cpp` of the checkout against the registry: 207
+    names, 19 of them out of scope above, 188 added in thirteen batches,
+    one commit each with its reference cases, builders, docs and reset
+    coverage.
+
+  *Done 2026-11-22.* Every UGen the base library registers is in the
+  catalog or named out of scope above, with builders in both clients and
+  reference cases against scsynth's own code (`tests/sc_reference`, 836
+  cases). Where scsynth's code is not what it means to compute, the server
+  computes the definition and the difference is recorded in
+  `docs/decisions/defs.md`, "A UGen is held against scsynth's own code, not
+  against its help file", with the test that holds the server's to it; the
+  git history of the thirteen commits (2026-11-21 and 2026-11-22) has each
+  batch's account.
+
 ## Found by use: the entries that were fixed
 
 - ✅ **The embedded engine runs without the SIGXCPU guard** *(found

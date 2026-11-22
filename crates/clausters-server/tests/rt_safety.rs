@@ -509,6 +509,65 @@ fn the_pv_set_and_the_convolution_rows_do_not_allocate_on_the_audio_thread() {
     });
 }
 
+/// The analysis UGens: their tables, histories and search buffers are
+/// built with the synth, so neither a frame nor a beat tracker's search
+/// allocates.
+#[test]
+fn the_analysis_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "analysis",
+            "ugens": [
+                {"kind": "Impulse", "inputs": [{"const": 4.0}, {"const": 0.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+                {"kind": "SpecCentroid", "inputs": [{"ugen": 1}]},
+                {"kind": "SpecFlatness", "inputs": [{"ugen": 1}]},
+                {"kind": "SpecPcile", "inputs": [{"ugen": 1}, {"const": 0.9}, {"const": 1.0}]},
+                {"kind": "Loudness", "inputs": [{"ugen": 1}]},
+                {"kind": "MFCC", "inputs": [{"ugen": 1}, {"const": 13.0}, {"const": 2.0}]},
+                {"kind": "KeyTrack", "inputs": [{"ugen": 1}]},
+                {"kind": "Onsets", "inputs": [{"ugen": 1}]},
+                {"kind": "PV_HainsworthFoote", "inputs": [{"ugen": 1}, {"const": 1.0}, {"const": 1.0}]},
+                {"kind": "PV_JensenAndersen", "inputs": [{"ugen": 1}]},
+                {"kind": "BeatTrack", "inputs": [{"ugen": 1}, {"const": 0.0}, {"const": 3.0}]},
+                {"kind": "Pitch", "inputs": [{"ugen": 0}]},
+                {"kind": "OutCtl", "inputs": [{"const": 7.0}, {"ugen": 8}]},
+                {"kind": "BeatTrack2", "inputs": [{"const": 7.0}, {"const": 1.0}, {"const": 1.0}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 2}, {"ugen": 3}, {"ugen": 4}, {"ugen": 5}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 6}, {"ugen": 7}, {"ugen": 9}, {"ugen": 10}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 11}, {"ugen": 12}, {"ugen": 14}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 15}, {"ugen": 16}, {"ugen": 17}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 18}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(
+                Arc::new(compile(spec).unwrap()),
+                48_000.0,
+                SEED_STRIDE,
+            )),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    // Past the first analyses of both trackers (128 frames, half a second).
+    assert_no_alloc(|| {
+        for _ in 0..3000 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// Same guardian for the feedback path (`LocalIn`/`LocalOut`): the per-synth
 /// `locals` buffer is allocated at build time (network side); reading and
 /// writing it each block is plain slice copies, no allocation.

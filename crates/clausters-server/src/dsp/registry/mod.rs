@@ -16,6 +16,7 @@ use std::sync::Arc;
 use crate::dsp::ambi::{BFormat, BKind, DecodeB2, Pan4};
 use crate::dsp::analytic::{FreqShift, Hilbert};
 use crate::dsp::banks::{Klang, Klank};
+use crate::dsp::beat::{BeatTrack, BeatTrack2};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
 use crate::dsp::buf::{
@@ -31,6 +32,7 @@ use crate::dsp::demand::{
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::dynamics::{Amplitude, Compander, Lookahead, LookaheadKind};
 use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
+use crate::dsp::features::{KeyTrack, Loudness, Mfcc, SpecCentroid, SpecFlatness, SpecPcile};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::gendy::{Gendy, Gendy3, GendyKind};
@@ -53,10 +55,12 @@ use crate::dsp::noise::{
     BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, LfdNoise,
     LfdShape, PinkNoise, WhiteNoise,
 };
+use crate::dsp::onsets::{OnsetKind, Onsets, PvOnset};
 use crate::dsp::osc::{COsc, Osc, OscN, Shaper, VOsc, VOsc3};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
 use crate::dsp::physical::{Ball, BallKind, Spring};
+use crate::dsp::pitch::Pitch;
 use crate::dsp::pv::{
     MaskShape, PackFft, PhaseOp, PvBinScramble, PvConformalMap, PvCopy, PvDiffuser, PvLocalMax,
     PvMagNoise, PvMask, PvPhase, Unpack1Fft,
@@ -172,6 +176,11 @@ pub struct UGenConfig {
     /// input reads at build time (`Gendy1`'s control points), as scsynth's
     /// constructor reads it. Set by the compiler for every kind.
     pub constants: Vec<Option<f32>>,
+    /// Whether each input is wired to an audio-rate UGen: what a kind that
+    /// reads an input differently at the two rates (`Pitch`, which takes a
+    /// control-rate input once a block) reads at build time. Set by the
+    /// compiler for every kind.
+    pub audio_inputs: Vec<bool>,
     /// `LocalBuf`: which of the synth's own buffers this one is, assigned by
     /// the compiler in def order. Ignored by every other kind.
     pub local_buffer: Option<usize>,
@@ -436,6 +445,9 @@ pub enum BusRole {
     ReadControl,
     /// Writes a **control** bus (`OutCtl`).
     WriteControl,
+    /// Reads a run of **control** buses: input 0 the first, input 1 how
+    /// many (`BeatTrack2`).
+    ReadControls,
 }
 
 /// Everything the compiler and engine need to know about one UGen kind, as
@@ -895,6 +907,7 @@ const I_CHAIN_SHIFT: &[UGenInput] = &[
     inp_opt("shift", 0.0),
 ];
 
+mod analysis;
 mod arith;
 mod buf;
 mod delay;
@@ -944,6 +957,7 @@ static FAMILIES: &[&[UGenDescriptor]] = &[
     demand::UGENS,
     reply::UGENS,
     spectral::UGENS,
+    analysis::UGENS,
 ];
 
 /// Looks a UGen up by its wire name. Returns the descriptor (the single source

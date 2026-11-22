@@ -94,6 +94,10 @@ const TRAILING: Record<string, string> = {
     FreeVerb2: "chan is filled by the builder, once per output channel",
     GVerb: "chan is filled by the builder, once per output channel",
     StereoConvolution2L: "chan is filled by the builder, once per output channel",
+    MFCC: "chan is filled by the builder, once per coefficient",
+    BeatTrack: "chan is filled by the builder, once per output channel",
+    BeatTrack2: "chan is filled by the builder, once per output channel",
+    Pitch: "chan is filled by the builder, once per output channel",
     Dpoll: "the static label comes in a trailing options object",
 };
 

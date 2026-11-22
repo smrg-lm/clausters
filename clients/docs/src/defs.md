@@ -581,6 +581,15 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `convolution2(source, kernel, trigger=0, framesize=2048)` / `convolution2_l(..., crossfade=1)` / `stereo_convolution2_l(source, kernel_l, kernel_r, ...)` | convolution with the samples of a buffer (at most `framesize`), reloaded at each `trigger`: switched, faded, in stereo |
 | | `convolution3(source, kernel, trigger=0, framesize=2048)` | direct convolution with a short kernel, no latency |
 | | `convolution(source, kernel, framesize=512)` | two signals convolved frame by frame (cross-synthesis) |
+| Analysis | `spec_centroid(chain)` / `spec_flatness(chain)` / `spec_pcile(chain, fraction=0.5, interpolate=0, binout=0)` | the spectrum's centre of mass in Hz / its flatness (1 for noise) / the frequency below which `fraction` of it lies |
+| | `loudness(chain, smask=0.25, tmask=1)` | perceived loudness in sones, the same through a chain of any size |
+| | `mfcc(chain, numcoeff=13)` | `numcoeff` mel-frequency cepstral coefficients, one channel each |
+| | `key_track(chain, keydecay=2, chromaleak=0.5)` | the key: 0-11 major from C, 12-23 minor (a 4096-point chain) |
+| | `onsets(chain, threshold=0.5, odftype=3, ...)` | 1 on the frames an onset starts in, by OnsetsDS (`rawodf=1` for its detection function) |
+| | `pv_hainsworth_foote(chain, proph=0, propf=0, threshold=1, waittime=0.04)` / `pv_jensen_andersen(chain, ...)` | audio-rate onset triggers from two older feature sets |
+| | `beat_track(chain, lock=0)` | the beat: triggers each beat, half beat and quarter, and the tempo in beats a second (four channels) |
+| | `beat_track2(busindex, numfeatures, windowsize=2, phaseaccuracy=0.02, lock=0, weightingscheme=-2.1)` | the beat of features on control buses: triggers, tempo, phase and groove (six channels) |
+| | `pitch(signal, init_freq=440, min_freq=60, max_freq=4000, ...)` | the frequency of `signal` and whether it has one (two channels) |
 <!-- /python -->
 <!-- web -->
 | Group | Callable | Does |
@@ -772,6 +781,15 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `convolution2(source, kernel, trigger = 0.0, framesize = 2048)` / `convolution2L(..., crossfade = 1.0)` / `stereoConvolution2L(source, kernelL, kernelR, ...)` | convolution with the samples of a buffer (at most `framesize`), reloaded at each `trigger`: switched, faded, in stereo |
 | | `convolution3(source, kernel, trigger = 0.0, framesize = 2048)` | direct convolution with a short kernel, no latency |
 | | `convolution(source, kernel, framesize = 512)` | two signals convolved frame by frame (cross-synthesis) |
+| Analysis | `specCentroid(chain)` / `specFlatness(chain)` / `specPcile(chain, fraction = 0.5, interpolate = 0.0, binout = 0.0)` | the spectrum's centre of mass in Hz / its flatness (1 for noise) / the frequency below which `fraction` of it lies |
+| | `loudness(chain, smask = 0.25, tmask = 1.0)` | perceived loudness in sones, the same through a chain of any size |
+| | `mfcc(chain, numcoeff = 13)` | `numcoeff` mel-frequency cepstral coefficients, one channel each |
+| | `keyTrack(chain, keydecay = 2.0, chromaleak = 0.5)` | the key: 0-11 major from C, 12-23 minor (a 4096-point chain) |
+| | `onsets(chain, threshold = 0.5, odftype = 3.0, ...)` | 1 on the frames an onset starts in, by OnsetsDS (`rawodf = 1` for its detection function) |
+| | `pvHainsworthFoote(chain, proph = 0.0, propf = 0.0, threshold = 1.0, waittime = 0.04)` / `pvJensenAndersen(chain, ...)` | audio-rate onset triggers from two older feature sets |
+| | `beatTrack(chain, lock = 0.0)` | the beat: triggers each beat, half beat and quarter, and the tempo in beats a second (four channels) |
+| | `beatTrack2(busindex, numfeatures, windowsize = 2.0, phaseaccuracy = 0.02, lock = 0.0, weightingscheme = -2.1)` | the beat of features on control buses: triggers, tempo, phase and groove (six channels) |
+| | `pitch(signal, initFreq = 440.0, minFreq = 60.0, maxFreq = 4000.0, ...)` | the frequency of `signal` and whether it has one (two channels) |
 <!-- /web -->
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/synth_new` time.

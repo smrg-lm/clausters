@@ -26,6 +26,7 @@ mod signal;
 #[path = "../common/sine.rs"]
 mod sine;
 
+mod analysis;
 mod audio_io;
 mod buffer_commands;
 mod capacity;

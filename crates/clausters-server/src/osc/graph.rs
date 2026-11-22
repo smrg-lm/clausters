@@ -77,6 +77,7 @@ fn ugen_usage_impl(def: &SynthDef, controls: &[f32], replace_reads: bool) -> (Bu
             BusRole::ReadWrite => (replace_reads, true, false),
             BusRole::ReadControl => (true, false, true),
             BusRole::WriteControl => (false, true, true),
+            BusRole::ReadControls => (true, false, true),
             BusRole::None => continue,
         };
         let mark = bus_controls.len();
@@ -87,7 +88,24 @@ fn ugen_usage_impl(def: &SynthDef, controls: &[f32], replace_reads: bool) -> (Bu
             usage.dynamic = true;
             continue;
         };
-        if control {
+        if ugen.desc.bus == BusRole::ReadControls {
+            // A run of buses: as many as input 1 says, when the controls do.
+            let Some(count) = ugen
+                .inputs
+                .get(1)
+                .and_then(|&i| static_value(def, i, controls, &mut bus_controls))
+            else {
+                bus_controls.truncate(mark);
+                usage.dynamic = true;
+                continue;
+            };
+            let first = (value.max(0.0) as usize).min(crate::dsp::NUM_CONTROL_BUSES);
+            let end =
+                (first + (count + 0.001).max(0.0) as usize).min(crate::dsp::NUM_CONTROL_BUSES);
+            for bus in first..end {
+                usage.mark_control(bus, read, write);
+            }
+        } else if control {
             usage.mark_control(value.max(0.0) as usize, read, write);
         } else {
             usage.mark(value, read, write);
@@ -945,6 +963,27 @@ impl TreeMirror {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `BeatTrack2` reads as many control buses as its input 1 says, from
+    /// its input 0: the analysis marks the run, and a count a control sets
+    /// is one it re-runs on.
+    #[cfg(feature = "synth")]
+    #[test]
+    fn a_run_of_control_buses_is_read_whole() {
+        let spec: crate::synthdef::SynthDefSpec = serde_json::from_value(serde_json::json!({
+            "name": "bt2",
+            "controls": [{"name": "n", "default": 3.0}],
+            "ugens": [
+                {"kind": "BeatTrack2", "inputs": [{"const": 10.0}, {"control": 0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }))
+        .unwrap();
+        let def = crate::synthdef::compile(spec).unwrap();
+        let (usage, controls) = ugen_usage(&def, &[3.0]);
+        assert_eq!(usage.control_reads().collect::<Vec<_>>(), vec![10, 11, 12]);
+        assert_eq!(controls, vec![0]);
+    }
 
     /// `/group_new id action target` on the mirror, unnamed.
     fn group(mirror: &mut TreeMirror, id: i32, target: i32) {

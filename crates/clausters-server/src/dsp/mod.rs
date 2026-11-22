@@ -28,6 +28,8 @@ pub mod analytic;
 #[cfg(feature = "synth")]
 pub mod banks;
 #[cfg(feature = "synth")]
+pub mod beat;
+#[cfg(feature = "synth")]
 pub mod binop;
 pub mod bound;
 #[cfg(feature = "synth")]
@@ -65,6 +67,8 @@ pub mod disk;
 pub mod dynamics;
 #[cfg(feature = "synth")]
 pub mod envgen;
+#[cfg(feature = "synth")]
+pub mod features;
 pub mod fed;
 #[cfg(feature = "synth")]
 pub mod filter;
@@ -107,6 +111,8 @@ pub mod nodectl;
 #[cfg(feature = "synth")]
 pub mod noise;
 #[cfg(feature = "synth")]
+pub mod onsets;
+#[cfg(feature = "synth")]
 pub mod osc;
 #[cfg(feature = "synth")]
 pub mod pan;
@@ -114,6 +120,8 @@ pub mod pan;
 pub mod phase;
 #[cfg(feature = "synth")]
 pub mod physical;
+#[cfg(feature = "synth")]
+pub mod pitch;
 #[cfg(feature = "synth")]
 pub mod pv;
 pub mod rand;

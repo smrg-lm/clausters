@@ -1085,6 +1085,31 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "analysis",
+            json!([input(),
+                {"kind": "FFT", "inputs": [u(0)], "fft_size": 512},
+                {"kind": "SpecCentroid", "inputs": [u(1)]},
+                {"kind": "SpecFlatness", "inputs": [u(1)]},
+                {"kind": "SpecPcile", "inputs": [u(1), c(0.5), c(1.0)]},
+                {"kind": "Loudness", "inputs": [u(1)]},
+                {"kind": "MFCC", "inputs": [u(1), c(13.0), c(2.0)]},
+                {"kind": "KeyTrack", "inputs": [u(1)]},
+                {"kind": "Onsets", "inputs": [u(1), c(0.2), c(3.0), c(1.0), c(0.1), c(2.0), c(5.0), c(1.0), c(1.0)]},
+                {"kind": "PV_HainsworthFoote", "inputs": [u(1), c(1.0), c(1.0), c(0.2)]},
+                {"kind": "PV_JensenAndersen", "inputs": [u(1)]},
+                {"kind": "BeatTrack", "inputs": [u(1), c(0.0), c(4.0)]},
+                {"kind": "Pitch", "inputs": [u(0), c(440.0), c(60.0), c(4000.0), c(100.0), c(16.0), c(3.0)]},
+                {"kind": "OutCtl", "inputs": [c(100.0), u(8)]},
+                {"kind": "BeatTrack2", "inputs": [c(100.0), c(1.0), c(1.0), c(0.02), c(0.0), c(-2.5), c(4.0)]},
+                {"kind": "Sum4", "inputs": [u(2), u(3), u(4), u(5)]},
+                {"kind": "Sum4", "inputs": [u(6), u(7), u(8), u(9)]},
+                {"kind": "Sum4", "inputs": [u(10), u(11), u(12), u(14)]},
+                {"kind": "Sum3", "inputs": [u(15), u(16), u(17)]},
+                {"kind": "Mul", "inputs": [u(18), c(1e-4)]},
+                out(19)]),
+        )
+        .source("noise"),
+        Case::new(
             "fftwriter",
             json!([
                 {"kind": "FFTTrigger", "inputs": [], "fft_size": 512},

@@ -4,8 +4,8 @@
 A case is a def's UGen list in the server's own spec form (`kind`, `rate`,
 `inputs`, `op`), its last UGen (or `probe`) the wire compared. Where the two
 spell a UGen differently, an `sc` entry on it says how scsynth spells it:
-`kind` (`Sine` is scsynth's `SinOsc`), `inputs` (a channel the server takes as
-an input is scsynth's output), `outputs` (how many scsynth's has) and `output`
+`kind` (`Sine` is scsynth's `SinOsc`), `rate`, `inputs` (a channel the server
+takes as an input is scsynth's output), `outputs` (how many scsynth's has) and `output`
 (which of them the server's single output is).
 
 `tol` is the largest difference allowed, relative to the reference's
@@ -109,6 +109,7 @@ def cases() -> list[dict]:
         _grains,
         _spectral,
         _convolution,
+        _analysis,
     ]:
         out.extend(f())
     return out
@@ -1585,4 +1586,110 @@ def _convolution() -> list[dict]:
     k = sig2(g)
     g.add("Convolution", "ar", x, k, 256)
     out.append(case("Convolution.ar", g, 24, shift=64, tol=3e-5, why=late + "; and its transforms round in another order"))
+    return out
+
+
+def _clicks(g: G) -> dict:
+    """Clicks seven times a second over a quiet `sig`: onsets to find."""
+    k = g.add("Impulse", "ar", 7.3, 0)
+    q = g.add("BinaryOpUGen", "ar", sig(g), 0.05, op="mul")
+    return g.add("BinaryOpUGen", "ar", k, q, op="add")
+
+
+def _measure(name: str, n: int, build, blocks: int, src=sig, **extra) -> dict:
+    """`build(g, chain)` adds the measure read off a chain of `n` points at a
+    50% hop under the sine window (the server's `wintype` 1, scsynth's 0)."""
+    g = G()
+    x = src(g)
+    ch = g.add("FFT", "kr", x, 1, sc={"inputs": [0, x, 0.5, 0, 1, 0]}, fft_size=n, hop=0.5, wintype=1)
+    build(g, ch)
+    return case(name, g, blocks, buffers=[{"num": 0, "channels": 1, "frames": n, "data": []}], **extra)
+
+
+_PARABOLA = (
+    "the period is a parabola through three autocorrelation lags of nearly equal size, "
+    "which magnifies the input's last-bit differences a thousandfold"
+)
+
+
+def _analysis() -> list[dict]:
+    """The measures read off a chain, the onset detectors and the pitch
+    follower, where scsynth's code computes what the server's does."""
+    out = []
+    out.append(_measure("SpecFlatness", 1024, lambda g, ch: g.add("SpecFlatness", "kr", ch), 64))
+    out.append(_measure("SpecCentroid", 1024, lambda g, ch: g.add("SpecCentroid", "kr", ch), 64,
+                        tol=3e-3, why="scsynth leaves DC out of the centroid's denominator"))
+    for interp in [0, 1]:
+        out.append(_measure(
+            f"SpecPcile.{interp}", 1024,
+            lambda g, ch, i=interp: g.add("SpecPcile", "kr", ch, 0.6, i, 0), 64,
+            tol=2.5e-3, why="scsynth puts bin k at k sr / (n + 2) hertz, the server at k sr / n",
+        ))
+    out.append(_measure(
+        "Loudness", 1024, lambda g, ch: g.add("Loudness", "kr", ch, 0.25, 1), 64, sr=44100.0, skip=7,
+        why="scsynth reads silence (before the first frame) at 0.19 sones, its bands below hearing "
+        "each adding a power of 1; the server's add nothing, which a loud signal does not hear",
+    ))
+    for chan in [0, 4, 12]:
+        out.append(_measure(
+            f"MFCC.{chan}", 1024,
+            lambda g, ch, c=chan: g.add("MFCC", "kr", ch, 13, c, sc={"inputs": [ch, 13], "outputs": 13, "output": c}),
+            64,
+        ))
+    # At a hop of an eighth, so the node's hop stagger (its id modulo the
+    # hop's blocks) is 0 and the frames fall where scsynth's do. scsynth turns
+    # `keydecay` into frames at a hop of half the frame, the server at the
+    # chain's: the server's is a quarter of scsynth's, for the same decay.
+    g = G()
+    x = sig(g)
+    ch = g.add("FFT", "kr", x, 1, sc={"inputs": [0, x, 0.125, 0, 1, 0]}, fft_size=4096, hop=0.125, wintype=1)
+    g.add("KeyTrack", "kr", ch, 0.5, 0.5, sc={"inputs": [ch, 2, 0.5]})
+    out.append(case("KeyTrack", g, 400, buffers=[{"num": 0, "channels": 1, "frames": 4096, "data": []}]))
+    # The detection function itself (`rawodf`), for the types scsynth
+    # computes as the server does. Not here: `complex` and `rcomplex`, whose
+    # distance scsynth computes without the law of cosines' 2, and `phase`,
+    # whose history scsynth reads a bin late after each bin it skips (it
+    # skips the quiet ones, and only moves its place in the history for the
+    # bins it reads); `wphase` skips almost none, and is here.
+    for i, odf in enumerate(["power", "magsum", "complex", "rcomplex", "phase", "wphase", "mkl"]):
+        if odf in ("complex", "rcomplex", "phase"):
+            continue
+        out.append(_measure(
+            f"Onsets.{odf}", 512,
+            lambda g, ch, k=i: g.add("Onsets", "kr", ch, 0.5, k, 1, 0.1, 10, 11, 1, 1), 160,
+            src=_clicks, tol=3e-3, why=_POLAR,
+        ))
+    out.append(_measure(
+        "Onsets.detect", 512,
+        lambda g, ch: g.add("Onsets", "kr", ch, 0.3, 1, 1, 0.1, 4, 11, 1, 0), 400, src=_clicks,
+    ))
+    for chan in [0, 1]:
+        g = G()
+        x = sig(g)
+        g.add("Pitch", "kr", x, 440, 60, 4000, 100, 16, 1, 0.01, 0.5, 1, 0, chan,
+              sc={"inputs": [x, 440, 60, 4000, 100, 16, 1, 0.01, 0.5, 1, 0], "outputs": 2, "output": chan})
+        out.append(case(f"Pitch.{chan}", g, 64, tol=5e-4, why=_PARABOLA))
+    g = G()
+    x = g.add("Sine", "ar", 330, sc={"kind": "SinOsc", "inputs": [330, 0]})
+    g.add("Pitch", "kr", x, 440, 60, 4000, 100, 16, 7, 0.01, 0.5, 2, 1, 0,
+          sc={"inputs": [x, 440, 60, 4000, 100, 16, 7, 0.01, 0.5, 2, 1], "outputs": 2, "output": 0})
+    out.append(case("Pitch.median", g, 64, tol=2e-3, why=_PARABOLA + "; and scsynth's SinOsc is a table"))
+    # A beat on a control bus, two a second a third of a beat in, and
+    # `BeatTrack2` on it with flat weights: its beat, tempo and phase. At the
+    # tempo it starts at, where scsynth's phase arithmetic holds (it measures
+    # a match in beats of the period it already has, so it never takes
+    # another tempo; `tests/offline/analysis.rs` holds the server's to one),
+    # and not its quarter triggers and groove (scsynth never takes the groove
+    # it matches).
+    for chan in [0, 3, 4]:
+        g = G()
+        k = g.add("Impulse", "kr", 2, 0.3)
+        g.add("OutCtl", "ar", 0, k, sc={"kind": "Out", "rate": "kr", "inputs": [0, k]})
+        g.add("BeatTrack2", "kr", 0, 1, 2, 0.02, 0, -2.5, chan,
+              sc={"inputs": [0, 1, 2, 0.02, 0, -2.5], "outputs": 6, "output": chan})
+        out.append(case(f"BeatTrack2.{chan}", g, 4000))
+    # Not here: `PV_HainsworthFoote` and `PV_JensenAndersen`, whose bands
+    # scsynth places at the wrong bins, and `BeatTrack`, whose comb scsynth
+    # weighs with its two models swapped; `tests/offline/analysis.rs` holds
+    # them to their definitions.
     return out

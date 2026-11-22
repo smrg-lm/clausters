@@ -1,0 +1,123 @@
+# Analysis: the measures read off an FFT chain, the onset and beat
+# trackers, and the pitch follower.
+#
+# The `analysis` builders of both clients: each `[[ugen]]` is generated into
+# `clients/python/clausters/defs/ugens/_generated/analysis.py` and
+# `clients/web/src/defs/ugens/_generated/analysis.ts` by
+# `crates/clausters-server/tests/ugen_builders.rs`, which reads its
+# signature from the registry and its documentation from here. Each
+# `[[hand]]` is a kind whose builder is written by hand in the client's
+# `analysis` module, and why. That test's documentation has the format.
+
+[[ugen]]
+kind = "SpecCentroid"
+builder = "spec_centroid"
+required = ["chain"]
+doc = '''
+The spectrum's centre of mass in hertz: every bin's frequency weighted
+by its magnitude, DC included. Updated at each frame and held between
+them; silence reads 0. It reads the chain and leaves it as it was.
+'''
+
+[[ugen]]
+kind = "SpecFlatness"
+builder = "spec_flatness"
+required = ["chain"]
+doc = '''
+The geometric mean of the frame's magnitudes over their arithmetic mean:
+1 for white noise, towards 0 for a few partials (a bin of magnitude 0 is
+left out of the geometric mean). Silence reads 0.8, very quiet white
+noise.
+'''
+
+[[ugen]]
+kind = "SpecPcile"
+builder = "spec_pcile"
+required = ["chain"]
+doc = '''
+The frequency below which `fraction` of the spectrum's magnitude lies,
+in hertz (0.5 the median, 0.95 a rolloff), or as a bin number when
+`binout > 0`. `interpolate > 0` places it between the two bins it falls
+between.
+'''
+
+[[ugen]]
+kind = "Loudness"
+builder = "loudness"
+required = ["chain"]
+doc = '''
+Perceived loudness in sones: the power in 42 bands of about an ERB each
+(each bin masked by the one below at `smask` of its power), through the
+equal-loudness contours to phons, each band falling by at most `tmask`
+phons a frame, summed. The same through a chain of any size and window;
+silence reads 0.
+'''
+
+[[ugen]]
+kind = "KeyTrack"
+builder = "key_track"
+required = ["chain"]
+doc = '''
+The key the music is in: 0 to 11 the major keys from C, 12 to 23 the
+minor ones. The power at six partials of each note from A1 to G#6 makes
+a chroma (keeping `chromaleak` of the last frame's), matched against a
+major and a minor profile in every key; the matches' memory falls to 1%
+over `keydecay` seconds. A 4096-point chain resolves the low notes.
+'''
+
+[[ugen]]
+kind = "Onsets"
+builder = "onsets"
+required = ["chain"]
+doc = '''
+1 on the frames an onset starts in, held to the next frame. Each bin is
+divided by its recent peak (`whtype` 1; the peak falls by 60 dB in
+`relaxtime` seconds, and is at least `floor`), an onset detection
+function of the frame is taken (`odftype`: 0 power, 1 sum of magnitudes,
+2 complex domain, 3 complex domain over the rising bins, 4 phase
+deviation, 5 phase deviation weighted by magnitude, 6 modified
+Kullback-Leibler), the median of its last `medianspan` values is taken
+off, and an onset is where that rises past `threshold`, at least
+`mingap` frames after the last. `rawodf > 0` outputs the detection
+function instead. `odftype` and `medianspan` are constants.
+'''
+
+[[ugen]]
+kind = "PV_HainsworthFoote"
+builder = "pv_hainsworth_foote"
+required = ["chain"]
+doc = '''
+An audio-rate 1 over the slice of a frame where `proph` times
+Hainsworth's measure (the mean rise in `log2` magnitude between 30 Hz
+and 5 kHz) plus `propf` times Foote's (one minus the frame's cosine
+similarity with the last) passes `threshold`, then nothing for
+`waittime` seconds.
+'''
+
+[[ugen]]
+kind = "PV_JensenAndersen"
+builder = "pv_jensen_andersen"
+required = ["chain"]
+doc = '''
+An audio-rate 1 over the slice of a frame where the weighted sum of the
+frame-to-frame changes in four features -- the spectral centroid
+(`propsc`), the energy above 4 kHz (`prophfe`), the high-frequency
+content (`prophfc`) and the spectral flux (`propsf`) -- passes
+`threshold`, then nothing for `waittime` seconds.
+'''
+
+[[hand]]
+kind = "MFCC"
+why = "one node a coefficient: the builder returns `numcoeff` of them"
+
+[[hand]]
+kind = "BeatTrack"
+why = "one node an output: the builder returns the four"
+
+[[hand]]
+kind = "BeatTrack2"
+why = "one node an output: the builder returns the six"
+
+[[hand]]
+kind = "Pitch"
+why = "one node an output: the builder returns the frequency and whether there is one"

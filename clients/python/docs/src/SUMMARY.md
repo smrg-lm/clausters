@@ -87,6 +87,7 @@
       - [streams](api/clausters.defs.server.streams.md)
       - [transport](api/clausters.defs.server.transport.md)
     - [ugens](api/clausters.defs.ugens.md)
+      - [analysis](api/clausters.defs.ugens.analysis.md)
       - [buf](api/clausters.defs.ugens.buf.md)
       - [demand](api/clausters.defs.ugens.demand.md)
       - [env](api/clausters.defs.ugens.env.md)

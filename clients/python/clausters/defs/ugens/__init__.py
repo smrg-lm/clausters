@@ -52,7 +52,7 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 **Where things live.** The callables are grouped by family, one module each:
 `graph` (the node, control and channel-list types, plus the fused arithmetic),
 `osc`, `filter` (filters, delays, smoothers), `pan`, `io` (buses, replies, disk,
-feedback), `buf`, `spectral`, `trig`, `demand` and `env`. Every name is
+feedback), `buf`, `spectral`, `analysis`, `trig`, `demand` and `env`. Every name is
 re-exported here, so `from clausters.defs.ugens import sine` -- and the `defs`
 package's own re-export -- is what it always was: the split is navigational.
 A builder that only mirrors a row of the server's catalog is generated from it,
@@ -360,6 +360,20 @@ from .buf import (
     node_id,
     num_running_synths,
     buf_samples,
+)
+from .analysis import (
+    mfcc,
+    beat_track,
+    beat_track2,
+    pitch,
+    spec_centroid,
+    spec_flatness,
+    spec_pcile,
+    loudness,
+    key_track,
+    onsets,
+    pv_hainsworth_foote,
+    pv_jensen_andersen,
 )
 from .spectral import (
     conv,
@@ -744,6 +758,19 @@ __all__ = [
     "sample_rate",
     "shaper",
     "vosc",
+    # analysis
+    "mfcc",
+    "beat_track",
+    "beat_track2",
+    "pitch",
+    "spec_centroid",
+    "spec_flatness",
+    "spec_pcile",
+    "loudness",
+    "key_track",
+    "onsets",
+    "pv_hainsworth_foote",
+    "pv_jensen_andersen",
     # spectral
     "conv",
     "fft_trigger",

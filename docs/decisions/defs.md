@@ -1836,3 +1836,65 @@ What the comparison allows is part of the decision:
   - `PartConv` reads a kernel scsynth's `PreparePartConv` wrote; here it is
     `Conv` with scsynth's inputs, and reads one `/buffer_gen
     prepare_partconv` wrote.
+  - The analysis UGens carry their tables precomputed for one transform at
+    44.1 or 48 kHz (`Loudness` and `MFCC` 1024 points, `KeyTrack` 4096),
+    take any other rate for 48 kHz and read the same bins whatever the
+    chain; here each table is the formula it was generated with, built for
+    the chain's transform and the engine's rate, which reproduces scsynth's
+    at its own. `Loudness` and `MFCC` scale the power to scsynth's
+    calibration (a 1024-point frame under its sine window) by the square of
+    the window's sum, so a tone reads the same through any chain. Where
+    scsynth turns a time into frames at a hop it assumes (half the frame:
+    `KeyTrack`'s `keydecay`, `Onsets`' `relaxtime`, `BeatTrack`'s periods),
+    here it is the chain's own hop.
+  - `SpecCentroid` leaves DC out of its denominator; here every bin counts.
+    `SpecFlatness` takes the logarithm of DC's and Nyquist's magnitudes
+    even at 0 (a frame with either at 0 reads 0); here they follow its rule
+    for every other bin. `SpecPcile` searches only between DC and Nyquist,
+    puts bin `k` at `k sr / (n + 2)` hertz, and its bin output is one bin
+    low and interpolates the wrong way; here the search covers every bin, a
+    bin is `k sr / n` and the two outputs are one position.
+  - `Loudness` adds a band below hearing as a power of 1 (`10^0 - 0.001`),
+    so silence reads 0.19 sones and a quiet sound is louder by the bands it
+    does not reach; here such a band adds nothing.
+  - `Onsets`' complex-domain distance leaves the 2 out of the law of
+    cosines, so a steady partial reads its own magnitude where its distance
+    from the prediction is 0; its phase deviation reads the history a bin
+    late after each quiet bin it skips. Here they are the distance and the
+    bin's own history. `medianspan` 0 is refused by nothing in scsynth and
+    copies a negative length; here it is 1.
+  - `PV_HainsworthFoote` and `PV_JensenAndersen` place a frequency at
+    `f / sr * (n / 2 - 1)` bins, half its bin, and an operator precedence
+    makes `PV_JensenAndersen`'s 4 kHz bin 0 (its high-frequency energy is
+    every bin's) and `PV_HainsworthFoote`'s 30 Hz bin 0; here each band is
+    at its frequency. A silent frame's centroid is not a number in scsynth,
+    which keeps the next frame from detecting; here it is 0.
+  - `BeatTrack`'s comb weighs the general state's period with the context
+    model and the context state's with the general one -- its two arrays
+    are swapped against the comments that name them and against Davies and
+    Plumbley's states, and the first search reads the context array before
+    anything sets it; here each state uses its own model. It multiplies the
+    autocorrelation by the count of terms at each lag where the unbiased
+    estimate divides by it; here it divides. Its expected-phase weighting
+    measures the distance across the period's end the wrong way and reads
+    past its table at long periods, and its period refinement reads past
+    the autocorrelation at the longest; here the distance is circular, the
+    weight is computed, and the search stops at the end. With those, it
+    finds the tempo of a click train at 120 and 150 beats a minute.
+  - `BeatTrack2` measures a match's phase, and the next match's predicted
+    one, in beats of the period it already holds rather than the match's,
+    so a match at another tempo never agrees with its prediction and the
+    tracker stays at the 120 beats a minute it starts at; here a phase is
+    the match's own, compared across the beat's end. It never takes the
+    groove it matches (its groove output is 0 and its quarter triggers never
+    swing), and its test for the compensated weighting (`-1.5`) is never
+    true; here both are as its help describes. A buffer number past the pool
+    reads buffer 0 there; here a missing buffer weighs flat.
+  - `Pitch`'s walk to the true autocorrelation peak can step to lag 0 and
+    read the sample before its window, or past its longest lag and read the
+    one after it; here a neighbour outside the lags searched is 0, as
+    scsynth already takes it at either end.
+  - The trackers step their search once a control block. scsynth's block is
+    every call; here a block's step is taken on the slice that starts it, so
+    a timed event that cuts a block moves no step, and their phase advances
+    by each slice's samples.

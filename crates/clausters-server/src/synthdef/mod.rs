@@ -495,6 +495,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
+        config.audio_inputs = inputs
+            .iter()
+            .map(|r| matches!(r, InputRef::Wire(w) if ugens[*w].rate == Rate::Ar))
+            .collect();
+
         // `Done`/`FreeSelfWhenDone` watch another UGen's *done flag*, which is
         // not a value on a wire: input 0 must therefore name a UGen, and one
         // that can finish at all. Rejecting it here turns a UGen that would
@@ -1028,6 +1033,7 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
                 _ => None,
             })
             .collect(),
+        audio_inputs: Vec::new(),
         local_buffer: None,
     };
     // Any kind that takes an `fft_size` (the spectral chain's FFT, the

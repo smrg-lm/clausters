@@ -37,7 +37,7 @@
 // -- the same split the Python package makes: `graph` (the node, control and
 // channel-list types, plus the fused arithmetic), `osc`, `filter` (filters,
 // delays, smoothers), `pan`, `io` (buses, replies, disk, feedback), `buf`,
-// `spectral`, `trig`, `demand` and `env`. Every name is re-exported here, so
+// `spectral`, `analysis`, `trig`, `demand` and `env`. Every name is re-exported here, so
 // importing from `defs/ugens` -- and the `defs` package's own re-export -- is
 // what it always was: the split is navigational.
 //
@@ -55,6 +55,7 @@ import * as graph from "./graph.ts";
 import * as io from "./io.ts";
 import * as osc from "./osc.ts";
 import * as pan from "./pan.ts";
+import * as analysis from "./analysis.ts";
 import * as spectral from "./spectral.ts";
 import * as trig from "./trig.ts";
 
@@ -470,6 +471,20 @@ export {
     pvMul,
 } from "./spectral.ts";
 export type { ConvOptions, FftOptions, PartConvOptions, PvKernelOptions } from "./spectral.ts";
+export {
+    mfcc,
+    beatTrack,
+    beatTrack2,
+    pitch,
+    specCentroid,
+    specFlatness,
+    specPcile,
+    loudness,
+    keyTrack,
+    onsets,
+    pvHainsworthFoote,
+    pvJensenAndersen,
+} from "./analysis.ts";
 
 export {
     Bpf,
@@ -543,7 +558,7 @@ let INPUT_NAMES: Map<string, string[]> | null = null;
  */
 function buildInputNames(): Map<string, string[]> {
     const names = new Map<string, string[]>();
-    const modules = [buf, demand, env, filter, graph, io, osc, pan, spectral, trig];
+    const modules = [analysis, buf, demand, env, filter, graph, io, osc, pan, spectral, trig];
     for (const value of modules.flatMap((m) => Object.values(m))) {
         if (typeof value !== "function") continue;
         const src = value.toString();

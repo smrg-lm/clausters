@@ -394,6 +394,10 @@ _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "TGrains": "built numchans times; numchans leads in Python, trails on the wire",
     "Warp1": "built once a channel of the buffer; their count leads in Python",
     "StereoConvolution2L": "built twice, one row per output channel",
+    "MFCC": "built numcoeff times, one row per coefficient",
+    "BeatTrack": "built four times, one row per output channel",
+    "BeatTrack2": "built six times, one row per output channel",
+    "Pitch": "built twice, one row per output channel",
 }
 
 _WIRE_ORDER_DIFFERS = {
