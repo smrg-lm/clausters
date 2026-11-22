@@ -58,6 +58,7 @@ mod pan;
 mod pv_reference;
 mod rates;
 mod registry;
+mod running;
 mod sc_reference;
 mod schema;
 mod seeds;

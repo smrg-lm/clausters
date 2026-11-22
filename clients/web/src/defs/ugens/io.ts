@@ -104,6 +104,28 @@ export const sendReply = (
     { cmd = "/reply", replyId = -1 }: { cmd?: string; replyId?: number } = {},
 ): Ugen => new Ugen("SendReply", [trig, replyId, ...values], { label: cmd });
 
+/** The options of {@link sendPeakRms}. */
+export interface SendPeakRmsOptions {
+    /** Replies a second. */
+    replyRate?: Channel;
+    /** Seconds for the held peak to fall back to -60 dB. */
+    peakLag?: Channel;
+    /** The reply's address. A **static** field. */
+    cmd?: string;
+    replyId?: Channel;
+}
+
+/**
+ * `replyRate` times a second, sends `cmd nodeID replyId` and each signal's
+ * peak and RMS over the interval -- the peak held and falling back by
+ * `peakLag` seconds to -60 dB, a meter's ballistics. Up to eight signals.
+ * Output is silence; pass it as a `SynthDef` root.
+ */
+export const sendPeakRms = (
+    signals: readonly Channel[],
+    { replyRate = 20.0, peakLag = 3.0, cmd = "/reply", replyId = -1 }: SendPeakRmsOptions = {},
+): Ugen => new Ugen("SendPeakRMS", [replyRate, peakLag, replyId, ...signals], { label: cmd });
+
 /**
  * On each trigger of `trig`, posts `label: value` to the server console and,
  * when `trigId >= 0`, also sends `/node_trigger nodeID trigId value`. `signal` passes

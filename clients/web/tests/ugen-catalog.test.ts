@@ -95,6 +95,7 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
     Klang: "the partials' lists lead in TS, their triples trail on the wire",
     Klank: "the partials' lists follow the input in TS, their triples trail on the wire",
     SendReply: "the value list leads; replyId and cmd are an options object",
+    SendPeakRMS: "the signals lead in TS; the rate, lag and id lead on the wire",
     Dseq: "repeats leads on the wire; the value list leads here",
     Drand: "repeats leads on the wire; the value list leads here",
     Dxrand: "repeats leads on the wire; the value list leads here",

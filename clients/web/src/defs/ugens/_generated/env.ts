@@ -41,3 +41,10 @@ export const done = (source: Channel): Ugen => new Ugen("Done", [source]);
  */
 export const freeSelfWhenDone = (source: Channel): Ugen =>
     new Ugen("FreeSelfWhenDone", [source]);
+
+/**
+ * Passes `source` through and pauses the synth once, when it has finished;
+ * a synth resumed after is not paused again.
+ */
+export const pauseSelfWhenDone = (source: Channel): Ugen =>
+    new Ugen("PauseSelfWhenDone", [source]);

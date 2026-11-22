@@ -1665,7 +1665,11 @@ holds what is open.
     `LFDNoise0`, `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`; the 24 chaotic
     maps of `ChaosUGens.cpp` and `Gendy1`, `Gendy2`, `Gendy3`; the rest of
     `FilterUGens.cpp`: `Median`, `MoogFF`, `Normalizer`, `Limiter`,
-    `Compander`, `Amplitude`, `Hilbert`, `FreqShift`.
+    `Compander`, `Amplitude`, `Hilbert`, `FreqShift`; the rest of
+    `TriggerUGens.cpp` and `RunningSum`: `Free`, `Pause`,
+    `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`, `RunningMin`,
+    `RunningSum`, `LastValue`, `MostChange`, `LeastChange`, `ZeroCrossing`,
+    `SendPeakRMS`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1687,10 +1691,6 @@ holds what is open.
     names, 17 of them out of scope above, 190 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **6. `TriggerUGens.cpp` and `RunningSum`:** `Free`, `Pause`,
-      `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`,
-      `RunningMin`, `RunningSum`, `LastValue`, `MostChange`,
-      `LeastChange`, `ZeroCrossing`, `SendPeakRMS`.
     - ⬜ **7. Information and bus I/O:** `BlockSize`, `ControlRate`,
       `ControlDur`, `SampleDur`, `RadiansPerSample`, `SubsampleOffset`,
       `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`,

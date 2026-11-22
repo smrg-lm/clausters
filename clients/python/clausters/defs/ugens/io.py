@@ -126,3 +126,11 @@ def disk_out(signal, *, path, format="int16") -> Ugen:
     return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
 
 
+
+
+def send_peak_rms(*signals, reply_rate=20.0, peak_lag=3.0, cmd="/reply", reply_id=-1) -> Ugen:
+    """``reply_rate`` times a second, sends ``cmd nodeID reply_id`` and each
+    signal's peak and RMS over the interval -- the peak held and falling back
+    by ``peak_lag`` seconds to -60 dB, a meter's ballistics. Up to eight
+    signals. Output is silence; pass it as a `SynthDef` root."""
+    return Ugen("SendPeakRMS", [reply_rate, peak_lag, reply_id, *signals], label=cmd)

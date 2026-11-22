@@ -26,6 +26,17 @@ __all__ = [
     "changed",
     "decay",
     "decay2",
+    "free",
+    "pause",
+    "peak",
+    "running_max",
+    "running_min",
+    "peak_follower",
+    "running_sum",
+    "last_value",
+    "most_change",
+    "least_change",
+    "zero_crossing",
 ]
 
 
@@ -157,3 +168,68 @@ def decay2(signal, attacktime=0.01, decaytime=1.0) -> Ugen:
     is lower than 1 and sits where the two exponentials' slopes match.
     """
     return Ugen("Decay2", [signal, attacktime, decaytime])
+
+
+def free(trig, id) -> Ugen:
+    """At each rising edge of `trig`, frees node `id` (any node, this one
+    included); passes `trig` through.
+    """
+    return Ugen("Free", [trig, id])
+
+
+def pause(gate, id) -> Ugen:
+    """Runs node `id` while `gate` is not 0 and pauses it while it is, acting
+    when the gate changes; passes `gate` through.
+    """
+    return Ugen("Pause", [gate, id])
+
+
+def peak(signal, trig=0.0) -> Ugen:
+    """The largest `|signal|` since the last rising edge of `trig`, which starts
+    it again from the sample it rises on.
+    """
+    return Ugen("Peak", [signal, trig])
+
+
+def running_max(signal, trig=0.0) -> Ugen:
+    """The largest `signal` since the last rising edge of `trig`."""
+    return Ugen("RunningMax", [signal, trig])
+
+
+def running_min(signal, trig=0.0) -> Ugen:
+    """The smallest `signal` since the last rising edge of `trig`."""
+    return Ugen("RunningMin", [signal, trig])
+
+
+def peak_follower(signal, decay=0.999) -> Ugen:
+    """`|signal|` held at each new peak and falling back towards it by `decay` a
+    sample.
+    """
+    return Ugen("PeakFollower", [signal, decay])
+
+
+def running_sum(signal, numsamp=40.0) -> Ugen:
+    """The sum of the last `numsamp` samples, its window sized at the start."""
+    return Ugen("RunningSum", [signal, numsamp])
+
+
+def last_value(signal, diff=0.01) -> Ugen:
+    """The value `signal` had before it last moved by at least `diff`."""
+    return Ugen("LastValue", [signal, diff])
+
+
+def most_change(a, b) -> Ugen:
+    """Whichever of `a` and `b` moved more since the last sample."""
+    return Ugen("MostChange", [a, b])
+
+
+def least_change(a, b) -> Ugen:
+    """Whichever of `a` and `b` moved less since the last sample."""
+    return Ugen("LeastChange", [a, b])
+
+
+def zero_crossing(signal) -> Ugen:
+    """The frequency of `signal`'s rising zero crossings, each placed within its
+    sample, held from one to the next.
+    """
+    return Ugen("ZeroCrossing", [signal])

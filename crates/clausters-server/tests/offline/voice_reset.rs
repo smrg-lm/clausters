@@ -184,6 +184,10 @@ const NOT_RESET: &[(&str, &str)] = &[
 /// replies they make, in [`a_reply_kind_fires_again_after_a_reset`].
 const REPLIES: &[&str] = &["SendTrig", "SendReply", "Poll"];
 
+/// The kinds whose state shows in what they ask rather than in a signal:
+/// [`what_a_kind_asks_restarts_after_a_reset`] resets them.
+const ASKING: &[&str] = &["Free", "Pause", "SendPeakRMS"];
+
 /// A case the subject table does not hold: a def, the signal on its `In`
 /// (bus [`IN_BUS`]) and the control sets it runs with.
 struct Case {
@@ -341,6 +345,56 @@ fn cases() -> Vec<Case> {
             json!([input(), {"kind": "Lag", "inputs": [u(0), c(0.01)]}, out(1)]),
         )
         .source("noise"),
+        Case::new(
+            "peak",
+            json!([input(), {"kind": "Impulse", "inputs": [c(97.0), c(0.5)]},
+                {"kind": "Peak", "inputs": [u(0), u(1)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "runningmax",
+            json!([input(), {"kind": "Impulse", "inputs": [c(97.0), c(0.5)]},
+                {"kind": "RunningMax", "inputs": [u(0), u(1)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "runningmin",
+            json!([input(), {"kind": "Impulse", "inputs": [c(97.0), c(0.5)]},
+                {"kind": "RunningMin", "inputs": [u(0), u(1)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "peakfollower",
+            json!([input(), {"kind": "PeakFollower", "inputs": [u(0), c(0.999)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "runningsum",
+            json!([input(), {"kind": "RunningSum", "inputs": [u(0), c(40.0)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "lastvalue",
+            json!([input(), {"kind": "LastValue", "inputs": [u(0), c(0.3)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "mostchange",
+            json!([input(), {"kind": "LFTri", "inputs": [c(311.0), c(0.0)]},
+                {"kind": "MostChange", "inputs": [u(0), u(1)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "leastchange",
+            json!([input(), {"kind": "LFTri", "inputs": [c(311.0), c(0.0)]},
+                {"kind": "LeastChange", "inputs": [u(0), u(1)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "zerocrossing",
+            json!([input(), {"kind": "ZeroCrossing", "inputs": [u(0)]}, out(1)]),
+        )
+        .source("sine"),
         Case::new(
             "median",
             json!([input(), {"kind": "Median", "inputs": [c(7.0), u(0)]}, out(1)]),
@@ -671,6 +725,10 @@ fn cases() -> Vec<Case> {
             "freeselfwhendone",
             json!([envgen(0.0), {"kind": "FreeSelfWhenDone", "inputs": [u(0)]}, out(1)]),
         )),
+        gated(Case::new(
+            "pauseselfwhendone",
+            json!([envgen(0.0), {"kind": "PauseSelfWhenDone", "inputs": [u(0)]}, out(1)]),
+        )),
         Case::new(
             "localfeedback",
             json!([
@@ -870,6 +928,69 @@ fn a_reply_kind_fires_again_after_a_reset() {
     }
 }
 
+/// `Free` and `Pause` ask again after a reset what they asked fresh, and
+/// `SendPeakRMS` measures a new interval from the reset.
+#[test]
+fn what_a_kind_asks_restarts_after_a_reset() {
+    let buses = Buses::new(ControlBuses::new(4), 4);
+    let run = |ugen: &mut Box<dyn clausters::dsp::UGen>, inputs: &[&[f32]], kr: bool| {
+        let mut ctx = ProcessCtx {
+            sample_rate: if kr { SR / BLOCK_SIZE as f32 } else { SR },
+            full_sample_rate: SR,
+            buses: &buses,
+            buffers: &[],
+            offset: 0,
+            frames: BLOCK_SIZE,
+            transport: Default::default(),
+        };
+        let mut output = [0.0f32; BLOCK_SIZE];
+        let n = if kr { 1 } else { BLOCK_SIZE };
+        ugen.process(&mut ctx, inputs, &mut output[..n]);
+    };
+    let ctx = BuildCtx::new(SR, BLOCK_SIZE, 1);
+    for (name, gate) in [("Free", 1.0f32), ("Pause", 0.0)] {
+        let mut ugen = (lookup(name).unwrap().build)(&UGenConfig::default(), &ctx);
+        let (g, id) = ([gate], [7.0f32]);
+        let mut asked = Vec::new();
+        for reset in [false, false, true] {
+            if reset {
+                ugen.reset();
+            }
+            run(&mut ugen, &[&g, &id], true);
+            asked.push(ugen.node_request());
+        }
+        assert!(
+            asked[0].is_some() && asked[1].is_none(),
+            "{name}: {asked:?}"
+        );
+        assert_eq!(asked[2], asked[0], "{name}: a reset asks again");
+    }
+    let config = UGenConfig {
+        inputs: 4,
+        ..UGenConfig::default()
+    };
+    let mut ugen = (lookup("SendPeakRMS").unwrap().build)(&config, &ctx);
+    let x: Vec<f32> = (0..BLOCK_SIZE)
+        .map(|i| (i as f32 * 0.3).sin() * 0.5)
+        .collect();
+    let (rate, lag, id) = ([SR / BLOCK_SIZE as f32 / 2.0], [0.0f32], [3.0f32]);
+    let mut replies = Vec::new();
+    for reset in [false, false, true, false] {
+        if reset {
+            ugen.reset();
+        }
+        run(&mut ugen, &[&rate, &lag, &id, &x], false);
+        ugen.drain_replies(1, &mut |m| replies.push(m));
+    }
+    // Two blocks an interval: one reply before the reset, one after it.
+    assert_eq!(replies.len(), 2, "{} replies", replies.len());
+    assert_eq!(
+        format!("{:?}", replies[0]),
+        format!("{:?}", replies[1]),
+        "a reset measures afresh"
+    );
+}
+
 #[test]
 fn every_kind_of_the_catalog_is_reset_tested_or_named() {
     let mut tested: HashSet<String> = HashSet::new();
@@ -895,6 +1016,7 @@ fn every_kind_of_the_catalog_is_reset_tested_or_named() {
         .chain(NOT_RESET.iter().map(|(k, _)| *k))
         .chain(STOCHASTIC.iter().copied())
         .chain(REPLIES.iter().copied())
+        .chain(ASKING.iter().copied())
         .collect();
     let missing: Vec<&str> = all()
         .map(|d| d.name)

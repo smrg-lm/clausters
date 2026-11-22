@@ -458,6 +458,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Node control | `free_self(signal)` / `pause_self(signal)` | frees / pauses the synth while `signal > 0`, passing it through |
 | | `done(source)` | 1 once `source` (an envelope or a ramp) has finished — the flag, not its value |
 | | `free_self_when_done(source)` | passes `source` through and frees the synth once it finishes |
+| | `pause_self_when_done(source)`, `free(trig, id)`, `pause(gate, id)` | pauses the synth once its source finishes; frees, runs or pauses another node by id |
+| | `peak`, `running_max`, `running_min(signal, trig)`, `peak_follower`, `running_sum`, `last_value`, `most_change`, `least_change`, `zero_crossing` | running statistics of a signal |
 | Bus input | `in_(bus=0.0)` | reads an audio bus (sampled per block) |
 | | `in_ctl(bus=0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
@@ -521,6 +523,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `true_peak(signal, decay=20.0, hold=0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `out_ctl` and a `meter` widget at `rate="control"` with `peak="true"` |
 | Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/node_trigger nodeID id value`; output is silence |
 | | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
+| | `send_peak_rms(*signals, reply_rate=20, peak_lag=3, cmd, reply_id)` | replies each signal's peak and RMS, a meter's ballistics |
 | | `poll(trig, signal, trig_id=-1, *, label="poll")` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
@@ -602,6 +605,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Node control | `freeSelf(signal)` / `pauseSelf(signal)` | frees / pauses the synth while `signal > 0`, passing it through |
 | | `done(source)` | 1 once `source` (an envelope or a ramp) has finished — the flag, not its value |
 | | `freeSelfWhenDone(source)` | passes `source` through and frees the synth once it finishes |
+| | `pauseSelfWhenDone(source)`, `free(trig, id)`, `pause(gate, id)` | pauses the synth once its source finishes; frees, runs or pauses another node by id |
+| | `peak`, `runningMax`, `runningMin(signal, trig)`, `peakFollower`, `runningSum`, `lastValue`, `mostChange`, `leastChange`, `zeroCrossing` | running statistics of a signal |
 | Bus input | `in_(bus = 0.0)` | reads an audio bus (sampled per block) |
 | | `inCtl(bus = 0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
@@ -665,6 +670,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `truePeak(signal, decay = 20.0, hold = 0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `outCtl` and a `meter` widget at `rate: "control"` with `peak: "true"` |
 | Side-effect | `sendTrig(trig, id = 0, value = 0.0)` | on each trigger, sends `/node_trigger nodeID id value`; output is silence |
 | | `sendReply(trig, values = [], { cmd = "/reply", replyId = -1 })` | sends a custom OSC message with an arbitrary value list |
+| | `sendPeakRms(signals, { replyRate = 20, peakLag = 3, cmd, replyId })` | replies each signal's peak and RMS, a meter's ballistics |
 | | `poll(trig, signal, trigId = -1, { label = "poll" })` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | Spectral | `fft(source, active = 1.0, { fftSize = 1024, hop = 0.5, wintype = 0 })` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pvMagAbove(chain, threshold)` / `pvMagBelow(chain, threshold)` | pass bins above / below a magnitude threshold |

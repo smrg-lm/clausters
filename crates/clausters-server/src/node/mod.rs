@@ -15,10 +15,16 @@ mod costs;
 mod index;
 pub mod voices;
 
-use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
+use crate::dsp::{DoneAction, NodeRequest, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
 use crate::server::workers::WorkerPool;
 pub use costs::{NodeCost, NodeCosts};
 use index::IdIndex;
+
+/// The done-queue codes of a UGen's requests on other nodes, above every
+/// done action's.
+const REQUEST_FREE: u8 = 0xF0;
+const REQUEST_RUN: u8 = 0xF1;
+const REQUEST_PAUSE: u8 = 0xF2;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
 /// and, in the F fork, by `FaustSynth` -- both built off the audio thread
@@ -74,6 +80,10 @@ pub trait SynthNode: Send {
     /// How many UGens this synth contributes to `/server_status.reply`.
     fn ugen_count(&self) -> usize;
     /// The maximum done action returned by any of this synth's UGens
+    /// The requests this synth's UGens make of other nodes for the block just
+    /// processed (`Free`, `Pause`), handed to `sink`. Default: none.
+    fn node_requests(&self, _sink: &mut dyn FnMut(NodeRequest)) {}
+
     fn done_action(&self) -> DoneAction {
         DoneAction::None
     }
@@ -695,6 +705,41 @@ impl NodeTree {
         if c < self.done_nodes.len() {
             self.done_nodes[c].store(id, Ordering::Relaxed);
             self.done_actions[c].store(action as u8, Ordering::Relaxed);
+        }
+    }
+
+    /// Records a UGen's request on another node (`Free`, `Pause`) in the done
+    /// queue, under a code no done action takes, for the drain to apply with
+    /// them ([`Self::apply_queued`]).
+    #[inline]
+    fn enqueue_request(&self, request: NodeRequest) {
+        let (id, code) = match request {
+            NodeRequest::Free(id) => (id, REQUEST_FREE),
+            NodeRequest::Run(id, true) => (id, REQUEST_RUN),
+            NodeRequest::Run(id, false) => (id, REQUEST_PAUSE),
+        };
+        let c = self.done_count.fetch_add(1, Ordering::Relaxed);
+        if c < self.done_nodes.len() {
+            self.done_nodes[c].store(id, Ordering::Relaxed);
+            self.done_actions[c].store(code, Ordering::Relaxed);
+        }
+    }
+
+    /// Applies done-queue entry `i`: a done action on its node, or a UGen's
+    /// request on the node it names.
+    pub fn apply_queued(&mut self, i: usize, sink: &mut dyn FnMut(FreedNode)) {
+        let id = self.done_node(i);
+        match self.done_actions[i].load(Ordering::Relaxed) {
+            REQUEST_FREE => {
+                self.free(id, sink);
+            }
+            REQUEST_RUN => {
+                self.set_paused(id, false);
+            }
+            REQUEST_PAUSE => {
+                self.set_paused(id, true);
+            }
+            code => self.apply_done_action(id, DoneAction::from_u8(code), sink),
         }
     }
 
@@ -1647,6 +1692,7 @@ impl NodeTree {
                     DoneAction::PauseSelf => slot.paused = true,
                     action => self.enqueue_done(slot.id, action),
                 }
+                node.node_requests(&mut |r| self.enqueue_request(r));
                 if node.has_replies() {
                     self.enqueue_reply(idx);
                 }
@@ -1703,6 +1749,7 @@ impl NodeTree {
                     DoneAction::PauseSelf => slot.paused = true,
                     action => self.enqueue_done(slot.id, action),
                 }
+                node.node_requests(&mut |r| self.enqueue_request(r));
                 if node.has_replies() {
                     self.enqueue_reply(idx);
                 }

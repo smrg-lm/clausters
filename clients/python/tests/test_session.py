@@ -345,6 +345,7 @@ _WIRE_ORDER_FORCED = {
     "Klang": "the partials' lists come first in Python, their triples last on the wire",
     "Klank": "the partials' lists come after the input in Python, their triples last on the wire",
     "SendReply": "reply_id follows trig on the wire, but must be keyword-only here",
+    "SendPeakRMS": "the signals lead in Python; the rate, lag and id lead on the wire",
     "Dseq": "repeats leads on the wire; the value list is the leading argument here",
     "Drand": "repeats leads on the wire; the value list is the leading argument here",
     "Dxrand": "repeats leads on the wire; the value list is the leading argument here",

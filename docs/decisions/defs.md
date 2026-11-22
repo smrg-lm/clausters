@@ -1662,3 +1662,12 @@ What the comparison allows is part of the decision:
   - `Normalizer` and `Limiter` step their gain in `f32`, which drifts past
     the ceiling by its rounding; here the line is in `f64` and ends where it
     aims.
+  - `RunningMax` and `RunningMin` at control rate over an audio input read
+    the block's first sample only; here they measure the whole block, as
+    `Peak` does there (in its SIMD form, the one scsynth runs).
+  - `PeakFollower` has three formulas for its fall, by the sign of its
+    decay, and moves a changing decay only on falling samples, so it ends a
+    block short of the value asked; here the fall is one formula and the
+    line reaches it.
+  - `PauseSelfWhenDone` outputs 0 once it has paused its synth; here its
+    source still passes.

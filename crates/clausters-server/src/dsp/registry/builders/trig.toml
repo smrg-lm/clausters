@@ -156,3 +156,96 @@ doc = '''
 `decay` minus a second, faster decay, which rounds the attack. Its peak
 is lower than 1 and sits where the two exponentials' slopes match.
 '''
+
+[[ugen]]
+kind = "Free"
+builder = "free"
+required = ["trig", "id"]
+doc = '''
+At each rising edge of `trig`, frees node `id` (any node, this one
+included); passes `trig` through.
+'''
+
+[[ugen]]
+kind = "Pause"
+builder = "pause"
+required = ["gate", "id"]
+doc = '''
+Runs node `id` while `gate` is not 0 and pauses it while it is, acting
+when the gate changes; passes `gate` through.
+'''
+
+[[ugen]]
+kind = "Peak"
+builder = "peak"
+required = ["signal"]
+doc = '''
+The largest `|signal|` since the last rising edge of `trig`, which starts
+it again from the sample it rises on.
+'''
+
+[[ugen]]
+kind = "RunningMax"
+builder = "running_max"
+required = ["signal"]
+doc = '''
+The largest `signal` since the last rising edge of `trig`.
+'''
+
+[[ugen]]
+kind = "RunningMin"
+builder = "running_min"
+required = ["signal"]
+doc = '''
+The smallest `signal` since the last rising edge of `trig`.
+'''
+
+[[ugen]]
+kind = "PeakFollower"
+builder = "peak_follower"
+required = ["signal"]
+doc = '''
+`|signal|` held at each new peak and falling back towards it by `decay` a
+sample.
+'''
+
+[[ugen]]
+kind = "RunningSum"
+builder = "running_sum"
+required = ["signal"]
+doc = '''
+The sum of the last `numsamp` samples, its window sized at the start.
+'''
+
+[[ugen]]
+kind = "LastValue"
+builder = "last_value"
+required = ["signal"]
+doc = '''
+The value `signal` had before it last moved by at least `diff`.
+'''
+
+[[ugen]]
+kind = "MostChange"
+builder = "most_change"
+required = ["a", "b"]
+doc = '''
+Whichever of `a` and `b` moved more since the last sample.
+'''
+
+[[ugen]]
+kind = "LeastChange"
+builder = "least_change"
+required = ["a", "b"]
+doc = '''
+Whichever of `a` and `b` moved less since the last sample.
+'''
+
+[[ugen]]
+kind = "ZeroCrossing"
+builder = "zero_crossing"
+required = ["signal"]
+doc = '''
+The frequency of `signal`'s rising zero crossings, each placed within its
+sample, held from one to the next.
+'''

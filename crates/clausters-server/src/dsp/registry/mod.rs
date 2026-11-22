@@ -42,7 +42,7 @@ use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::maps::{
     AmpComp, AmpCompA, Hasher, InRange, InRect, LinExp, MantissaMask, ModDif, Unwrap,
 };
-use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
+use crate::dsp::nodectl::{Free, Pause, SelfControl, WhenDone, WhenDoneMode};
 use crate::dsp::noise::{
     BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, LfdNoise,
     LfdShape, PinkNoise, WhiteNoise,
@@ -57,7 +57,10 @@ use crate::dsp::random::{
 use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
-use crate::dsp::reply::{Poll, SendReply, SendTrig};
+use crate::dsp::reply::{Poll, SendPeakRMS, SendReply, SendTrig};
+use crate::dsp::running::{
+    Change, LastValue, PeakFollower, Running, RunningKind, RunningSum, ZeroCrossing,
+};
 use crate::dsp::scalar::SampleRate;
 use crate::dsp::sections::{
     Fir, FirKind, Flip, Fos, LineRamp, Median, SampleDelay, Slew, Sos, TwoZero,

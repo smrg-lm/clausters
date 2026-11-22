@@ -140,3 +140,59 @@ export const decay2 = (
     attacktime: Channel = 0.01,
     decaytime: Channel = 1.0,
 ): Ugen => new Ugen("Decay2", [signal, attacktime, decaytime]);
+
+/**
+ * At each rising edge of `trig`, frees node `id` (any node, this one
+ * included); passes `trig` through.
+ */
+export const free = (trig: Channel, id: Channel): Ugen => new Ugen("Free", [trig, id]);
+
+/**
+ * Runs node `id` while `gate` is not 0 and pauses it while it is, acting
+ * when the gate changes; passes `gate` through.
+ */
+export const pause = (gate: Channel, id: Channel): Ugen => new Ugen("Pause", [gate, id]);
+
+/**
+ * The largest `|signal|` since the last rising edge of `trig`, which starts
+ * it again from the sample it rises on.
+ */
+export const peak = (signal: Channel, trig: Channel = 0.0): Ugen =>
+    new Ugen("Peak", [signal, trig]);
+
+/** The largest `signal` since the last rising edge of `trig`. */
+export const runningMax = (signal: Channel, trig: Channel = 0.0): Ugen =>
+    new Ugen("RunningMax", [signal, trig]);
+
+/** The smallest `signal` since the last rising edge of `trig`. */
+export const runningMin = (signal: Channel, trig: Channel = 0.0): Ugen =>
+    new Ugen("RunningMin", [signal, trig]);
+
+/**
+ * `|signal|` held at each new peak and falling back towards it by `decay` a
+ * sample.
+ */
+export const peakFollower = (signal: Channel, decay: Channel = 0.999): Ugen =>
+    new Ugen("PeakFollower", [signal, decay]);
+
+/** The sum of the last `numsamp` samples, its window sized at the start. */
+export const runningSum = (signal: Channel, numsamp: Channel = 40.0): Ugen =>
+    new Ugen("RunningSum", [signal, numsamp]);
+
+/** The value `signal` had before it last moved by at least `diff`. */
+export const lastValue = (signal: Channel, diff: Channel = 0.01): Ugen =>
+    new Ugen("LastValue", [signal, diff]);
+
+/** Whichever of `a` and `b` moved more since the last sample. */
+export const mostChange = (a: Channel, b: Channel): Ugen =>
+    new Ugen("MostChange", [a, b]);
+
+/** Whichever of `a` and `b` moved less since the last sample. */
+export const leastChange = (a: Channel, b: Channel): Ugen =>
+    new Ugen("LeastChange", [a, b]);
+
+/**
+ * The frequency of `signal`'s rising zero crossings, each placed within its
+ * sample, held from one to the next.
+ */
+export const zeroCrossing = (signal: Channel): Ugen => new Ugen("ZeroCrossing", [signal]);

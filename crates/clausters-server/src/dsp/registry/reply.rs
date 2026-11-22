@@ -99,4 +99,20 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |c, _| Box::new(Poll::new(c)),
     ),
+    // Variadic: the rate, the lag and the reply id lead, the channels follow.
+    desc(
+        "SendPeakRMS",
+        Variadic,
+        &[
+            inp("reply_rate", 20.0),
+            inp("peak_lag", 3.0),
+            inp("reply_id", -1.0),
+        ],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, _| Box::new(SendPeakRMS::new(c)),
+    ),
 ];

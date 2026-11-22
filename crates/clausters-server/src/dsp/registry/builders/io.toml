@@ -144,3 +144,7 @@ why = "the path and its options are static fields"
 [[hand]]
 kind = "DiskOut"
 why = "the path and its format are static fields"
+
+[[hand]]
+kind = "SendPeakRMS"
+why = "the channel list leads, and the rate, lag, id and command are options"

@@ -248,6 +248,39 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(WhenDone::new(WhenDoneMode::Free)),
     ),
+    desc(
+        "PauseSelfWhenDone",
+        Fixed(1),
+        I_SOURCE,
+        Ar,
+        R_KR_AR,
+        DoneQuery,
+        BusRole::None,
+        false,
+        |_, _| Box::new(WhenDone::new(WhenDoneMode::Pause)),
+    ),
+    desc(
+        "Free",
+        Fixed(2),
+        &[inp("trig", 0.0), inp("id", 0.0)],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Free::default()),
+    ),
+    desc(
+        "Pause",
+        Fixed(2),
+        &[inp("gate", 0.0), inp("id", 0.0)],
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pause::default()),
+    ),
     // --- scalar / init-rate ---
     desc(
         "SampleRate",
@@ -260,4 +293,40 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(SampleRate),
     ),
+    // --- running statistics of a signal ---
+    plain("Peak", I_RUNNING, |_, _| {
+        Box::new(Running::new(RunningKind::Peak))
+    }),
+    plain("RunningMax", I_RUNNING, |_, _| {
+        Box::new(Running::new(RunningKind::Max))
+    }),
+    plain("RunningMin", I_RUNNING, |_, _| {
+        Box::new(Running::new(RunningKind::Min))
+    }),
+    plain(
+        "PeakFollower",
+        &[inp("signal", 0.0), inp("decay", 0.999)],
+        |_, _| Box::new(PeakFollower::default()),
+    ),
+    plain(
+        "RunningSum",
+        &[inp("signal", 0.0), inp("numsamp", 40.0)],
+        |c, _| Box::new(RunningSum::new(c.constant(1, 40.0))),
+    ),
+    plain(
+        "LastValue",
+        &[inp("signal", 0.0), inp("diff", 0.01)],
+        |_, _| Box::new(LastValue::default()),
+    ),
+    plain("MostChange", &[inp("a", 0.0), inp("b", 0.0)], |_, _| {
+        Box::new(Change::new(true))
+    }),
+    plain("LeastChange", &[inp("a", 0.0), inp("b", 0.0)], |_, _| {
+        Box::new(Change::new(false))
+    }),
+    plain("ZeroCrossing", I_SIGNAL, |_, _| {
+        Box::new(ZeroCrossing::default())
+    }),
 ];
+
+const I_RUNNING: &[UGenInput] = &[inp("signal", 0.0), inp_opt("trig", 0.0)];

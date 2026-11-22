@@ -956,3 +956,98 @@ fn env_shape_reads_a_segment_at_a_position() {
     assert!((rise[BLOCK_SIZE + 10] - 1.0).abs() < 1e-4);
     assert!(fall[BLOCK_SIZE + 10].abs() < 1e-4);
 }
+
+/// A synth whose `Out` writes `level` to bus 0 and whose other UGen is
+/// `kind(trig, target)`, the trigger an `Impulse` firing at its first
+/// sample, or a constant `gate`.
+fn asking_spec(kind: &str, first: Value, target: i32) -> Value {
+    json!({
+        "name": "ask",
+        "ugens": [
+            first,
+            {"kind": kind, "rate": "kr", "inputs": [{"ugen": 0}, {"const": target}]},
+            {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 1}]}
+        ]
+    })
+}
+
+#[test]
+fn free_frees_another_node_by_its_id() {
+    let (mut engine, mut handle) = spawn(dc_spec(0.5));
+    let impulse =
+        json!({"kind": "Impulse", "rate": "kr", "inputs": [{"const": 0.0}, {"const": 0.0}]});
+    handle
+        .send(add(1001, synth_from(asking_spec("Free", impulse, 1000))))
+        .ok()
+        .unwrap();
+    // Freed at the first block's end; the second publishes the count.
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        1,
+        "node 1000 freed by node 1001, which stays"
+    );
+    let out = render(&mut engine, 1);
+    assert!(
+        out.iter().all(|s| s.abs() < 1e-6),
+        "and node 1000 is silent"
+    );
+}
+
+#[test]
+fn pause_pauses_and_runs_another_node_by_its_id() {
+    // A gate that closes for the second half of each tenth of a second.
+    let (mut engine, mut handle) = spawn(dc_spec(0.5));
+    let gate = json!({"kind": "LFPulse", "rate": "kr", "inputs": [{"const": 10.0}, {"const": 0.0}, {"const": 0.5}]});
+    handle
+        .send(add(1001, synth_from(asking_spec("Pause", gate, 1000))))
+        .ok()
+        .unwrap();
+    // 0.1 s is 75 blocks: open for the first 37 or so, closed after.
+    let out = render(&mut engine, 75);
+    let open = &out[..30 * BLOCK_SIZE];
+    let closed = &out[45 * BLOCK_SIZE..70 * BLOCK_SIZE];
+    assert!(
+        open.iter().all(|s| (*s - 0.5).abs() < 1e-6),
+        "running while open"
+    );
+    assert!(closed.iter().all(|s| s.abs() < 1e-6), "paused while closed");
+    let out = render(&mut engine, 30);
+    assert!(
+        out[10 * BLOCK_SIZE..]
+            .iter()
+            .all(|s| (*s - 0.5).abs() < 1e-6),
+        "running again"
+    );
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        2,
+        "nothing freed"
+    );
+}
+
+#[test]
+fn pause_self_when_done_pauses_once() {
+    let (mut engine, mut handle) = spawn(watcher_spec("PauseSelfWhenDone", secs(64)));
+    let out = render(&mut engine, 1);
+    assert!(out.iter().any(|s| *s > 0.4), "it passes the ramp through");
+    render(&mut engine, 2);
+    let out = render(&mut engine, 1);
+    // A paused synth writes nothing, and `Out` adds: the bus is silent.
+    assert!(
+        out.iter().all(|s| s.abs() < 1e-6),
+        "paused once the ramp finished"
+    );
+    handle
+        .send(Cmd::RunNode {
+            id: 1000,
+            run: true,
+        })
+        .ok()
+        .unwrap();
+    let out = render(&mut engine, 2);
+    assert!(
+        out.iter().all(|s| (*s - 1.0).abs() < 1e-6),
+        "resumed, and not paused again"
+    );
+}

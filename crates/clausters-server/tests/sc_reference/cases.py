@@ -98,6 +98,7 @@ def cases() -> list[dict]:
         _tables,
         _chaos,
         _dynamics,
+        _running,
     ]:
         out.extend(f())
     return out
@@ -1086,4 +1087,47 @@ def _dynamics() -> list[dict]:
         x = sig(g)
         g.add("FreqShift", "ar", x, f, f / 48000.0, sc={"inputs": [x, f, 0]})
         out.append(case(f"FreqShift.{f}", g, 8, tol=2e-5, why="scsynth reads its quadrature oscillator from a table"))
+    return out
+
+
+def _running() -> list[dict]:
+    """`TriggerUGens.cpp`'s running statistics and `RunningSum`."""
+    out = []
+    for kind in ["Peak", "RunningMax", "RunningMin"]:
+        for rate, trig_rate, blocks in [("ar", "ar", 8), ("ar", "kr", 8), ("kr", "kr", 64)]:
+            g = G()
+            x = sig(g, rate)
+            t = g.add("Impulse", trig_rate, 703.1 if trig_rate == "ar" else 31, 0.5)
+            g.add(kind, rate, x, t)
+            out.append(case(f"{kind}.{rate}.{trig_rate}", g, blocks))
+        g = G()
+        x = sig(g)
+        g.add(kind, "ar", x, 0)
+        out.append(case(f"{kind}.notrig", g, 4))
+    # Control rate over an audio input: scsynth's Peak alone sees the block,
+    # and its SIMD form (the one it runs) starts over at the block's end.
+    for trig_rate in ["ar", "kr"]:
+        g = G()
+        x = sig(g)
+        t = g.add("Impulse", trig_rate, 310 if trig_rate == "ar" else 31, 0.5)
+        g.add("Peak", "kr", x, t)
+        out.append(case(f"Peak.atok.{trig_rate}", g, 64))
+    for decay in [0.99, 0.9995]:
+        out.append(through(f"PeakFollower.{decay}", "PeakFollower", "ar", decay))
+    gathered = {"tol": 3e-5, "why": "a sum of many samples gathers the inputs' rounding"}
+    out.append(through("RunningSum.40", "RunningSum", "ar", 40, blocks=8, **gathered))
+    out.append(through("RunningSum.7", "RunningSum", "ar", 7, blocks=8))
+    for delta in [0.01, 0.3]:
+        out.append(through(f"LastValue.{delta}", "LastValue", "ar", delta))
+    for kind in ["MostChange", "LeastChange"]:
+        g = G()
+        a = sig(g)
+        b = g.add("LFTri", "ar", 310.7, 0)
+        g.add(kind, "ar", a, b)
+        out.append(case(f"{kind}.ar", g))
+    for f in [441.3, 2003.7]:
+        g = G()
+        x = g.add("Sine", "ar", f, sc={"kind": "SinOsc", "inputs": [f, 0]})
+        g.add("ZeroCrossing", "ar", x)
+        out.append(case(f"ZeroCrossing.{f}", g, 8, tol=1e-4, why="scsynth's SinOsc reads a table, which moves the crossings"))
     return out

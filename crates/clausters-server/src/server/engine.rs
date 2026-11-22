@@ -1322,11 +1322,8 @@ impl Engine {
         // in a group both request `FreeGroup`) is a harmless no-op.
         let n_done = self.tree.take_done_count();
         for k in 0..n_done {
-            let id = self.tree.done_node(k);
-            let action = self.tree.done_action_at(k);
             let mut sink = garbage_sink!(self);
-            self.tree
-                .apply_done_action(id, action, &mut |f| sink.consume(f));
+            self.tree.apply_queued(k, &mut |f| sink.consume(f));
         }
     }
 

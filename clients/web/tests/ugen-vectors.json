@@ -1769,6 +1769,20 @@
       ]
     },
     {
+      "name": "Free",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "trig",
+          "default": 0.0
+        },
+        {
+          "name": "id",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "FreeSelf",
       "arity": 1,
       "inputs": [
@@ -2672,6 +2686,20 @@
       ]
     },
     {
+      "name": "LastValue",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "diff",
+          "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
       "name": "Latch",
       "arity": 2,
       "inputs": [
@@ -2798,6 +2826,20 @@
         {
           "name": "coef",
           "default": 0.9950000047683716
+        }
+      ]
+    },
+    {
+      "name": "LeastChange",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "a",
+          "default": 0.0
+        },
+        {
+          "name": "b",
+          "default": 0.0
         }
       ]
     },
@@ -3235,6 +3277,20 @@
         },
         {
           "name": "reset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "MostChange",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "a",
+          "default": 0.0
+        },
+        {
+          "name": "b",
           "default": 0.0
         }
       ]
@@ -3688,12 +3744,64 @@
       ]
     },
     {
+      "name": "Pause",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "gate",
+          "default": 0.0
+        },
+        {
+          "name": "id",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "PauseSelf",
       "arity": 1,
       "inputs": [
         {
           "name": "signal",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PauseSelfWhenDone",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Peak",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PeakFollower",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "decay",
+          "default": 0.9990000128746033
         }
       ]
     },
@@ -4155,6 +4263,48 @@
       ]
     },
     {
+      "name": "RunningMax",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "RunningMin",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "RunningSum",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "numsamp",
+          "default": 40.0
+        }
+      ]
+    },
+    {
       "name": "SOS",
       "arity": 6,
       "inputs": [
@@ -4234,6 +4384,24 @@
         {
           "name": "which",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "SendPeakRMS",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "reply_rate",
+          "default": 20.0
+        },
+        {
+          "name": "peak_lag",
+          "default": 3.0
+        },
+        {
+          "name": "reply_id",
+          "default": -1.0
         }
       ]
     },
@@ -5089,6 +5257,16 @@
         },
         {
           "name": "done_action",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "ZeroCrossing",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
           "default": 0.0
         }
       ]

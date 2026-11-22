@@ -1,5 +1,7 @@
 //! UGens that act on **their own node** rather than on a signal:
-//! `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone` and `Done`.
+//! `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`, `PauseSelfWhenDone` and
+//! `Done` -- and the two that act on **another** node by its id, `Free`
+//! and `Pause`, which ask through [`UGen::node_request`].
 //!
 //! All four pass their input straight through, so they drop into a chain
 //! without a `Mul` or a spare wire -- the graph keeps working if you delete
@@ -18,7 +20,7 @@
 //!   synth resolves it (see `ExecMode::DoneQuery`) and hands it over before
 //!   `process`.
 
-use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
+use crate::dsp::{DoneAction, NodeRequest, ProcessCtx, UGen, at};
 
 /// `FreeSelf(in)` and `PauseSelf(in)`: pass `in` through, and ask for the
 /// node to be freed or paused while `in` is greater than zero.
@@ -74,6 +76,10 @@ pub enum WhenDoneMode {
     /// finishes. The idiom for a voice whose envelope has `doneAction` 0
     /// because something else in the graph still needs it.
     Free,
+    /// `PauseSelfWhenDone(src)`: pass `src` through and pause the node once,
+    /// when it finishes; a node resumed after is not paused again. scsynth's
+    /// outputs 0 from then on; here `src` still passes.
+    Pause,
 }
 
 /// `Done(src)` and `FreeSelfWhenDone(src)`: watch the **done flag** of the
@@ -94,17 +100,27 @@ pub enum WhenDoneMode {
 pub struct WhenDone {
     mode: WhenDoneMode,
     flag: bool,
+    /// `Pause`: this block is the one the flag rose in, and whether it has.
+    pausing: bool,
+    paused: bool,
 }
 
 impl WhenDone {
     pub fn new(mode: WhenDoneMode) -> Self {
-        Self { mode, flag: false }
+        Self {
+            mode,
+            flag: false,
+            pausing: false,
+            paused: false,
+        }
     }
 }
 
 impl UGen for WhenDone {
     fn reset(&mut self) {
         self.flag = false;
+        self.pausing = false;
+        self.paused = false;
     }
 
     fn set_done_flag(&mut self, done: bool) {
@@ -114,10 +130,12 @@ impl UGen for WhenDone {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         match self.mode {
             WhenDoneMode::Report => output.fill(if self.flag { 1.0 } else { 0.0 }),
-            WhenDoneMode::Free => {
+            WhenDoneMode::Free | WhenDoneMode::Pause => {
                 for (i, out) in output.iter_mut().enumerate() {
                     *out = at(inputs[0], i);
                 }
+                self.pausing = self.flag && !self.paused;
+                self.paused |= self.flag;
             }
         }
     }
@@ -125,7 +143,79 @@ impl UGen for WhenDone {
     fn done(&self) -> DoneAction {
         match self.mode {
             WhenDoneMode::Free if self.flag => DoneAction::FreeSelf,
+            WhenDoneMode::Pause if self.pausing => DoneAction::PauseSelf,
             _ => DoneAction::None,
         }
+    }
+}
+
+/// `Free(trig, id)`: at each rising edge of `trig`, frees node `id`, which
+/// may be any node of the tree, this one included; passes `trig` through.
+/// Read once a block, as scsynth's is.
+#[derive(Default)]
+pub struct Free {
+    prev: f32,
+    request: Option<NodeRequest>,
+}
+
+impl UGen for Free {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let trig = at(inputs[0], 0);
+        self.request =
+            (trig > 0.0 && self.prev <= 0.0).then(|| NodeRequest::Free(at(inputs[1], 0) as i32));
+        self.prev = trig;
+        output.fill(trig);
+    }
+
+    fn requests_nodes(&self) -> bool {
+        true
+    }
+
+    fn node_request(&self) -> Option<NodeRequest> {
+        self.request
+    }
+}
+
+/// `Pause(gate, id)`: runs node `id` while `gate` is not 0 and pauses it
+/// while it is, acting when the gate changes; passes `gate` through. Read
+/// once a block, as scsynth's is.
+pub struct Pause {
+    running: bool,
+    request: Option<NodeRequest>,
+}
+
+impl Default for Pause {
+    fn default() -> Self {
+        Self {
+            running: true,
+            request: None,
+        }
+    }
+}
+
+impl UGen for Pause {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let gate = at(inputs[0], 0);
+        let running = gate != 0.0;
+        self.request =
+            (running != self.running).then(|| NodeRequest::Run(at(inputs[1], 0) as i32, running));
+        self.running = running;
+        output.fill(gate);
+    }
+
+    fn requests_nodes(&self) -> bool {
+        true
+    }
+
+    fn node_request(&self) -> Option<NodeRequest> {
+        self.request
     }
 }

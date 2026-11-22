@@ -6,8 +6,8 @@ use crate::dsp::rand::{Generators, SynthRand};
 use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
-    BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, ProcessCtx, Rate, ReplyMsg, UGen,
-    USUAL_UGEN_INPUTS, at,
+    BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, NodeRequest, ProcessCtx, Rate,
+    ReplyMsg, UGen, USUAL_UGEN_INPUTS, at,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::server::meters::Meters;
@@ -40,6 +40,8 @@ pub struct UGenSynth {
     /// `Poll`); precomputed so `has_replies` is O(1) and the tree only
     /// enqueues these synths for the reply drain.
     has_reply_ugens: bool,
+    /// Whether a UGen may act on another node (`Free`, `Pause`).
+    has_node_requests: bool,
     /// True when any UGen streams from disk (`UGen::cued`): the synths a
     /// transport's cue runs.
     streams: bool,
@@ -204,6 +206,7 @@ impl UGenSynth {
             .map(|&sz| SpectralChain::new(sz))
             .collect();
         let has_reply_ugens = ugens.iter().any(|u| u.is_reply());
+        let has_node_requests = ugens.iter().any(|u| u.requests_nodes());
         let streams = ugens.iter().any(|u| u.cued().is_some());
         Self {
             def,
@@ -215,6 +218,7 @@ impl UGenSynth {
             chains,
             initialized: false,
             has_reply_ugens,
+            has_node_requests,
             streams,
         }
     }
@@ -516,6 +520,16 @@ impl SynthNode for UGenSynth {
     fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
         for ugen in &mut self.ugens {
             ugen.drain_replies(node_id, sink);
+        }
+    }
+
+    fn node_requests(&self, sink: &mut dyn FnMut(NodeRequest)) {
+        if self.has_node_requests {
+            for u in &self.ugens {
+                if let Some(r) = u.node_request() {
+                    sink(r);
+                }
+            }
         }
     }
 

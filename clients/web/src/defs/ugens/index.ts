@@ -267,8 +267,9 @@ export {
     sendReply,
     sendTrig,
     truePeak,
+    sendPeakRms,
 } from "./io.ts";
-export type { DiskInOptions, DiskOutOptions, PollOptions } from "./io.ts";
+export type { DiskInOptions, DiskOutOptions, PollOptions, SendPeakRmsOptions } from "./io.ts";
 
 export {
     bufChannels,
@@ -327,6 +328,17 @@ export {
     toggleFf,
     trig,
     trig1,
+    free,
+    pause,
+    peak,
+    runningMax,
+    runningMin,
+    peakFollower,
+    runningSum,
+    lastValue,
+    mostChange,
+    leastChange,
+    zeroCrossing,
 } from "./trig.ts";
 
 export {
@@ -391,6 +403,7 @@ export {
     ienvGen,
     linen,
     lfGauss,
+    pauseSelfWhenDone,
 } from "./env.ts";
 export type { Curve, Point, PointsLike, Quad } from "./env.ts";
 export type { SynthLeaf } from "./graph.ts";
@@ -411,6 +424,7 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "Klank",
     "TWindex",
     "SendReply",
+    "SendPeakRMS",
     "Dseq",
     "Poll",
     "DiskIn",

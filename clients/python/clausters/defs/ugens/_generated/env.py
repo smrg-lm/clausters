@@ -14,6 +14,7 @@ __all__ = [
     "pause_self",
     "done",
     "free_self_when_done",
+    "pause_self_when_done",
 ]
 
 
@@ -51,3 +52,10 @@ def free_self_when_done(source) -> Ugen:
     because something else in the graph still needs it.
     """
     return Ugen("FreeSelfWhenDone", [source])
+
+
+def pause_self_when_done(source) -> Ugen:
+    """Passes `source` through and pauses the synth once, when it has finished;
+    a synth resumed after is not paused again.
+    """
+    return Ugen("PauseSelfWhenDone", [source])

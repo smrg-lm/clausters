@@ -115,6 +115,8 @@ pub mod registry;
 #[cfg(feature = "synth")]
 pub mod reply;
 #[cfg(feature = "synth")]
+pub mod running;
+#[cfg(feature = "synth")]
 pub mod scalar;
 #[cfg(feature = "synth")]
 pub mod sections;
@@ -885,6 +887,17 @@ pub struct TransportCtx {
     pub pending_looping: Option<Option<(u64, u64)>>,
 }
 
+/// A UGen's request on another node of the tree, by its id: what `Free` and
+/// `Pause` ask, applied with the done actions at the end of the block. An id
+/// the tree does not hold is ignored, as scsynth ignores it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeRequest {
+    /// Free the node.
+    Free(i32),
+    /// Run (`true`) or pause (`false`) the node.
+    Run(i32, bool),
+}
+
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --
 /// scsynth's full done-action set (`Done.schelp`, values 0-15). `None`/
 /// `PauseSelf` are applied inline on the audio thread; every other action frees
@@ -1248,6 +1261,20 @@ pub trait UGen: Send {
     /// a reply UGen.
     fn is_reply(&self) -> bool {
         false
+    }
+
+    /// Whether this UGen may act on **another node** of the tree (`Free`,
+    /// `Pause`): the synth asks [`node_request`](Self::node_request) after
+    /// each block only when one of its UGens says so. Default: never.
+    fn requests_nodes(&self) -> bool {
+        false
+    }
+
+    /// What this UGen asks of another node for the block just processed --
+    /// scsynth's `NodeEnd` and `NodeRun` on a node by id -- applied with the
+    /// done actions at the block's end. Default: nothing.
+    fn node_request(&self) -> Option<NodeRequest> {
+        None
     }
 
     /// Drains the side-effect messages this UGen buffered during the block into

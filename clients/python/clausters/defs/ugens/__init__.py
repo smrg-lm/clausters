@@ -269,6 +269,7 @@ from .io import (
     send_reply,
     send_trig,
     true_peak,
+    send_peak_rms,
 )
 from .buf import (
     buf_channels,
@@ -347,6 +348,17 @@ from .trig import (
     toggle_ff,
     trig,
     trig1,
+    free,
+    pause,
+    peak,
+    running_max,
+    running_min,
+    peak_follower,
+    running_sum,
+    last_value,
+    most_change,
+    least_change,
+    zero_crossing,
 )
 from .demand import (
     dbrown,
@@ -386,6 +398,7 @@ from .env import (
     ienv_gen,
     linen,
     lf_gauss,
+    pause_self_when_done,
 )
 
 # ---- introspecting a UGen kind's input names (the client's own signature) ----
@@ -401,7 +414,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "SendPeakRMS", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -685,6 +698,19 @@ __all__ = [
     "points_to_env",
     "quads",
     "x_line",
+    "free",
+    "pause",
+    "peak",
+    "running_max",
+    "running_min",
+    "peak_follower",
+    "running_sum",
+    "last_value",
+    "most_change",
+    "least_change",
+    "zero_crossing",
+    "pause_self_when_done",
+    "send_peak_rms",
     "median",
     "moog_ff",
     "amplitude",
