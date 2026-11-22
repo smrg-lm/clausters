@@ -141,6 +141,39 @@ impl SpectralChain {
     }
 }
 
+/// The length of the stretch of signal an `FFT` windows: its `winsize`
+/// when the def gives one, in `[MIN_HOP, n]`, the transform size `n`
+/// otherwise. A shorter frame is zero-padded to `n` (scsynth's `winsize`):
+/// a finer grid of bins over the same stretch of time.
+pub fn resolve_frame(n: usize, winsize: Option<usize>) -> usize {
+    winsize.map_or(n, |w| w.clamp(MIN_HOP, n))
+}
+
+/// Where a chain's first frame ends, in samples of the synth's input: one
+/// hop in, or at the stagger when there is one (a stagger is shorter than
+/// the hop). Every frame on the grid before it holds only the silence
+/// before the synth started, so none of them is missing from the
+/// reconstruction of its first samples.
+fn first_frame(hop: usize, stagger: usize) -> u64 {
+    if stagger == 0 {
+        hop as u64
+    } else {
+        stagger as u64
+    }
+}
+
+/// The hop-phase stagger the node id gives a chain of hop `hop`: the id
+/// modulo the hop's block count, in whole blocks. A hop no longer than one
+/// block cannot stack (at most one frame per slice already), so it keeps 0.
+fn stagger_of(id: i32, hop: usize) -> usize {
+    let blocks_per_hop = hop / BLOCK_SIZE;
+    if blocks_per_hop > 1 {
+        (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE
+    } else {
+        0
+    }
+}
+
 /// Windows an audio input and transforms it to a spectral frame once per hop.
 ///
 /// Inputs: `[in, active]` -- the audio signal and a gate on it, read per
@@ -150,31 +183,39 @@ impl SpectralChain {
 /// nothing but silence, so it is not taken: the chain does no work while it
 /// stays off, and its frame reads as silence to anything that combines it.
 ///
-/// The window size, hop and window type are static per-UGen config, not
-/// signal inputs, because they size the pre-allocated scratch. The window is
-/// also settable live through `/node_ugenCmd` (selector `window`), and it is
-/// the chain's: the change is recorded on the [`SpectralChain`], `IFFT`
-/// follows it, and it takes effect at a frame, at most once per window length
-/// (a later one waits), so the overlap-add can normalize the frames on both
-/// sides of it exactly.
+/// The transform size, the frame (`winsize`, zero-padded to the transform
+/// size), the hop and the window type are static per-UGen config, not signal
+/// inputs, because they size the pre-allocated scratch. The window is also
+/// settable live through `/node_ugenCmd` (selector `window`), and it is the
+/// chain's: the change is recorded on the [`SpectralChain`], `IFFT` follows
+/// it, and it takes effect at a frame, at most once per frame length (a later
+/// one waits), so the overlap-add can normalize the frames on both sides of
+/// it exactly.
+///
+/// Positions on the chain count from `frame` samples before the synth
+/// started, a frame of the silence before it: the first frame is taken one
+/// hop in, holding that silence and the first hop of the input, exactly as
+/// every frame after it holds a window of the input.
 pub struct Fft {
-    winsize: usize,
+    /// The frame length: the stretch of signal windowed, `<= n`.
+    frame: usize,
     hop_size: usize,
     window_kind: Window,
-    /// Analysis window coefficients (`winsize`); refilled in place when a
+    /// Analysis window coefficients (`frame`); refilled in place when a
     /// window change takes effect, so still allocation-free per block.
     window: Vec<f32>,
     /// A window asked for by `/node_ugenCmd` and not yet in force.
     pending_window: Option<Window>,
     /// The frame end position the current window took effect at.
     window_from: u64,
-    /// Sliding input, a circular buffer of the last `winsize` samples.
+    /// Sliding input, a circular buffer of the last `frame` samples.
     inbuf: Vec<f32>,
     write: usize,
-    /// Input samples seen since the synth started.
+    /// Input position: `frame` before the synth's first sample, plus the
+    /// samples seen since.
     pos: u64,
-    /// The input position the next frame ends at: the first is one window
-    /// in (plus the stagger), every later one a hop after the previous.
+    /// The input position the next frame ends at: the first is one hop in
+    /// (or at the stagger), every later one a hop after the previous.
     ///
     /// The hop-phase stagger is set once from the node id in
     /// [`UGen::set_node_id`] -- a deterministic sub-hop offset (a block
@@ -186,13 +227,15 @@ pub struct Fft {
     next_frame: u64,
     /// The input position just past the last sample `active` let through: a
     /// frame ending at `p` holds any of the signal only if this is past
-    /// `p - winsize`.
+    /// `p - frame`.
     live_until: u64,
     /// Whether the chain's frame has been cleared since the last frame taken,
     /// so a run of skipped frames clears it once.
     frame_cleared: bool,
-    /// De-circularized, windowed frame handed to the forward transform.
+    /// De-circularized, windowed frame, zero-padded to the transform size,
+    /// handed to the forward transform.
     scratch: Vec<f32>,
+    fft: fft::FftScratch,
     /// The hop-phase offset the node id gave it ([`UGen::set_node_id`]),
     /// kept so a reset starts the hops where the first start did.
     stagger: usize,
@@ -200,25 +243,27 @@ pub struct Fft {
 
 impl Fft {
     pub fn new(config: &UGenConfig) -> Self {
-        let winsize = resolve_fft_size(config.fft_size);
-        let hop_size = resolve_hop(winsize, config.hop);
+        let n = resolve_fft_size(config.fft_size);
+        let frame = resolve_frame(n, config.winsize);
+        let hop_size = resolve_hop(frame, config.hop);
         let window_kind = Window::from_wintype(config.wintype.unwrap_or(0));
-        let mut window = vec![0.0; winsize];
+        let mut window = vec![0.0; frame];
         window_kind.fill(&mut window);
         Self {
-            winsize,
+            frame,
             hop_size,
             window_kind,
             window,
             pending_window: None,
             window_from: 0,
-            inbuf: vec![0.0; winsize],
+            inbuf: vec![0.0; frame],
             write: 0,
-            pos: 0,
-            next_frame: winsize as u64,
+            pos: frame as u64,
+            next_frame: frame as u64 + first_frame(hop_size, 0),
             live_until: 0,
             frame_cleared: true,
-            scratch: vec![0.0; winsize],
+            scratch: vec![0.0; n],
+            fft: fft::FftScratch::new(n),
             stagger: 0,
         }
     }
@@ -231,8 +276,8 @@ impl UGen for Fft {
         self.window_from = 0;
         self.inbuf.fill(0.0);
         self.write = 0;
-        self.pos = 0;
-        self.next_frame = (self.winsize + self.stagger) as u64;
+        self.pos = self.frame as u64;
+        self.next_frame = self.frame as u64 + first_frame(self.hop_size, self.stagger);
         self.live_until = 0;
         self.frame_cleared = true;
         self.scratch.fill(0.0);
@@ -251,16 +296,17 @@ impl UGen for Fft {
         chain: &mut SpectralChain,
     ) {
         chain.ready = false;
-        if self.pos == 0 {
+        if self.pos == self.frame as u64 {
             chain.window = self.window_kind;
             chain.prev_window = self.window_kind;
         }
         let input = inputs[0];
         let gate = inputs.get(1).copied();
+        let frame = self.frame;
         for (j, &s) in input.iter().enumerate() {
             let active = gate.is_none_or(|g| at(g, j) > 0.0);
             self.inbuf[self.write] = if active { s } else { 0.0 };
-            self.write = (self.write + 1) % self.winsize;
+            self.write = (self.write + 1) % frame;
             self.pos += 1;
             if active {
                 self.live_until = self.pos;
@@ -271,11 +317,11 @@ impl UGen for Fft {
             if self.pos == self.next_frame {
                 self.next_frame += self.hop_size as u64;
                 // A window change takes effect at a frame, and not within a
-                // window of the last one: every sample is then covered by
+                // frame of the last one: every sample is then covered by
                 // frames of at most two windows, which the overlap-add
                 // normalizes exactly.
                 if let Some(wanted) = self.pending_window
-                    && (self.window_from == 0 || self.pos >= self.window_from + self.winsize as u64)
+                    && (self.window_from == 0 || self.pos >= self.window_from + frame as u64)
                 {
                     self.pending_window = None;
                     chain.prev_window = self.window_kind;
@@ -285,7 +331,7 @@ impl UGen for Fft {
                     chain.window = wanted;
                     chain.window_from = self.pos;
                 }
-                let live = self.live_until + self.winsize as u64 > self.pos;
+                let live = self.live_until + frame as u64 > self.pos;
                 if !live {
                     // Nothing but gated silence in the window: skip the
                     // transform, and let a combiner reading this chain read
@@ -296,12 +342,13 @@ impl UGen for Fft {
                     }
                 } else {
                     self.frame_cleared = false;
-                    // De-circularize: `write` points at the oldest sample.
-                    for k in 0..self.winsize {
-                        let s = self.inbuf[(self.write + k) % self.winsize];
+                    // De-circularize: `write` points at the oldest sample;
+                    // past the frame the transform reads the zero padding.
+                    for k in 0..frame {
+                        let s = self.inbuf[(self.write + k) % frame];
                         self.scratch[k] = s * self.window[k];
                     }
-                    fft::rfft_into(&self.scratch, &mut chain.frame);
+                    fft::rfft_with(&self.scratch, &mut chain.frame, &mut self.fft);
                     chain.pos = self.pos;
                     chain.ready = true;
                 }
@@ -314,14 +361,9 @@ impl UGen for Fft {
     }
 
     fn set_node_id(&mut self, id: i32) {
-        // derive the deterministic hop-phase stagger -- the node id modulo
-        // the hop's block count, in whole blocks. A hop no longer than one
-        // block cannot stack (at most one frame per slice already), so it
-        // keeps offset 0.
-        let blocks_per_hop = self.hop_size / BLOCK_SIZE;
-        if blocks_per_hop > 1 && self.pos == 0 {
-            self.stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
-            self.next_frame = (self.winsize + self.stagger) as u64;
+        if self.pos == self.frame as u64 {
+            self.stagger = stagger_of(id, self.hop_size);
+            self.next_frame = self.frame as u64 + first_frame(self.hop_size, self.stagger);
         }
     }
 
@@ -336,21 +378,110 @@ impl UGen for Fft {
     }
 }
 
+/// Opens a chain whose frames are not analysed from a signal
+/// (`FFTTrigger`): it marks the chain's frame fresh once per hop and leaves
+/// its contents to the UGens after it -- `PackFFT` writing bins, or a
+/// `PV_Kernel` program computing them -- which resynthesize through an
+/// `IFFT` like any other frame. No inputs; `fft_size`, `winsize`, `hop` and
+/// `wintype` are static config, as on an `FFT`. The frame keeps what was
+/// written into it from one hop to the next (it starts silent), so a writer
+/// that leaves bins alone leaves the last values there.
+///
+/// Its frames carry no analysis window, so the `IFFT` normalizes their
+/// overlap by the synthesis window alone (see [`SpectralChain`] and
+/// `Ifft`): a frame written with a bin's magnitude comes back at that level.
+pub struct FftTrigger {
+    frame: usize,
+    hop_size: usize,
+    window_kind: Window,
+    pos: u64,
+    next_frame: u64,
+    stagger: usize,
+}
+
+impl FftTrigger {
+    pub fn new(config: &UGenConfig) -> Self {
+        let n = resolve_fft_size(config.fft_size);
+        let frame = resolve_frame(n, config.winsize);
+        let hop_size = resolve_hop(frame, config.hop);
+        Self {
+            frame,
+            hop_size,
+            window_kind: Window::from_wintype(config.wintype.unwrap_or(0)),
+            pos: frame as u64,
+            next_frame: frame as u64 + first_frame(hop_size, 0),
+            stagger: 0,
+        }
+    }
+}
+
+impl UGen for FftTrigger {
+    fn reset(&mut self) {
+        self.pos = self.frame as u64;
+        self.next_frame = self.frame as u64 + first_frame(self.hop_size, self.stagger);
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral(
+        &mut self,
+        ctx: &mut ProcessCtx,
+        _inputs: &[&[f32]],
+        output: &mut [f32],
+        chain: &mut SpectralChain,
+    ) {
+        chain.ready = false;
+        if self.pos == self.frame as u64 {
+            chain.window = self.window_kind;
+            chain.prev_window = self.window_kind;
+        }
+        // The slice's length in samples: the hop closes at most once in it.
+        let end = self.pos + ctx.frames as u64;
+        if self.next_frame <= end {
+            chain.pos = self.next_frame;
+            chain.ready = true;
+            self.next_frame += self.hop_size as u64;
+        }
+        self.pos = end;
+        if let Some(o) = output.first_mut() {
+            *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+
+    fn set_node_id(&mut self, id: i32) {
+        if self.pos == self.frame as u64 {
+            self.stagger = stagger_of(id, self.hop_size);
+            self.next_frame = self.frame as u64 + first_frame(self.hop_size, self.stagger);
+        }
+    }
+}
+
 /// Inverse-transforms each fresh spectral frame and overlap-adds it back to
 /// audio. Input: `[chain]` -- the chain wire, which only carries ordering (the
 /// live frame is the synth-private [`SpectralChain`] the synth passes in). The
-/// window size, hop and type are the chain's; the synthesis window is the
-/// chain's too, frame by frame, so it matches the analysis window through a
-/// live change. A `window` command addressed to `IFFT` does nothing: the
-/// window is changed at the chain's `FFT`.
+/// transform size, frame, hop and window are the chain's; the synthesis
+/// window is the chain's too, frame by frame, so it matches the analysis
+/// window through a live change. A `window` command addressed to `IFFT` does
+/// nothing: the window is changed at the chain's `FFT`. Of a zero-padded
+/// transform it keeps the frame's own samples, as scsynth's does.
 ///
-/// The output is the input position one window behind the synth's own time:
+/// The output is the input position one frame behind the synth's own time:
 /// by then every frame that covers that position has been added (the last
 /// one ends there), so each sample leaves complete, and the latency is
-/// exactly `winsize` however the blocks were sliced.
+/// exactly the frame length however the blocks were sliced.
+///
+/// The overlap is normalized by the windows the frames carry: the analysis
+/// and the synthesis window multiplied (`sum w^2`) for an analysed chain,
+/// the synthesis window alone (`sum w`) for one an `FFTTrigger` opened,
+/// whose frames were written, not windowed.
 pub struct Ifft {
-    winsize: usize,
+    frame: usize,
     hop_size: usize,
+    /// The power the overlap sums the window to: 2 for an analysed chain, 1
+    /// for a written one.
+    power: i32,
     window_kind: Window,
     window: Vec<f32>,
     /// The window before the chain's last change, and its `norm`: the
@@ -360,19 +491,22 @@ pub struct Ifft {
     /// The chain's `window_from` this `IFFT` has followed.
     window_from: u64,
     /// Overlap-add accumulator indexed by input position (modulo its length,
-    /// two windows: a frame writes up to one window ahead of the position
+    /// two frames: a frame writes up to one frame ahead of the position
     /// being read, never onto one not read yet). A slot is cleared as it is
     /// read.
     ring: Vec<f32>,
     /// The steady-state overlap-add normalization (COLA), one value per hop
-    /// phase: `norm[r] = sum_i window[r + i*hop]^2` over the frames that overlap
-    /// output phase `r`. Precomputed at build (constant per render), so dividing
-    /// by it never over-amplifies the under-overlapped edges of the startup or a
-    /// spectrally modified frame -- unlike a running per-sample window sum.
+    /// phase: `norm[r] = sum_i window[r + i*hop]^power` over the frames that
+    /// overlap output phase `r`. Precomputed at build (constant per render), so
+    /// dividing by it never over-amplifies the under-overlapped edges of a
+    /// gated stretch or a spectrally modified frame -- unlike a running
+    /// per-sample window sum.
     norm: Vec<f32>,
-    /// Time-domain scratch for the inverse transform.
+    /// Time-domain scratch for the inverse transform (the transform size).
     time: Vec<f32>,
-    /// Samples output since the synth started -- the same clock the chain's
+    fft: fft::FftScratch,
+    /// The output position: `frame` before the synth's first sample, plus
+    /// the samples output since -- the same clock the chain's
     /// [`SpectralChain::pos`] counts in.
     now: u64,
     /// Where the first frame starts: the origin of the hop phase `norm` is
@@ -382,25 +516,29 @@ pub struct Ifft {
 
 impl Ifft {
     pub fn new(config: &UGenConfig) -> Self {
-        let winsize = resolve_fft_size(config.fft_size);
-        let hop_size = resolve_hop(winsize, config.hop);
+        let n = resolve_fft_size(config.fft_size);
+        let frame = resolve_frame(n, config.winsize);
+        let hop_size = resolve_hop(frame, config.hop);
+        let power = if config.written { 1 } else { 2 };
         let window_kind = Window::from_wintype(config.wintype.unwrap_or(0));
-        let mut window = vec![0.0; winsize];
+        let mut window = vec![0.0; frame];
         window_kind.fill(&mut window);
         let mut norm = vec![0.0f32; hop_size];
-        fill_cola_norm(&window, &mut norm);
+        fill_cola_norm(&window, &mut norm, power);
         Self {
-            winsize,
+            frame,
             hop_size,
+            power,
             window_kind,
             prev_window: window.clone(),
             prev_norm: norm.clone(),
             window,
             window_from: 0,
-            ring: vec![0.0; 2 * winsize],
+            ring: vec![0.0; 2 * frame],
             norm,
-            time: vec![0.0; winsize],
-            now: 0,
+            time: vec![0.0; n],
+            fft: fft::FftScratch::new(n),
+            now: frame as u64,
             origin: None,
         }
     }
@@ -414,7 +552,7 @@ impl UGen for Ifft {
         self.window_from = 0;
         self.ring.fill(0.0);
         self.time.fill(0.0);
-        self.now = 0;
+        self.now = self.frame as u64;
         self.origin = None;
     }
 
@@ -439,30 +577,29 @@ impl UGen for Ifft {
             self.prev_norm.copy_from_slice(&self.norm);
             self.window_kind = chain.window;
             self.window_kind.fill(&mut self.window);
-            fill_cola_norm(&self.window, &mut self.norm);
+            fill_cola_norm(&self.window, &mut self.norm, self.power);
             self.window_from = chain.window_from;
         }
         if chain.ready {
-            fft::irfft_into(&chain.frame, &mut self.time);
+            fft::irfft_with(&chain.frame, &mut self.time, &mut self.fft);
             // Overlap-add the windowed reconstruction where the frame sits.
-            // It only reaches positions at or after `pos - winsize`, which no
+            // It only reaches positions at or after `pos - frame`, which no
             // output earlier in this slice reads.
-            let start = chain.pos - self.winsize as u64;
+            let start = chain.pos - self.frame as u64;
             self.origin.get_or_insert(start);
-            for k in 0..self.winsize {
+            for k in 0..self.frame {
                 let slot = ((start + k as u64) % len) as usize;
                 self.ring[slot] += self.time[k] * self.window[k];
             }
         }
         for o in output.iter_mut() {
-            // Position `now - winsize` is complete: the last frame covering
+            // Position `now - frame` is complete: the last frame covering
             // it ends at `now` at the latest. Normalize by the COLA
             // denominator of the frames on the grid that cover it -- taken or
-            // not, and before the first one too. Dividing by that *full*
-            // overlap sum (not a running partial one) means an incompletely
-            // overlapped startup or a spectrally modified frame fades cleanly
-            // instead of blowing up where the window is small.
-            *o = match (self.now.checked_sub(self.winsize as u64), self.origin) {
+            // not. Dividing by that *full* overlap sum (not a running partial
+            // one) means a gated stretch or a spectrally modified frame fades
+            // cleanly instead of blowing up where the window is small.
+            *o = match (self.now.checked_sub(self.frame as u64), self.origin) {
                 (Some(j), Some(origin)) if j >= origin => {
                     let slot = (j % len) as usize;
                     let v = self.ring[slot] / self.norm_at(j, origin);
@@ -476,18 +613,19 @@ impl UGen for Ifft {
     }
 
     fn latency(&self) -> usize {
-        self.winsize
+        self.frame
     }
 }
 
 impl Ifft {
     /// The overlap-add denominator at input position `j`: the sum of the
-    /// squared windows of the grid frames covering it (ends in `(j, j +
-    /// winsize]`), each with the window it was analysed with. Away from a
-    /// window change every such frame used one window, and the precomputed
-    /// per-phase sum is that sum; across one, it is added up frame by frame.
+    /// windows (to the chain's power) of the grid frames covering it (ends
+    /// in `(j, j + frame]`), each with the window it was analysed with. Away
+    /// from a window change every such frame used one window, and the
+    /// precomputed per-phase sum is that sum; across one, it is added up
+    /// frame by frame.
     fn norm_at(&self, j: u64, origin: u64) -> f32 {
-        let (w, hop) = (self.winsize as u64, self.hop_size as u64);
+        let (w, hop) = (self.frame as u64, self.hop_size as u64);
         let r = ((j - origin) % hop) as usize;
         let from = self.window_from;
         if from == 0 || j + 1 >= from {
@@ -507,24 +645,25 @@ impl Ifft {
             } else {
                 self.prev_window[k]
             };
-            sum += c * c;
+            sum += c.powi(self.power);
             end += hop;
         }
         if sum > 1e-9 { sum } else { 1.0 }
     }
 }
 
-/// The steady-state window-power sum per hop phase -- the exact COLA
-/// denominator once the overlap is full -- written into `norm`, one slot per
-/// phase of the hop. Guarded against a zero phase so the division is always
-/// safe. In place, so a window swap on the audio thread can refill it.
-fn fill_cola_norm(window: &[f32], norm: &mut [f32]) {
+/// The steady-state window sum per hop phase, each coefficient to `power`
+/// -- the exact COLA denominator once the overlap is full -- written into
+/// `norm`, one slot per phase of the hop. Guarded against a zero phase so
+/// the division is always safe. In place, so a window swap on the audio
+/// thread can refill it.
+fn fill_cola_norm(window: &[f32], norm: &mut [f32], power: i32) {
     let hop = norm.len();
     for (r, slot) in norm.iter_mut().enumerate() {
         let mut s = 0.0;
         let mut k = r;
         while k < window.len() {
-            s += window[k] * window[k];
+            s += window[k].powi(power);
             k += hop;
         }
         *slot = if s > 1e-9 { s } else { 1.0 };
@@ -543,12 +682,17 @@ pub enum MagMode {
     /// Limit each bin's magnitude **to** the threshold, keeping its phase
     /// (`PV_MagClip`).
     Clip,
+    /// Square each bin's magnitude, keeping its phase (`PV_MagSquared`; no
+    /// threshold input).
+    Squared,
 }
 
-/// A magnitude-threshold spectral filter: `PV_MagAbove`/`PV_MagBelow`/
-/// `PV_MagClip`. Input: `[chain, threshold]`. It transforms the bins failing
-/// the test on each fresh frame; other blocks pass the (unchanged) chain
-/// through.
+/// A per-bin magnitude map: `PV_MagAbove`/`PV_MagBelow`/`PV_MagClip`
+/// (input `[chain, threshold]`, transforming the bins failing the test) and
+/// `PV_MagSquared` (input `[chain]`). It acts on each fresh frame; other
+/// blocks pass the (unchanged) chain through. The phase is kept by scaling
+/// the complex bin, exactly, where scsynth converts to polar and back with
+/// its table approximations.
 pub struct PvMag {
     mode: MagMode,
 }
@@ -561,7 +705,7 @@ impl PvMag {
 
 /// Zeroes bin `b` (its slot(s)) in the packed frame.
 #[inline]
-fn zero_bin(frame: &mut [f32], b: usize, half: usize) {
+pub(crate) fn zero_bin(frame: &mut [f32], b: usize, half: usize) {
     if b == 0 {
         frame[0] = 0.0; // DC
     } else if b == half {
@@ -574,7 +718,7 @@ fn zero_bin(frame: &mut [f32], b: usize, half: usize) {
 
 /// Magnitude of bin `b` in the packed frame.
 #[inline]
-fn bin_mag(frame: &[f32], b: usize, half: usize) -> f32 {
+pub(crate) fn bin_mag(frame: &[f32], b: usize, half: usize) -> f32 {
     if b == 0 {
         frame[0].abs()
     } else if b == half {
@@ -586,7 +730,7 @@ fn bin_mag(frame: &[f32], b: usize, half: usize) -> f32 {
 
 /// Bin `b` of the packed frame as a complex pair (DC/Nyquist are real-only).
 #[inline]
-fn get_bin(frame: &[f32], b: usize, half: usize) -> (f32, f32) {
+pub(crate) fn get_bin(frame: &[f32], b: usize, half: usize) -> (f32, f32) {
     if b == 0 {
         (frame[0], 0.0)
     } else if b == half {
@@ -599,7 +743,7 @@ fn get_bin(frame: &[f32], b: usize, half: usize) -> (f32, f32) {
 /// Writes bin `b` of the packed frame (the imaginary part is dropped on the
 /// real-only DC/Nyquist slots).
 #[inline]
-fn set_bin(frame: &mut [f32], b: usize, half: usize, re: f32, im: f32) {
+pub(crate) fn set_bin(frame: &mut [f32], b: usize, half: usize, re: f32, im: f32) {
     if b == 0 {
         frame[0] = re;
     } else if b == half {
@@ -612,7 +756,7 @@ fn set_bin(frame: &mut [f32], b: usize, half: usize, re: f32, im: f32) {
 
 /// Scales bin `b` by the real factor `s` (magnitude change, phase kept).
 #[inline]
-fn scale_bin(frame: &mut [f32], b: usize, half: usize, s: f32) {
+pub(crate) fn scale_bin(frame: &mut [f32], b: usize, half: usize, s: f32) {
     if b == 0 {
         frame[0] *= s;
     } else if b == half {
@@ -638,11 +782,12 @@ impl UGen for PvMag {
         chain: &mut SpectralChain,
     ) {
         if chain.ready {
-            let thresh = at(inputs[1], 0);
+            let thresh = inputs.get(1).map_or(0.0, |i| at(i, 0));
             let half = chain.winsize / 2;
             for b in 0..=half {
                 let mag = bin_mag(&chain.frame, b, half);
                 match self.mode {
+                    MagMode::Squared => scale_bin(&mut chain.frame, b, half, mag),
                     MagMode::Above if mag < thresh => zero_bin(&mut chain.frame, b, half),
                     MagMode::Below if mag > thresh => zero_bin(&mut chain.frame, b, half),
                     MagMode::Clip if mag > thresh && mag > 0.0 => {
@@ -675,7 +820,21 @@ pub enum CombineOp {
     MagMul,
     /// A's magnitudes with B's phases (`PV_CopyPhase`).
     CopyPhase,
+    /// Complex division A / B (`PV_Div`), as `A * conj(B) / (|B|^2 + eps)`:
+    /// exact wherever B is not silent, and 0 where it is, where scsynth's
+    /// plain quotient gives infinity or NaN.
+    Div,
+    /// A's magnitudes divided by B's, each B magnitude floored at input 2,
+    /// `zeroed` (`PV_MagDiv`), A's phases kept. scsynth floors DC and
+    /// Nyquist by their signed value, so a negative one divides by the floor;
+    /// here every bin is floored by its magnitude.
+    MagDiv,
 }
+
+/// What a [`CombineOp::Div`] adds to `|B|^2`: far below any bin a signal
+/// produces, so the quotient is exact to f32 there, and it keeps a silent B
+/// bin from dividing by zero.
+const DIV_EPS: f32 = 1e-20;
 
 impl CombineOp {
     /// The name the operator is registered under.
@@ -687,6 +846,8 @@ impl CombineOp {
             CombineOp::Max => "PV_Max",
             CombineOp::MagMul => "PV_MagMul",
             CombineOp::CopyPhase => "PV_CopyPhase",
+            CombineOp::Div => "PV_Div",
+            CombineOp::MagDiv => "PV_MagDiv",
         }
     }
 }
@@ -754,7 +915,7 @@ impl UGen for PvCombine {
     fn process_spectral_pair(
         &mut self,
         _ctx: &mut ProcessCtx,
-        _inputs: &[&[f32]],
+        inputs: &[&[f32]],
         output: &mut [f32],
         a: &mut SpectralChain,
         b: &mut SpectralChain,
@@ -771,6 +932,7 @@ impl UGen for PvCombine {
         } else if a.ready {
             self.reported = false;
             let half = a.winsize / 2;
+            let zeroed = inputs.get(2).map_or(0.0001, |i| at(i, 0));
             for k in 0..=half {
                 let (ar, ai) = get_bin(&a.frame, k, half);
                 let (br, bi) = get_bin(&b.frame, k, half);
@@ -798,6 +960,14 @@ impl UGen for PvCombine {
                             (ma, 0.0) // B is silent: keep A's magnitude at phase 0.
                         }
                     }
+                    CombineOp::Div => {
+                        let d = br * br + bi * bi + DIV_EPS;
+                        ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+                    }
+                    CombineOp::MagDiv => {
+                        let mb = (br * br + bi * bi).sqrt().max(zeroed);
+                        (ar / mb, ai / mb)
+                    }
                 };
                 set_bin(&mut a.frame, k, half, re, im);
             }
@@ -824,9 +994,15 @@ impl UGen for PvCombine {
 /// chain through; while `freeze > 0` every bin is rescaled to the stored
 /// magnitude, phases left running -- the spectral envelope holds while the
 /// texture keeps moving.
+///
+/// The first frame is always stored, frozen or not (scsynth's rule): a
+/// chain frozen from its start holds its first spectrum rather than
+/// silence.
 pub struct PvMagFreeze {
     /// Stored magnitudes, one per bin (`half + 1`), captured un-frozen.
     mags: Vec<f32>,
+    /// Whether a frame has been stored yet.
+    stored: bool,
 }
 
 impl PvMagFreeze {
@@ -834,6 +1010,7 @@ impl PvMagFreeze {
         let winsize = resolve_fft_size(config.fft_size);
         Self {
             mags: vec![0.0; winsize / 2 + 1],
+            stored: false,
         }
     }
 }
@@ -841,6 +1018,7 @@ impl PvMagFreeze {
 impl UGen for PvMagFreeze {
     fn reset(&mut self) {
         self.mags.fill(0.0);
+        self.stored = false;
     }
 
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
@@ -855,7 +1033,8 @@ impl UGen for PvMagFreeze {
         chain: &mut SpectralChain,
     ) {
         if chain.ready {
-            let freeze = at(inputs[1], 0) > 0.0;
+            let freeze = self.stored && at(inputs[1], 0) > 0.0;
+            self.stored = true;
             let half = chain.winsize / 2;
             for b in 0..=half {
                 let mag = bin_mag(&chain.frame, b, half);
@@ -940,10 +1119,16 @@ impl UGen for PvMagSmear {
 
 /// Remaps bin positions (`PV_BinShift` / `PV_MagShift`): destination bin
 /// `round(b*stretch + shift)`, colliding bins summed, out-of-range bins
-/// dropped. Inputs: `[chain, stretch, shift]`. One implementation, two
-/// registered names -- `PV_BinShift` moves the full complex bins (phases
-/// travel with their magnitudes), `PV_MagShift` (`mags_only`) remaps only the
-/// magnitude envelope onto the frame's original phases.
+/// dropped. Inputs: `[chain, stretch, shift]`, and `interp` on `PV_BinShift`:
+/// above 0 a bin lands on the two bins around `b*stretch + shift`, split
+/// linearly between them. One implementation, two registered names --
+/// `PV_BinShift` moves the full complex bins (phases travel with their
+/// magnitudes), `PV_MagShift` (`mags_only`) remaps only the magnitude
+/// envelope onto the frame's original phases.
+///
+/// The map is taken from DC, so `stretch` scales frequency: scsynth's starts
+/// it at bin 1 (`shift + (b - 1)*stretch`) and leaves DC and Nyquist where
+/// they are, so its `stretch` 2 sends bin 2 to 3 rather than 4.
 pub struct PvBinShift {
     mags_only: bool,
     /// Remap scratch: a full packed frame (complex mode) or `half + 1`
@@ -980,10 +1165,27 @@ impl UGen for PvBinShift {
         if chain.ready {
             let stretch = at(inputs[1], 0);
             let shift = at(inputs[2], 0);
+            let interp = !self.mags_only && inputs.get(3).is_some_and(|i| at(i, 0) > 0.0);
             let half = chain.winsize / 2;
             self.scratch.fill(0.0);
             for b in 0..=half {
-                let t = (b as f32 * stretch + shift).round();
+                let pos = b as f32 * stretch + shift;
+                if interp {
+                    // Split between the two bins around the position.
+                    let lo = pos.floor();
+                    let beta = pos - lo;
+                    let (re, im) = get_bin(&chain.frame, b, half);
+                    for (t, w) in [(lo, 1.0 - beta), (lo + 1.0, beta)] {
+                        if t < 0.0 || t > half as f32 || w == 0.0 {
+                            continue;
+                        }
+                        let t = t as usize;
+                        let (tr, ti) = get_bin(&self.scratch, t, half);
+                        set_bin(&mut self.scratch, t, half, tr + w * re, ti + w * im);
+                    }
+                    continue;
+                }
+                let t = pos.round();
                 if t < 0.0 || t > half as f32 {
                     continue;
                 }
@@ -1113,50 +1315,6 @@ impl UGen for PvKernel {
                         new_mag * new_phase.cos(),
                         new_mag * new_phase.sin(),
                     );
-                }
-            }
-        }
-        if let Some(o) = output.first_mut() {
-            *o = if chain.ready { 1.0 } else { 0.0 };
-        }
-    }
-}
-
-/// A brick-wall band limiter: `PV_BrickWall`. Input: `[chain, wipe]` with
-/// `wipe` in `-1..1`. `wipe > 0` zeroes the top `wipe` fraction of bins (a low
-/// pass); `wipe < 0` zeroes the bottom `|wipe|` fraction (a high pass);
-/// `wipe == 0` passes everything.
-pub struct PvBrickWall;
-
-impl UGen for PvBrickWall {
-    fn reset(&mut self) {}
-
-    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        output.fill(0.0);
-    }
-
-    fn process_spectral(
-        &mut self,
-        _ctx: &mut ProcessCtx,
-        inputs: &[&[f32]],
-        output: &mut [f32],
-        chain: &mut SpectralChain,
-    ) {
-        if chain.ready {
-            let wipe = at(inputs[1], 0).clamp(-1.0, 1.0);
-            let half = chain.winsize / 2;
-            let nbins = (half + 1) as f32;
-            if wipe > 0.0 {
-                // Low pass: zero bins above the cutoff.
-                let cutoff = (nbins * (1.0 - wipe)).round() as usize;
-                for b in cutoff..=half {
-                    zero_bin(&mut chain.frame, b, half);
-                }
-            } else if wipe < 0.0 {
-                // High pass: zero bins below the cutoff.
-                let cutoff = (nbins * (-wipe)).round() as usize;
-                for b in 0..cutoff.min(half + 1) {
-                    zero_bin(&mut chain.frame, b, half);
                 }
             }
         }

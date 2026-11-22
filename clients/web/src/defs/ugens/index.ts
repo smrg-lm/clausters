@@ -425,6 +425,33 @@ export {
     conv,
     fft,
     ifft,
+    fftTrigger,
+    packFft,
+    partConv,
+    stereoConvolution2L,
+    pvMagSquared,
+    pvMagNoise,
+    pvConj,
+    pvPhaseShift90,
+    pvPhaseShift270,
+    pvPhaseShift,
+    pvDiv,
+    pvMagDiv,
+    pvBinWipe,
+    pvRectComb,
+    pvRectComb2,
+    pvRandComb,
+    pvRandWipe,
+    pvBinScramble,
+    pvDiffuser,
+    pvLocalMax,
+    pvConformalMap,
+    pvCopy,
+    unpack1Fft,
+    convolution,
+    convolution2,
+    convolution2L,
+    convolution3,
     partconvFrames,
     pvAdd,
     pvBinShift,
@@ -442,7 +469,7 @@ export {
     pvMin,
     pvMul,
 } from "./spectral.ts";
-export type { ConvOptions, FftOptions, PvKernelOptions } from "./spectral.ts";
+export type { ConvOptions, FftOptions, PartConvOptions, PvKernelOptions } from "./spectral.ts";
 
 export {
     Bpf,
@@ -497,6 +524,7 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "SetBuf",
     "Dser",
     "Dwrand",
+    "PackFFT",
 ]);
 
 /** Lazily built `kind -> [parameter name, ...]` -- see {@link ugenInputNames}. */

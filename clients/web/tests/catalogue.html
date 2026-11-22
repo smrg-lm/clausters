@@ -121,14 +121,14 @@
         //
         // The same graph as the Python client's `chain.py`: noise analysed
         // by `fft`, band-limited *in the spectral domain* by `pvBrickWall`
-        // (`wipe > 0` zeroes the top fraction of bins) and resynthesised by
+        // (`wipe < 0` zeroes the top fraction of bins) and resynthesised by
         // `ifft`. The frame is synth-private scratch, so only `fft` names a
         // size and nothing is allocated.
         const noise = () => whiteNoise().mul(0.2);
         await new SynthDef("cat_raw", out(0.0, noise())).send(server);
         await new SynthDef("cat_lp", out(0.0, ifft(pvBrickWall(
           fft(noise(), 1.0, { fftSize: 1024, hop: 0.5, wintype: 0 }),
-          0.75 // keep the bottom quarter of the bins
+          -0.75 // keep the bottom quarter of the bins
         )))).send(server);
         await server.sync();
 

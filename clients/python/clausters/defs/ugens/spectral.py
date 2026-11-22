@@ -5,7 +5,7 @@ in place and `ifft` closes it back to samples. The frame is synth-private
 scratch, which is why only `fft` names a size.
 """
 
-from .graph import Ugen
+from .graph import ChannelList, Ugen, chans
 from ._generated.spectral import *  # noqa: F403 -- the builders that mirror the wire
 
 # ---- frequency-domain chain: FFT / PV_* / IFFT ----
@@ -15,24 +15,57 @@ from ._generated.spectral import *  # noqa: F403 -- the builders that mirror the
 # the window size, and the server propagates it down the chain.
 
 
-def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
+def _frame_fields(fft_size, hop, wintype, winsize) -> dict:
+    static = {"fft_size": int(fft_size), "hop": float(hop), "wintype": int(wintype)}
+    if winsize is not None:
+        static["winsize"] = int(winsize)
+    return static
+
+
+def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0, winsize=None) -> Ugen:
     """Opens a spectral chain: windows ``source`` (an audio signal) and
     transforms it to a spectral frame once per **hop**. ``active`` gates the
     input, per sample: ``<= 0`` is analysed as silence, so the round trip is
     the gated input exactly, and a frame whose whole window was gated is not
     taken -- the chain does no work while it stays off. ``fft_size`` is the
-    window size (a power of two: 256/512/1024/2048/4096), ``hop`` the fraction
-    of the window between frames (in (0, 1], and at least one 64-sample block:
-    0.25 of 256), ``wintype`` the window (a `clausters._native.Window`: 0 Hann,
-    1 sine, ...). These size the transform, so they are static fields given
-    **only here** -- the server propagates them to the rest of the chain. The
-    chain's window is also settable live with `Server.u_cmd` addressed to this
-    ``fft`` (the `ifft` follows it). Feed the result to a ``pv_*`` filter or
-    `ifft`."""
-    return Ugen(
-        "FFT", [source, active],
-        static={"fft_size": int(fft_size), "hop": float(hop), "wintype": int(wintype)},
-    )
+    transform size (a power of two from 64 to 32768), ``winsize`` the frame
+    of signal windowed, when shorter (at least one 64-sample block; the
+    transform pads it with zeros, a finer grid of bins over the same
+    stretch of time), ``hop`` the fraction of the frame between frames (in
+    (0, 1], and at least one 64-sample block: 0.25 of 256), ``wintype`` the
+    window (a `clausters._native.Window`: 0 Hann, 1 sine, ...). These size the
+    transform, so they are static fields given **only here** -- the server
+    propagates them to the rest of the chain. The chain's window is also
+    settable live with `Server.u_cmd` addressed to this ``fft`` (the `ifft`
+    follows it). Feed the result to a ``pv_*`` filter or `ifft`."""
+    return Ugen("FFT", [source, active], static=_frame_fields(fft_size, hop, wintype, winsize))
+
+
+def fft_trigger(*, fft_size=1024, hop=0.5, wintype=0, winsize=None) -> Ugen:
+    """Opens a spectral chain whose frames are **written**, not analysed: it
+    marks the frame fresh once per hop and leaves its bins to what follows --
+    `pack_fft` setting them, or a `pv_kernel` program computing them -- and
+    an `ifft` resynthesizes them like any other frame. The fields are
+    `fft`'s. The frame starts silent and keeps what was written into it from
+    one hop to the next. Its frames carry no analysis window, so the `ifft`
+    normalizes their overlap by the synthesis window alone: a bin of
+    magnitude ``m`` comes back as a partial of amplitude ``2 * m /
+    fft_size``."""
+    return Ugen("FFTTrigger", [], static=_frame_fields(fft_size, hop, wintype, winsize))
+
+
+def pack_fft(chain, mags_phases, frombin=0, tobin=None, zeroothers=0) -> Ugen:
+    """Writes a run of bins from signals: ``mags_phases`` is the flat list
+    ``[mag0, phase0, mag1, phase1, ...]``, pair ``j`` setting bin
+    ``frombin + j`` (up to ``tobin``, by default the last pair's), read at
+    each frame. With ``zeroothers`` above 0 every other bin is zeroed. DC and
+    Nyquist, which are real, take ``mag * cos(phase)``. Usually on an
+    `fft_trigger` chain, so the frame is what the def writes; on an analysed
+    one it replaces the bins it names."""
+    values = list(mags_phases)
+    if tobin is None:
+        tobin = frombin + len(values) // 2 - 1
+    return Ugen("PackFFT", [chain, frombin, tobin, zeroothers, *values])
 
 
 def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
@@ -98,6 +131,25 @@ def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
         "Conv", [source, kernel],
         static={"fft_size": int(fft_size), "partitions": int(partitions)},
     )
+
+
+def part_conv(source, fftsize, irbufnum, *, partitions=16) -> Ugen:
+    """`conv` with scsynth's `PartConv` inputs: ``fftsize`` (a constant, a
+    supported power of two) and ``irbufnum``, a kernel prepared with
+    ``dest.gen("prepare_partconv", fftsize, ir_bufnum)``. ``partitions`` is
+    the most partitions a kernel may have, `conv`'s."""
+    return Ugen("PartConv", [source, fftsize, irbufnum], static={"partitions": int(partitions)})
+
+
+def stereo_convolution2_l(source, kernel_l, kernel_r, trigger=0.0, framesize=2048, crossfade=1.0) -> ChannelList:
+    """`convolution2_l` with a kernel per channel: ``source`` convolved with
+    the samples of buffer ``kernel_l`` on the left and ``kernel_r`` on the
+    right, both read at the start and again at each ``trigger`` and faded
+    in over ``crossfade`` frames. Returns the two channels."""
+    return chans(*(
+        Ugen("StereoConvolution2L", [source, kernel_l, kernel_r, trigger, framesize, crossfade, c])
+        for c in (0.0, 1.0)
+    ))
 
 
 def partconv_frames(ir_frames: int, fft_size: int = 1024) -> int:

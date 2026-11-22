@@ -85,6 +85,21 @@ const STATELESS: &[(&str, &str)] = &[
     ("PV_MagBelow", "per frame, no memory"),
     ("PV_MagClip", "per frame, no memory"),
     ("PV_BrickWall", "per frame, no memory"),
+    ("PV_MagSquared", "per frame, no memory"),
+    ("PV_Conj", "per frame, no memory"),
+    ("PV_PhaseShift90", "per frame, no memory"),
+    ("PV_PhaseShift270", "per frame, no memory"),
+    ("PV_Div", "per frame, no memory"),
+    ("PV_MagDiv", "per frame, no memory"),
+    ("PV_BinWipe", "per frame, no memory"),
+    ("PV_RectComb", "per frame, no memory"),
+    ("PV_RectComb2", "per frame, no memory"),
+    ("PV_ConformalMap", "per frame, no memory"),
+    (
+        "PV_LocalMax",
+        "its magnitudes are scratch, rewritten every frame",
+    ),
+    ("PackFFT", "writes its inputs into every frame"),
     ("Dswitch1", "its position is its inputs'"),
     ("LinExp", "arithmetic"),
     ("InRange", "arithmetic"),
@@ -183,6 +198,11 @@ const STOCHASTIC: &[&str] = &[
     "Gendy1",
     "Gendy2",
     "Gendy3",
+    "PV_MagNoise",
+    "PV_RandComb",
+    "PV_RandWipe",
+    "PV_BinScramble",
+    "PV_Diffuser",
 ];
 
 /// Kinds whose state is not the voice's to reset.
@@ -292,7 +312,7 @@ fn prepared(ir: &[f32], fft_size: usize) -> Buffer {
 }
 
 /// Buffers 0 and 1: wavetables; 2: plain samples; 3: a prepared kernel; 4: a
-/// short buffer a recorder fills and finishes.
+/// short buffer a recorder fills and finishes; 5: a short raw kernel.
 fn pool() -> Vec<Option<Arc<Buffer>>> {
     let table = |f: &dyn Fn(f32) -> f32| {
         let period: Vec<f32> = (0..512)
@@ -313,6 +333,7 @@ fn pool() -> Vec<Option<Arc<Buffer>>> {
         Some(Arc::new(Buffer::new(samples, 1, 4096, SR as f64))),
         Some(Arc::new(prepared(&ir, 256))),
         Some(Arc::new(Buffer::zeroed(1000, 1, SR as f64))),
+        Some(Arc::new(Buffer::new(ir[..64].to_vec(), 1, 64, SR as f64))),
     ]
 }
 
@@ -1037,6 +1058,41 @@ fn cases() -> Vec<Case> {
             json!([input(), {"kind": "Conv", "inputs": [u(0), c(3.0)], "fft_size": 256}, out(1)]),
         )
         .source("noise"),
+        Case::new(
+            "convrows",
+            json!([input(),
+                {"kind": "Convolution2", "inputs": [u(0), c(5.0), c(0.0), c(64.0)]},
+                {"kind": "Convolution2L", "inputs": [u(1), c(5.0), c(0.0), c(64.0), c(1.0)]},
+                {"kind": "StereoConvolution2L",
+                 "inputs": [u(2), c(5.0), c(5.0), c(0.0), c(64.0), c(1.0), c(1.0)]},
+                {"kind": "Convolution3", "inputs": [u(3), c(5.0), c(0.0), c(64.0)]},
+                {"kind": "Convolution", "inputs": [u(4), u(0), c(64.0)]},
+                {"kind": "PartConv", "inputs": [u(5), c(256.0), c(3.0)]},
+                out(6)]),
+        )
+        .source("noise"),
+        Case::new(
+            "pvchain",
+            json!([input(),
+                {"kind": "FFT", "inputs": [u(0)]},
+                {"kind": "PV_PhaseShift", "inputs": [u(1), c(0.3), c(1.0)]},
+                {"kind": "PV_Copy", "inputs": [u(2)]},
+                {"kind": "IFFT", "inputs": [u(3)]},
+                {"kind": "Unpack1FFT", "inputs": [u(2), c(5.0), c(0.0)]},
+                {"kind": "Mul", "inputs": [u(5), c(0.001)]},
+                {"kind": "Add", "inputs": [u(4), u(6)]},
+                out(7)]),
+        )
+        .source("noise"),
+        Case::new(
+            "fftwriter",
+            json!([
+                {"kind": "FFTTrigger", "inputs": [], "fft_size": 512},
+                {"kind": "PackFFT", "inputs": [u(0), c(4.0), c(5.0), c(1.0),
+                                               c(30.0), c(0.0), c(20.0), c(1.0)]},
+                {"kind": "IFFT", "inputs": [u(1)]},
+                out(2)]),
+        ),
     ]
     .into_iter()
     .chain(chaos_cases())

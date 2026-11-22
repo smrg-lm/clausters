@@ -41,9 +41,9 @@ kind = "PV_BrickWall"
 builder = "pv_brick_wall"
 required = ["chain", "wipe"]
 doc = '''
-Brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (a low
-pass), `wipe < 0` the bottom (a high pass), `0` passes everything
-(`wipe` in -1..1).
+Brick-wall band limit: `wipe > 0` zeroes that fraction of the bins from
+the bottom up, DC included (a high pass), `wipe < 0` from the top down,
+Nyquist included (a low pass), `0` passes everything (`wipe` in -1..1).
 '''
 
 [[ugen]]
@@ -116,7 +116,8 @@ required = ["chain"]
 doc = '''
 While `freeze <= 0` stores each frame's magnitudes and passes through;
 while `> 0` rescales every bin to the stored magnitudes -- the spectral
-envelope holds while the phases keep running.
+envelope holds while the phases keep running. The first frame is always
+stored, so a chain frozen from its start holds its first spectrum.
 '''
 
 [[ugen]]
@@ -135,7 +136,9 @@ required = ["chain"]
 doc = '''
 Remaps bin `b` to `round(b * stretch + shift)`: colliding bins sum,
 out-of-range bins are dropped. `stretch=1, shift=0` is transparent; a
-positive `shift` moves every partial up by `shift` bin widths.
+positive `shift` moves every partial up by `shift` bin widths. With
+`interp` above 0 a bin is split between the two bins around
+`b * stretch + shift`, in proportion to how near it lands to each.
 '''
 
 [[ugen]]
@@ -146,6 +149,242 @@ doc = '''
 The `pv_bin_shift` remap applied to the magnitude envelope only, laid
 over the frame's original phases.
 '''
+
+[[ugen]]
+kind = "PV_MagSquared"
+builder = "pv_mag_squared"
+required = ["chain"]
+doc = '''
+Squares every bin's magnitude, phases kept: the loud partials stand out
+further from the rest (and the frame's level rises with its square).
+'''
+
+[[ugen]]
+kind = "PV_MagNoise"
+builder = "pv_mag_noise"
+required = ["chain"]
+doc = '''
+Multiplies every bin by its own random factor in `[-1, 1)`, drawn again
+each frame: the spectrum's shape turned to noise.
+'''
+
+[[ugen]]
+kind = "PV_Conj"
+builder = "pv_conj"
+required = ["chain"]
+doc = '''
+The complex conjugate of every bin: each phase negated, which plays each
+frame backwards in time (DC and Nyquist, which are real, stay).
+'''
+
+[[ugen]]
+kind = "PV_PhaseShift90"
+builder = "pv_phase_shift90"
+required = ["chain"]
+doc = '''
+Turns every bin's phase a quarter turn forward (DC and Nyquist stay).
+'''
+
+[[ugen]]
+kind = "PV_PhaseShift270"
+builder = "pv_phase_shift270"
+required = ["chain"]
+doc = '''
+Turns every bin's phase a quarter turn back (DC and Nyquist stay).
+'''
+
+[[ugen]]
+kind = "PV_PhaseShift"
+builder = "pv_phase_shift"
+required = ["chain", "shift"]
+doc = '''
+Turns every bin's phase by `shift` radians. With `integrate` above 0 the
+shift adds up from frame to frame, so a constant `shift` keeps turning.
+'''
+
+[[ugen]]
+kind = "PV_Div"
+builder = "pv_div"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: per-bin complex division, A / B (a deconvolution).
+A bin where B is silent is 0.
+'''
+
+[[ugen]]
+kind = "PV_MagDiv"
+builder = "pv_mag_div"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: A's magnitudes divided by B's, A's phases kept; each
+B magnitude is taken as at least `zeroed`, so a quiet bin of B does not
+blow up.
+'''
+
+[[ugen]]
+kind = "PV_BinWipe"
+builder = "pv_bin_wipe"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: A with a run of B's bins in it. `wipe > 0` takes that
+fraction of B's bins from the bottom up, `wipe < 0` from the top down;
+`0` is A, `1` or `-1` is B.
+'''
+
+[[ugen]]
+kind = "PV_RectComb"
+builder = "pv_rect_comb"
+required = ["chain"]
+doc = '''
+A comb over the bins: `num_teeth` teeth across the spectrum, the comb
+starting at `phase` and each tooth `width` of a period wide (both
+fractions of a period); the bins between the teeth are zeroed.
+'''
+
+[[ugen]]
+kind = "PV_RectComb2"
+builder = "pv_rect_comb2"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: `pv_rect_comb`'s comb, with the bins between the
+teeth taken from B instead of zeroed.
+'''
+
+[[ugen]]
+kind = "PV_RandComb"
+builder = "pv_rand_comb"
+required = ["chain"]
+doc = '''
+Zeroes a random `wipe` fraction of the bins, chosen in an order drawn at
+the first frame and again at each `trig`; at `wipe=1` every bin is zeroed.
+'''
+
+[[ugen]]
+kind = "PV_RandWipe"
+builder = "pv_rand_wipe"
+required = ["chain_a", "chain_b"]
+doc = '''
+Two-chain combiner: a random `wipe` fraction of the bins taken from B, in
+an order drawn at the first frame and again at each `trig`; `0` is A,
+`1` is B.
+'''
+
+[[ugen]]
+kind = "PV_BinScramble"
+builder = "pv_bin_scramble"
+required = ["chain"]
+doc = '''
+Moves a random `wipe` fraction of the bins to random places nearby: each
+comes from up to `width` (a fraction of the bins) away. The arrangement
+is drawn at the first frame and again at each `trig`.
+'''
+
+[[ugen]]
+kind = "PV_Diffuser"
+builder = "pv_diffuser"
+required = ["chain"]
+doc = '''
+Turns each bin's phase by its own random amount, drawn at the first
+frame and again at each `trig`: the magnitudes stay, the transients
+smear.
+'''
+
+[[ugen]]
+kind = "PV_LocalMax"
+builder = "pv_local_max"
+required = ["chain"]
+doc = '''
+Keeps the bins louder than both neighbors and at least `threshold`,
+zeroing the rest: the spectrum's peaks alone.
+'''
+
+[[ugen]]
+kind = "PV_ConformalMap"
+builder = "pv_conformal_map"
+required = ["chain"]
+doc = '''
+Maps each bin `z` to `(z - a) / (1 - conj(a) z)`, with `a` the complex
+number `areal + i aimag`: a Moebius map of the complex plane, a spectral
+distortion with no counterpart in time.
+'''
+
+[[ugen]]
+kind = "PV_Copy"
+builder = "pv_copy"
+required = ["chain"]
+doc = '''
+A copy of `chain` as a chain of its own, so one analysis feeds two
+branches: what the def does to one after the copy leaves the other as
+it was.
+'''
+
+[[ugen]]
+kind = "Unpack1FFT"
+builder = "unpack1_fft"
+required = ["chain", "binindex"]
+doc = '''
+One bin of a frame as a control signal: its magnitude (`whichmeasure=0`)
+or its phase (`1`), updated at each frame and held between them. It
+reads the chain and leaves it as it was.
+'''
+
+[[ugen]]
+kind = "Convolution"
+builder = "convolution"
+required = ["source", "kernel"]
+doc = '''
+Convolves two signals: each `framesize` samples of `source` with the
+same samples of `kernel`, so the response changes as the kernel plays --
+a cross-synthesis. `framesize` (a power of two, a constant) is also the
+latency.
+'''
+
+[[ugen]]
+kind = "Convolution2"
+builder = "convolution2"
+required = ["source", "kernel"]
+doc = '''
+Convolves `source` with the samples in buffer `kernel` (channel 0, at
+most `framesize` of them), read at the start and again at each
+`trigger`, switching at the next frame. `framesize` (a power of two, a
+constant) is the latency; for a longer kernel use `part_conv`.
+'''
+
+[[ugen]]
+kind = "Convolution2L"
+builder = "convolution2_l"
+required = ["source", "kernel"]
+doc = '''
+`convolution2`, fading to a kernel read at a `trigger` over `crossfade`
+frames instead of switching.
+'''
+
+[[ugen]]
+kind = "Convolution3"
+builder = "convolution3"
+required = ["source", "kernel"]
+doc = '''
+Convolves `source` with the samples in buffer `kernel` (channel 0, at
+most `framesize` of them) directly in time: no latency, and a cost per
+sample of the kernel's length, so for short kernels. The kernel is read
+at the start and again at each `trigger`.
+'''
+
+[[hand]]
+kind = "FFTTrigger"
+why = "the frame's size, hop and window are static fields"
+
+[[hand]]
+kind = "PackFFT"
+why = "the magnitude and phase pairs are a list that follows the run's bounds"
+
+[[hand]]
+kind = "PartConv"
+why = "the kernel's partitions are a static field"
+
+[[hand]]
+kind = "StereoConvolution2L"
+why = "built once per output channel, filling `chan`"
 
 [[hand]]
 kind = "FFT"

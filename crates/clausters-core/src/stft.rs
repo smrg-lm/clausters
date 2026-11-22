@@ -61,7 +61,7 @@ pub fn hop_capped(total_samples: usize, window_size: usize, hop: usize) -> usize
 /// `total_samples` at `window_size` and `hop` -- what a caller that fills a
 /// buffer sizes it with. `0` where the analysis has no answer.
 pub fn cache_size(total_samples: usize, window_size: usize, hop: usize) -> usize {
-    if !fft::supports(window_size) || hop == 0 {
+    if !fft::supports_analysis(window_size) || hop == 0 {
         return 0;
     }
     let hop = hop_capped(total_samples, window_size, hop);
@@ -206,9 +206,9 @@ impl Stft {
         wintype: i32,
     ) -> Self {
         assert!(
-            fft::supports(window_size) && hop >= 1,
+            fft::supports_analysis(window_size) && hop >= 1,
             "window_size must be a supported FFT size {:?}",
-            fft::SUPPORTED_SIZES
+            fft::ANALYSIS_SIZES
         );
         let total_samples = samples.len();
         let n_bins = window_size / 2;
@@ -281,7 +281,7 @@ impl Stft {
         sample_rate: f32,
         wintype: i32,
     ) -> Option<Self> {
-        (fft::supports(window_size) && hop >= 1).then(|| {
+        (fft::supports_analysis(window_size) && hop >= 1).then(|| {
             let hop = hop_capped(samples.len(), window_size, hop);
             Self::compute_with(samples, window_size, hop, sample_rate, wintype)
         })

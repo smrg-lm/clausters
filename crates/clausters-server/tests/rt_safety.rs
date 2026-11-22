@@ -412,6 +412,103 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
     });
 }
 
+/// The rest of the `PV_*` set, the frame's writers and reader, a transform
+/// above the stack's size and the convolution rows: their scratch, their
+/// random orders and their kernel banks are allocated at build, so neither
+/// a frame nor a raw kernel's reload at a trigger allocates.
+#[test]
+fn the_pv_set_and_the_convolution_rows_do_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let kernel: Vec<f32> = (0..200).map(|i| 0.97f32.powi(i)).collect();
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::new(kernel, 1, 200, 48_000.0))),
+        })
+        .ok()
+        .unwrap();
+    engine.process_block(&mut out);
+    handle.collect_garbage();
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "pvset",
+            "controls": [{"name": "trig", "default": 0.0}],
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                 "fft_size": 512, "hop": 0.25},
+                {"kind": "PV_Copy", "inputs": [{"ugen": 1}]},
+                {"kind": "PV_PhaseShift", "inputs": [{"ugen": 1}, {"const": 0.3}, {"const": 1.0}]},
+                {"kind": "PV_Conj", "inputs": [{"ugen": 3}]},
+                {"kind": "PV_MagNoise", "inputs": [{"ugen": 4}]},
+                {"kind": "PV_LocalMax", "inputs": [{"ugen": 5}, {"const": 0.1}]},
+                {"kind": "PV_RandComb", "inputs": [{"ugen": 6}, {"const": 0.3}, {"control": 0}]},
+                {"kind": "PV_BinScramble", "inputs": [{"ugen": 7}, {"const": 0.5}, {"const": 0.1}, {"control": 0}]},
+                {"kind": "PV_Diffuser", "inputs": [{"ugen": 8}, {"control": 0}]},
+                {"kind": "PV_ConformalMap", "inputs": [{"ugen": 9}, {"const": 0.2}, {"const": 0.1}]},
+                {"kind": "PV_BinShift", "inputs": [{"ugen": 10}, {"const": 1.2}, {"const": 0.5}, {"const": 1.0}]},
+                {"kind": "PV_RandWipe", "inputs": [{"ugen": 11}, {"ugen": 2}, {"const": 0.4}, {"control": 0}]},
+                {"kind": "PV_MagDiv", "inputs": [{"ugen": 12}, {"ugen": 2}, {"const": 0.01}]},
+                {"kind": "PV_RectComb2", "inputs": [{"ugen": 13}, {"ugen": 2}, {"const": 4.0}, {"const": 0.0}, {"const": 0.5}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 14}]},
+                {"kind": "FFTTrigger", "inputs": [], "fft_size": 8192},
+                {"kind": "PackFFT", "inputs": [{"ugen": 16}, {"const": 10.0}, {"const": 11.0}, {"const": 1.0},
+                    {"const": 100.0}, {"const": 0.0}, {"const": 50.0}, {"const": 1.0}]},
+                {"kind": "Unpack1FFT", "inputs": [{"ugen": 17}, {"const": 10.0}, {"const": 0.0}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 17}]},
+                {"kind": "Convolution2L", "inputs": [{"ugen": 0}, {"const": 0.0}, {"control": 0},
+                    {"const": 256.0}, {"const": 2.0}]},
+                {"kind": "Convolution3", "inputs": [{"ugen": 0}, {"const": 0.0}, {"control": 0}, {"const": 256.0}]},
+                {"kind": "Convolution", "inputs": [{"ugen": 0}, {"ugen": 15}, {"const": 128.0}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 15}, {"ugen": 19}, {"ugen": 20}, {"ugen": 21}]},
+                {"kind": "Add", "inputs": [{"ugen": 23}, {"ugen": 22}]},
+                {"kind": "Add", "inputs": [{"ugen": 24}, {"ugen": 18}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 25}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(
+                Arc::new(compile(spec).unwrap()),
+                48_000.0,
+                SEED_STRIDE,
+            )),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..150 {
+            engine.process_block(&mut out);
+        }
+    });
+    // A trigger: the random orders are drawn again and the raw kernels
+    // reload, on the audio thread.
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 1.0,
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..150 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// Same guardian for the feedback path (`LocalIn`/`LocalOut`): the per-synth
 /// `locals` buffer is allocated at build time (network side); reading and
 /// writing it each block is plain slice copies, no allocation.

@@ -22,7 +22,7 @@ use crate::dsp::buf::{
     BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, ScopeOut, TransportBufRd,
 };
 use crate::dsp::chaos::{Chaos, ChaosInterp, ChaosMap, Logistic};
-use crate::dsp::conv::Conv;
+use crate::dsp::conv::{Conv, ConvKind, DirectConv, SignalConv};
 use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{
     Dbufrd, Dbufwr, Dconst, Demand, DemandEnvGen, Dlist, Dpoll, Dramp, Drandom, Dreset, Dstutter,
@@ -57,6 +57,10 @@ use crate::dsp::osc::{COsc, Osc, OscN, Shaper, VOsc, VOsc3};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
 use crate::dsp::physical::{Ball, BallKind, Spring};
+use crate::dsp::pv::{
+    MaskShape, PackFft, PhaseOp, PvBinScramble, PvConformalMap, PvCopy, PvDiffuser, PvLocalMax,
+    PvMagNoise, PvMask, PvPhase, Unpack1Fft,
+};
 use crate::dsp::rand::SynthRand;
 use crate::dsp::random::{
     CoinGate, Once, OnceKind, RandId, RandSeed, TWindex, Triggered, TriggeredKind,
@@ -75,8 +79,8 @@ use crate::dsp::sections::{
 };
 use crate::dsp::sine::{FSinOsc, PSinGrain, SinOscFb, Sine};
 use crate::dsp::spectral::{
-    CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
-    PvMagFreeze, PvMagSmear,
+    CombineOp, Fft, FftTrigger, Ifft, MagMode, PvBinShift, PvCombine, PvKernel, PvMag, PvMagFreeze,
+    PvMagSmear,
 };
 use crate::dsp::tables::{DegreeToKey, DetectIndex, Index, IndexInBetween, IndexL, IndexMode};
 use crate::dsp::trig::{
@@ -134,6 +138,15 @@ pub struct UGenConfig {
     /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
     /// (Hann). Also settable live via `/node_ugenCmd`. Ignored by every other kind.
     pub wintype: Option<i32>,
+    /// Spectral chain: the frame an `FFT` windows (`winsize`), zero-padded to
+    /// `fft_size`; `None` is the whole transform. Propagated with the rest of
+    /// the chain's shape. Ignored by every other kind.
+    pub winsize: Option<usize>,
+    /// Spectral chain: whether the chain's frames are written rather than
+    /// analysed (an `FFTTrigger` opened it), so its `IFFT` normalizes by the
+    /// synthesis window alone. Set by the compiler. Ignored by every other
+    /// kind.
+    pub written: bool,
     /// `Conv`: FDL capacity in partitions -- the longest prepared kernel
     /// this instance accepts, sizing its pre-allocated state. Ignored by
     /// every other kind.
@@ -360,6 +373,14 @@ pub enum SpectralRole {
     /// Opens a chain: analyses audio into a fresh chain (`FFT`). Gets its own
     /// new chain slot.
     Source,
+    /// Opens a chain whose frames are written, not analysed (`FFTTrigger`):
+    /// a fresh slot, marked ready once per hop; its `IFFT` normalizes by the
+    /// synthesis window alone.
+    Trigger,
+    /// Opens a chain that copies another (`PV_Copy`): input 0 is the source
+    /// chain wire; it gets a new slot of the source's shape, and runs as a
+    /// pair with the copy as chain A and the source as chain B.
+    Copy,
     /// Transforms a chain in place (`PV_*`). Its input 0 is the upstream chain
     /// wire; it inherits that chain's slot.
     Filter,
@@ -367,8 +388,9 @@ pub enum SpectralRole {
     /// chain wires of equal window size and distinct slots; the result lands
     /// in chain A (input 0), whose slot the combiner inherits.
     Filter2,
-    /// Closes a chain: resynthesises audio from it (`IFFT`). Its input 0 is the
-    /// upstream chain wire; it inherits that chain's slot.
+    /// Closes a chain: resynthesises audio from it (`IFFT`), or reads a value
+    /// out of it (`Unpack1FFT`). Its input 0 is the upstream chain wire; it
+    /// inherits that chain's slot, and its output is not a chain.
     Sink,
 }
 

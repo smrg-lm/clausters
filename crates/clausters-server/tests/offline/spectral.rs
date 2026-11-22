@@ -142,11 +142,12 @@ fn hop_stagger_shifts_only_the_first_frame() {
     let aligned = render(4);
     let staggered = render(6);
 
-    // Onset: before its first frame an `IFFT` emits exact zeros (the FIFO is
-    // empty), so the first nonzero sample marks the first fire -- it moves by
-    // exactly the 128-sample stagger.
+    // Onset: before its first frame an `IFFT` emits exact zeros, so the
+    // first nonzero sample marks where the first frame starts. Unstaggered
+    // the first frame ends one hop in; staggered, at the stagger, which is
+    // shorter -- so it moves by exactly the 128 samples between them.
     let onset = |s: &[f32]| s.iter().position(|&x| x != 0.0).unwrap();
-    let shift = onset(&staggered) as i64 - onset(&aligned) as i64;
+    let shift = onset(&aligned) as i64 - onset(&staggered) as i64;
     assert_eq!(shift, 128, "onset shift");
 
     // Steady state: both chains carry the same latency (the stagger delays
@@ -252,8 +253,10 @@ fn pv_kernel_reproduces_mag_above() {
 /// rounding), and actually removes a high tone.
 #[test]
 fn pv_kernel_reproduces_brick_wall() {
+    // A positive wipe clears from the bottom up: DC and the inner bins up to
+    // `wipe * 511` (scsynth counts the bins between DC and Nyquist).
     let wipe = 0.85f32;
-    let cutoff = (513.0f32 * (1.0 - wipe)).round(); // PV_BrickWall's cutoff
+    let cutoff = (wipe * 511.0) as i32 as f32;
     let render = |ugens: Value| {
         let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
         let synth = spec_synth(json!({"name": "k", "ugens": ugens}));
@@ -271,7 +274,7 @@ fn pv_kernel_reproduces_brick_wall() {
         {"kind": "Sine", "inputs": [{"const": 9000.0}]},
         {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
         {"kind": "PV_Kernel", "inputs": [{"ugen": 1}],
-         "mag_expr": ["mag", "bin", cutoff, "lt", "mul"]},
+         "mag_expr": ["mag", "bin", cutoff, "gt", "mul"]},
         {"kind": "IFFT", "inputs": [{"ugen": 2}]},
         {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
     ]));
@@ -281,7 +284,7 @@ fn pv_kernel_reproduces_brick_wall() {
     );
     assert_eq!(
         builtin, kernel,
-        "kernel low pass must match PV_BrickWall exactly"
+        "kernel high pass must match PV_BrickWall exactly"
     );
 }
 
@@ -765,4 +768,173 @@ fn a_combiner_refuses_chains_whose_windows_differ() {
     assert_eq!(faults[0].name(), "PV_Add");
     let text = clausters::dsp::describe_fault(&faults[0]);
     assert!(text.contains("Sine") && text.contains("Hann"), "{text}");
+}
+
+// ---- the frame's writers and reader, zero padding, the size range ----
+
+fn render_def(ugens: Value, blocks: usize) -> Vec<f32> {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(add_synth(
+            1,
+            spec_synth(json!({"name": "d", "ugens": ugens})),
+        ))
+        .ok()
+        .unwrap();
+    render_channel(&mut engine, blocks)
+}
+
+/// A frame `PackFFT` writes on an `FFTTrigger` chain resynthesizes at its
+/// level: one bin of magnitude `m` is a cosine of amplitude `2m/N`, steady
+/// across the overlap, which the `IFFT` normalizes by the synthesis window
+/// alone.
+#[test]
+fn a_written_frame_resynthesizes_at_its_level() {
+    for wintype in [1, 0, -1] {
+        let out = render_def(
+            json!([
+                {"kind": "FFTTrigger", "inputs": [], "fft_size": 512, "hop": 0.5,
+                 "wintype": wintype},
+                {"kind": "PackFFT", "inputs": [{"ugen": 0}, {"const": 16.0}, {"const": 16.0},
+                    {"const": 1.0}, {"const": 128.0}, {"const": 0.0}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]),
+            100,
+        );
+        let err = (2048..6000)
+            .map(|t| (out[t] - 0.5 * (std::f32::consts::TAU * 16.0 * t as f32 / 512.0).cos()).abs())
+            .fold(0.0f32, f32::max);
+        assert!(err < 1e-4, "wintype {wintype}: max error {err}");
+    }
+}
+
+/// `Unpack1FFT` reads a bin's magnitude and phase as a signal; DC, which
+/// is real, reads its absolute value and a phase of 0 or pi.
+#[test]
+fn unpack1fft_reads_a_bin() {
+    let read = |bin: f32, which: f32| {
+        let out = render_def(
+            json!([
+                {"kind": "FFTTrigger", "inputs": [], "fft_size": 512},
+                {"kind": "PackFFT", "inputs": [{"ugen": 0}, {"const": 0.0}, {"const": 3.0},
+                    {"const": 1.0},
+                    {"const": 5.0}, {"const": std::f32::consts::PI},
+                    {"const": 0.0}, {"const": 0.0},
+                    {"const": 0.0}, {"const": 0.0},
+                    {"const": 7.5}, {"const": 0.7}]},
+                {"kind": "Unpack1FFT", "inputs": [{"ugen": 1}, {"const": bin}, {"const": which}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]),
+            20,
+        );
+        *out.last().unwrap()
+    };
+    assert!((read(3.0, 0.0) - 7.5).abs() < 1e-5);
+    assert!((read(3.0, 1.0) - 0.7).abs() < 1e-5);
+    assert!((read(0.0, 0.0) - 5.0).abs() < 1e-5);
+    assert!((read(0.0, 1.0) - std::f32::consts::PI).abs() < 1e-5);
+}
+
+/// `PV_Diffuser` turns the phases and keeps every magnitude: a copy of the
+/// chain taken before it reads the same magnitude, and another phase.
+#[test]
+fn the_diffuser_keeps_magnitudes() {
+    let measure = |which: f32| {
+        let out = render_def(
+            json!([
+                {"kind": "Sine", "inputs": [{"const": 1500.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_Copy", "inputs": [{"ugen": 1}]},
+                {"kind": "PV_Diffuser", "inputs": [{"ugen": 1}, {"const": 0.0}]},
+                {"kind": "Unpack1FFT", "inputs": [{"ugen": 3}, {"const": 16.0}, {"const": which}]},
+                {"kind": "Unpack1FFT", "inputs": [{"ugen": 2}, {"const": 16.0}, {"const": which}]},
+                {"kind": "Sub", "inputs": [{"ugen": 4}, {"ugen": 5}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 6}]}
+            ]),
+            40,
+        );
+        *out.last().unwrap()
+    };
+    assert!(measure(0.0).abs() < 1e-3, "the magnitude is kept");
+    assert!(measure(1.0).abs() > 1e-3, "the phase is turned");
+}
+
+/// A zero-padded frame (`winsize` below `fft_size`) round-trips exactly,
+/// one frame late; and the smallest and the largest sizes round-trip.
+#[test]
+fn zero_padding_and_the_size_range_round_trip() {
+    for (fft_size, winsize, hop, wintype, blocks) in [
+        (1024usize, Some(512usize), 0.5f32, 0, 200usize),
+        (64, None, 1.0, -1, 200),
+        (32768, None, 0.5, 0, 1600),
+    ] {
+        let mut fft = json!({"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}],
+                             "fft_size": fft_size, "hop": hop, "wintype": wintype});
+        if let Some(w) = winsize {
+            fft["winsize"] = json!(w);
+        }
+        let out = render_def(
+            json!([
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+                fft,
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]),
+            blocks,
+        );
+        let frame = winsize.unwrap_or(fft_size);
+        let to = blocks * BLOCK_SIZE;
+        // The tone in f64: a long render's phase is past f32's resolution.
+        let tone =
+            |n: usize| (0.5 * (std::f64::consts::TAU * 440.0 * n as f64 / SR as f64).sin()) as f32;
+        // Exactly one frame late, from the first sample.
+        let err = (frame..to)
+            .map(|n| (out[n] - tone(n - frame)).abs())
+            .fold(0.0f32, f32::max);
+        assert!(err < 1e-4, "fft_size {fft_size}: max error {err}");
+    }
+}
+
+/// The compiler holds a `winsize` to the transform, keeps a reader's
+/// output off the chain, and gives a copy its source's shape.
+#[test]
+fn compiler_holds_the_new_chain_rules() {
+    let compile = |ugens: Value| {
+        let spec: SynthDefSpec =
+            serde_json::from_value(json!({"name": "c", "ugens": ugens})).unwrap();
+        clausters::synthdef::compile(spec)
+    };
+    let fft = |extra: Value| {
+        let mut f = json!({"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                           "fft_size": 512});
+        for (k, v) in extra.as_object().unwrap() {
+            f[k] = v.clone();
+        }
+        f
+    };
+    let sine = json!({"kind": "Sine", "inputs": [{"const": 440.0}]});
+    let err = compile(json!([sine, fft(json!({"winsize": 1024}))]))
+        .err()
+        .unwrap();
+    assert!(err.contains("winsize 1024 is out of range"), "{err}");
+    let err = compile(json!([sine, fft(json!({"winsize": 32}))]))
+        .err()
+        .unwrap();
+    assert!(err.contains("winsize 32 is out of range"), "{err}");
+    let err = compile(json!([sine, fft(json!({})),
+        {"kind": "Unpack1FFT", "inputs": [{"ugen": 1}, {"const": 3.0}, {"const": 0.0}]},
+        {"kind": "IFFT", "inputs": [{"ugen": 2}]}]))
+    .err()
+    .unwrap();
+    assert!(err.contains("is not a spectral chain"), "{err}");
+    // A copy is a chain of its source's shape: it combines with the source.
+    assert!(
+        compile(json!([sine, fft(json!({"winsize": 256, "hop": 0.25})),
+        {"kind": "PV_Copy", "inputs": [{"ugen": 1}]},
+        {"kind": "PV_Add", "inputs": [{"ugen": 2}, {"ugen": 1}]},
+        {"kind": "IFFT", "inputs": [{"ugen": 3}]}]))
+        .is_ok()
+    );
 }

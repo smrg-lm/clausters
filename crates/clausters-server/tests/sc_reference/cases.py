@@ -107,6 +107,8 @@ def cases() -> list[dict]:
         _local_buffers,
         _spaces,
         _grains,
+        _spectral,
+        _convolution,
     ]:
         out.extend(f())
     return out
@@ -1467,3 +1469,120 @@ def _grains() -> list[dict]:
         out.append(case(f"GrainTap.{ratio}.{pdisp}", g, 24, buffers=line, seed=seed))
     return out
 
+
+
+def sig2(g: G) -> dict:
+    """A second broadband signal, unrelated to `sig`, for a chain B."""
+    a = g.add("LFSaw", "ar", 613.7, 0)
+    b = g.add("LFSaw", "ar", 211.3, 0.4, sc={"inputs": [211.3, 0.8]})
+    return g.add("BinaryOpUGen", "ar", a, b, op="mul")
+
+
+# The chain cases: a 512-point frame at a 50% hop, the sine window at both
+# ends (the server's `wintype` 1 is scsynth's 0), where scsynth's
+# unnormalized overlap-add is unity and the server's normalization divides
+# by one, so the two reconstruct the same signal.
+_N = 512
+_LATE = (
+    "the server's IFFT plays a frame one frame after the input it ends on, sample-exact "
+    "at any hop and any slicing; scsynth's plays it in the block it closes, one block sooner"
+)
+_POLAR = (
+    "scsynth converts every bin to polar and back through 2049-entry tables (a phase "
+    "within 5e-4 rad); the server keeps the bin complex and scales or rotates it exactly"
+)
+
+
+def _fft(g: G, x: dict, buf: int) -> dict:
+    return g.add("FFT", "kr", x, 1, sc={"inputs": [buf, x, 0.5, 0, 1, 0]}, fft_size=_N, hop=0.5, wintype=1)
+
+
+def _chain(name: str, build, two: bool = False, blocks: int = 40, tol: float | None = None, **extra) -> dict:
+    """`build(g, a, b)` puts the UGens between the FFTs (chain A on `sig`,
+    chain B on `sig2` when `two`) and the IFFT, and returns the chain the
+    IFFT reads."""
+    g = G()
+    a = _fft(g, sig(g), 0)
+    b = _fft(g, sig2(g), 2) if two else None
+    ch = build(g, a, b)
+    g.add("IFFT", "ar", ch, sc={"inputs": [ch, 0, 0]})
+    bufs = [{"num": n, "channels": 1, "frames": _N, "data": []} for n in ([0, 2] if two else [0])]
+    why = _LATE if tol is None or tol < 1e-4 else _LATE + "; and " + _POLAR
+    if tol is not None:
+        extra["tol"] = tol
+    return case(name, g, blocks, buffers=bufs, shift=64, why=why, **extra)
+
+
+def _spectral() -> list[dict]:
+    """The FFT chain, through its IFFT."""
+    out = [_chain("FFT.IFFT", lambda g, a, b: a)]
+    for wipe in [0.3, -0.3, 1.0]:
+        out.append(_chain(f"PV_BrickWall.{wipe}", lambda g, a, b, w=wipe: g.add("PV_BrickWall", "kr", a, w)))
+    for kind in ["PV_Conj", "PV_PhaseShift90", "PV_PhaseShift270"]:
+        out.append(_chain(kind, lambda g, a, b, k=kind: g.add(k, "kr", a)))
+    for kind in ["PV_Add", "PV_Div"]:
+        out.append(_chain(kind, lambda g, a, b, k=kind: g.add(k, "kr", a, b), two=True))
+    # scsynth multiplies with three products instead of four.
+    out.append(_chain("PV_Mul", lambda g, a, b: g.add("PV_Mul", "kr", a, b), two=True, tol=3e-5))
+    for wipe in [0.4, -0.4]:
+        out.append(_chain(f"PV_BinWipe.{wipe}", lambda g, a, b, w=wipe: g.add("PV_BinWipe", "kr", a, b, w), two=True))
+    out.append(_chain("PV_RectComb", lambda g, a, b: g.add("PV_RectComb", "kr", a, 7, 0.25, 0.4)))
+    out.append(_chain("PV_RectComb2", lambda g, a, b: g.add("PV_RectComb2", "kr", a, b, 5, 0.6, 0.3), two=True))
+    out.append(_chain("PV_MagNoise", lambda g, a, b: g.add("PV_MagNoise", "kr", a), seed=7))
+
+    def copy(g, a, b):
+        return g.add("PV_Copy", "kr", a, sc={"inputs": [a, 2]})
+
+    c = _chain("PV_Copy", copy)
+    c["buffers"].append({"num": 2, "channels": 1, "frames": _N, "data": []})
+    out.append(c)
+    # Through scsynth's polar tables.
+    out.append(_chain("PV_PhaseShift", lambda g, a, b: g.add("PV_PhaseShift", "kr", a, 0.7, 0), tol=3e-3))
+    out.append(_chain("PV_PhaseShift.integrate", lambda g, a, b: g.add("PV_PhaseShift", "kr", a, 0.7, 1), tol=3e-3))
+    # Not here: `PV_MagSquared`, `PV_MagMul` and `PV_MagDiv`. scsynth squares,
+    # multiplies and divides DC and Nyquist by their signed values, so a
+    # negative one loses its phase of pi; the server keeps it, and every
+    # frame's DC differs. With scsynth's signed DC put in for a run, the
+    # three agree with scsynth to its polar tables (`MagDiv` exactly,
+    # `MagSquared` and `MagMul`, which square that error, within 1.4%);
+    # `tests/offline/pv_reference.rs` holds them to their definitions.
+    for kind, th in [("PV_MagAbove", 3.0), ("PV_MagBelow", 3.0), ("PV_MagClip", 3.0)]:
+        out.append(_chain(kind, lambda g, a, b, k=kind, t=th: g.add(k, "kr", a, t), tol=3e-3))
+    for kind in ["PV_Min", "PV_Max", "PV_CopyPhase"]:
+        out.append(_chain(kind, lambda g, a, b, k=kind: g.add(k, "kr", a, b), two=True, tol=3e-3))
+    return out
+
+
+def _convolution() -> list[dict]:
+    """The convolution rows scsynth computes the same convolution for."""
+    import math
+
+    out = []
+    late = (
+        "the server plays a frame of the convolution one frame after the input it ends on, "
+        "sample-exact at any slicing; scsynth plays it in the block it closes, one block sooner"
+    )
+    kernel = [math.exp(-i / 40.0) * math.sin(i * 0.37) for i in range(300)]
+    short = {"num": 0, "channels": 1, "frames": 300, "data": kernel}
+    # The `2L` rows read `framesize` samples of the kernel whatever its
+    # length in scsynth, past the end of a shorter one: their kernels are
+    # `framesize` long.
+    kbuf = {"num": 0, "channels": 1, "frames": 512, "data": kernel + [0.0] * 212}
+    for kind, buf in [("Convolution2", short), ("Convolution2L", kbuf)]:
+        g = G()
+        x = sig(g)
+        extra = [1] if kind == "Convolution2L" else []
+        g.add(kind, "ar", x, 0, 0, 512, *extra)
+        out.append(case(f"{kind}.ar", g, 24, buffers=[buf], shift=64, why=late))
+    # Not here: `StereoConvolution2L`. scsynth's wires its transforms to the
+    # wrong buffers -- the right kernel is run through an inverse transform
+    # of another buffer, so it is never transformed -- and never writes the
+    # DC and Nyquist products, so its output is not a convolution; the
+    # server's channels are each a `Convolution2L`, which
+    # `tests/offline/conv.rs` holds them to.
+    g = G()
+    x = sig(g)
+    k = sig2(g)
+    g.add("Convolution", "ar", x, k, 256)
+    out.append(case("Convolution.ar", g, 24, shift=64, tol=3e-5, why=late + "; and its transforms round in another order"))
+    return out

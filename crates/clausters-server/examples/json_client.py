@@ -628,7 +628,7 @@ def demo_fft(client: Client):
     src = d.add("Mul", d.add("WhiteNoise"), 0.4)
     # fft_size/hop/wintype are static fields, given only on the FFT.
     chain = d.add("FFT", src, 1.0, fft_size=1024, hop=0.5, wintype=0)
-    chain = d.add("PV_BrickWall", chain, 0.7)  # low pass: keep the low 30% bins
+    chain = d.add("PV_BrickWall", chain, -0.7)  # low pass: keep the low 30% bins
     audio = d.add("IFFT", chain)
     d.add("Out", 0, audio)
     d.add("Out", 1, audio)

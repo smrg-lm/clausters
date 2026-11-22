@@ -114,6 +114,8 @@ pub mod pan;
 pub mod phase;
 #[cfg(feature = "synth")]
 pub mod physical;
+#[cfg(feature = "synth")]
+pub mod pv;
 pub mod rand;
 #[cfg(feature = "synth")]
 pub mod random;
@@ -1475,7 +1477,7 @@ pub fn bad_value_line(msg: &ReplyMsg) -> String {
 /// the kind, the code and the values the UGen could carry inline.
 pub fn describe_fault(msg: &ReplyMsg) -> String {
     match msg.name() {
-        "Conv" => conv::describe_fault(msg.id, msg.values()),
+        name if conv::NAMES.contains(&name) => conv::describe_fault(name, msg.id, msg.values()),
         #[cfg(feature = "synth")]
         name if name.starts_with("PV_") => spectral::describe_fault(msg),
         "Plugin" => describe_plugin_fault(msg.id),

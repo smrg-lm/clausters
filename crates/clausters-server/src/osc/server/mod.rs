@@ -805,6 +805,8 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
             match d.spectral {
                 SpectralRole::None => "",
                 SpectralRole::Source => "source",
+                SpectralRole::Trigger => "trigger",
+                SpectralRole::Copy => "copy",
                 SpectralRole::Filter => "filter",
                 SpectralRole::Filter2 => "filter2",
                 SpectralRole::Sink => "sink",

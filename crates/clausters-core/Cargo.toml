@@ -17,11 +17,15 @@ libm = "0.2"
 # props are arbitrary values -- so the resolver reads and writes `Value`
 # directly.
 serde_json = { workspace = true }
-# The `fft` module's forward real FFT, shared by the GUI spectrogram and the
-# server's coming FFT/IFFT UGens. `no_std` and zero-allocation (compile-time
-# power-of-two sizes), so a real-time caller never allocates. The default
-# `size-4096` covers the STFT window sizes; a small, task-specific dep tree.
-microfft = "0.6"
+# The `fft` module's real FFT, both directions, shared by the GUI
+# spectrogram and the server's spectral UGens. `no_std` and zero-allocation
+# (compile-time power-of-two sizes), so a real-time caller never allocates.
+# The sizes run from 64 to 32768, scsynth's range for an `FFT`: the feature is
+# `size-32768`, not the `size-16384` that microfft 0.6 gates its 32768-point
+# real FFT behind: the sine table that transform reads is the one
+# `size-32768` selects, and under `size-16384` it indexes past the smaller
+# table (an out-of-bounds panic at 32768, found by the round-trip test).
+microfft = { version = "0.6", default-features = false, features = ["size-32768"] }
 # The `config` module's deserialize derives. Agnostic (compiles on wasm); the
 # TOML parser that reads the files is native-only, gated below.
 serde = { workspace = true }

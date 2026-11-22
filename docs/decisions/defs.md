@@ -171,6 +171,19 @@ kernel, the M29 design spike), not added as another name.
 
 **Decision details with non-obvious context:**
 
+- **scsynth's whole set is in, as rows** *(2026-11-22, the port of
+  scsynth's base library)*: its remaining eighteen `PV_*` names are rows of
+  a few implementations -- `PvPhase` behind the conjugate and the three phase
+  shifts, `PvMask` behind the six masks and wipes (`PV_BrickWall` joined it),
+  `PvMag` and `PvCombine` grew the magnitude square and the two divisions,
+  and `PV_Copy` is a chain role of the compiler's. They are native rather
+  than `PV_Kernel` programs because the programs cost more than they save
+  there: a phase program pays an `atan2`, a `cos` and a `sin` per bin,
+  several times the transform itself, where the quarter turns and the
+  conjugate are a sign change and `PV_PhaseShift` one rotation a frame; and
+  half of them are not a per-bin map at all (two chains, a random order kept
+  across frames, a bin against its neighbors). `PV_Kernel` stays the way to
+  an operation scsynth never had.
 - **The structural fact behind the stance**: all the machinery lives in the
   bookends (windowing, transform, hop, COLA overlap-add — `FFT`/`IFFT`); a
   PV op is a trivial per-frame loop. Its real cost is registry, wire name,
@@ -202,6 +215,18 @@ pool and the no-allocation callback.
 
 **Decision details with non-obvious context:**
 
+- **scsynth's five names are rows of it** *(2026-11-22)*. `PartConv` is
+  `Conv` with scsynth's inputs. `Convolution2`, `Convolution2L` and each
+  channel of `StereoConvolution2L` are the same engine over a raw kernel --
+  a buffer of samples -- which it transforms itself, on the audio thread,
+  into two banks of its own allocated at build: one partition per slice,
+  the old kernel playing until the new one is whole, so a reload is bounded
+  and allocation-free and never the spike scsynth's whole-kernel transform
+  in the trigger's block is. Their kernel holds one partition,
+  `framesize` samples, scsynth's contract, and a longer one is refused as
+  `Conv` refuses one. `Convolution3` is the direct form, for a short kernel
+  and no latency, and `Convolution`, which convolves two live signals frame
+  by frame, its own overlap-add: neither has a kernel to prepare.
 - **Load spreading is the design constraint, not an optimization.** A uniform
   FDL does all its partition MACs on the hop block (~217 us for a 2 s IR —
   measured in the bench before the implementation existed), a sawtooth the
@@ -1743,3 +1768,71 @@ What the comparison allows is part of the decision:
   - `Dpoll` sends its trigger with `run` off; here `run` gates the trigger
     as it gates the post. `Dbufwr` writes the first channel only; here it
     takes a `channel`, as `Dbufrd` does.
+  - The FFT chain numbers its windows `-1` rectangular, `0` sine, `1` Hann
+    in scsynth (clipped to those three); here `0` is Hann and `1` sine, with
+    Welch, Hamming and Blackman after them. The number is the core's
+    `Window`, which the GUI's spectrogram, both clients and the FFI share,
+    and no def reaches the server in sclang's form, so it stays: a def
+    written for scsynth's sine window says `wintype` 1 here.
+  - scsynth's `IFFT` plays a frame in the block the frame closes, one
+    block before a frame's length; here it plays it a frame's length late,
+    which keeps the framing exact at any hop and however a timed event
+    slices the block. Its overlap-add is not normalized, so only the sine
+    window at a 50% hop reconstructs at unity; here the overlap is divided
+    by the windows the frames carry, so every window and hop does. Both
+    take the first frame one hop in, over the silence before the synth.
+  - scsynth converts a bin to polar and back through 2049-entry tables
+    wherever an operation reads a magnitude or a phase; here the bin stays
+    complex and is scaled or rotated exactly.
+  - `PV_MagSquared`, `PV_MagMul` and `PV_MagDiv` square, multiply and
+    divide DC and Nyquist by their signed values, so a negative one loses
+    its phase of pi (and `PV_MagDiv` floors a negative divisor to `zeroed`);
+    here DC and Nyquist are magnitudes like every other bin.
+  - `PV_BinShift` and `PV_MagShift` start their map at bin 1 and leave DC
+    and Nyquist where they are, so a `stretch` of 2 sends bin 2 to 3; here
+    the map starts at DC and `stretch` scales frequency. `PV_MagSmear`
+    divides by `2 * bins + 1` at the edges, where fewer bins are summed, and
+    leaves DC and Nyquist out; here an average is over the bins it sums.
+  - `PV_LocalMax` compares a bin with its left neighbor after zeroing that
+    neighbor, so a bin beside a zeroed one passes; here every bin is
+    compared with the frame as it came.
+  - `PV_Diffuser` reads its trigger as a count of bins, so at rest it
+    diffuses none; here it turns every bin. The random orders of
+    `PV_RandComb`, `PV_RandWipe` and `PV_BinScramble` swap each place with
+    one drawn from the first `len - i`, which is not a uniform permutation;
+    here the shuffle draws from `i..len`, with as many draws.
+    `PV_BinScramble`'s source never reaches the top of its range, here it
+    does; a full `PV_RandWipe` leaves A's DC and Nyquist, here it is B;
+    `PV_RectComb`'s starting phase wraps a step at a time, here it is
+    wrapped into a period.
+  - `PV_Div` divides by B's bins as they are, infinity or NaN where B is
+    silent; here a silent bin of B gives 0. `PV_ConformalMap` computes the
+    imaginary part of its quotient from the real part it has just
+    overwritten; here it is the map.
+  - `PV_Copy` copies into a buffer the def names; here it opens a chain of
+    its own, of its source's shape. `FFTTrigger` turns a buffer into a
+    chain; here it opens one, and since its frames are written rather than
+    windowed, its `IFFT` normalizes by the synthesis window alone, so a bin
+    of magnitude `m` plays a partial of `2m/N` (scsynth leaves it
+    unnormalized). `PackFFT` sets DC and Nyquist to a pair's magnitude,
+    dropping its phase, and reads Nyquist `2 * frombin` inputs early; here
+    they take `mag * cos(phase)` and Nyquist its own pair. Its values are
+    signals read at the frame, where scsynth's may be demand-rate pulls.
+    `Unpack1FFT` is a demand-rate UGen, and gives DC's signed value as its
+    magnitude and 0 as its phase; here it is a control-rate one, with DC's
+    absolute value and a phase of 0 or pi.
+  - `Convolution2` truncates a kernel longer than `framesize`, and its
+    `2L` forms read `framesize` samples whatever the kernel's length, past
+    the end of a shorter one; here a longer kernel is refused with a fault,
+    as `Conv`'s are, and a shorter one is padded. They transform a kernel
+    whole in the block of its trigger; here a partition per slice, the old
+    kernel playing until the new one is whole. `StereoConvolution2L` wires
+    its transforms to the wrong buffers (the right kernel is never
+    transformed) and never writes the DC and Nyquist products; here each
+    channel is a `Convolution2L`. `Convolution3` adds into its output ring
+    and never clears it; here it is the direct convolution. All of them,
+    and `Convolution`, play a frame in the block it closes; here a frame's
+    length late, as the chain does.
+  - `PartConv` reads a kernel scsynth's `PreparePartConv` wrote; here it is
+    `Conv` with scsynth's inputs, and reads one `/buffer_gen
+    prepare_partconv` wrote.

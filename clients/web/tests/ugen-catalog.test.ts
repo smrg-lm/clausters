@@ -74,6 +74,8 @@ const TRAILING: Record<string, string> = {
     // The TS idiom for a run of optional inputs or static fields.
     FFT: "the static fields come in a trailing options object",
     Conv: "the static fields come in a trailing options object",
+    FFTTrigger: "the static fields come in a trailing options object",
+    PartConv: "the static fields come in a trailing options object",
     RecordBuf: "the optional inputs come in a trailing options object",
     // A UGen has one output and a panner has two, so the builder emits one row
     // per channel and fills the trailing `chan` itself. The caller never sees
@@ -91,6 +93,7 @@ const TRAILING: Record<string, string> = {
     BiPanB2: "chan is filled by the builder, once per output channel",
     FreeVerb2: "chan is filled by the builder, once per output channel",
     GVerb: "chan is filled by the builder, once per output channel",
+    StereoConvolution2L: "chan is filled by the builder, once per output channel",
     Dpoll: "the static label comes in a trailing options object",
 };
 
@@ -129,6 +132,7 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
     Dser: "repeats leads on the wire; the value list leads here",
     Dwrand: "repeats and the size lead on the wire; the value and weight lists lead here",
     Dswitch: "the value list is a variadic tail",
+    PackFFT: "the magnitude and phase list comes before the run's bounds in TS, after them on the wire",
 };
 
 /**

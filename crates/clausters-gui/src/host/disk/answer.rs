@@ -832,7 +832,7 @@ impl Answerer {
         }
         .max(1);
         let wintype = args.get(5).and_then(as_i64).unwrap_or(0) as i32;
-        if !clausters_core::fft::supports(window) || columns == 0 {
+        if !clausters_core::fft::supports_analysis(window) || columns == 0 {
             return Answer::None;
         }
         let channels = list.channels.max(1);

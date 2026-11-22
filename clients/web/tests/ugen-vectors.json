@@ -1040,6 +1040,94 @@
       ]
     },
     {
+      "name": "Convolution",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "kernel",
+          "default": 0.0
+        },
+        {
+          "name": "framesize",
+          "default": 512.0
+        }
+      ]
+    },
+    {
+      "name": "Convolution2",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "kernel",
+          "default": 0.0
+        },
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "framesize",
+          "default": 2048.0
+        }
+      ]
+    },
+    {
+      "name": "Convolution2L",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "kernel",
+          "default": 0.0
+        },
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "framesize",
+          "default": 2048.0
+        },
+        {
+          "name": "crossfade",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Convolution3",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "kernel",
+          "default": 0.0
+        },
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "framesize",
+          "default": 2048.0
+        }
+      ]
+    },
+    {
       "name": "Crackle",
       "arity": 1,
       "inputs": [
@@ -1986,6 +2074,11 @@
           "default": 1.0
         }
       ]
+    },
+    {
+      "name": "FFTTrigger",
+      "arity": 0,
+      "inputs": []
     },
     {
       "name": "FOS",
@@ -4236,8 +4329,30 @@
       ]
     },
     {
+      "name": "PV_BinScramble",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "wipe",
+          "default": 0.0
+        },
+        {
+          "name": "width",
+          "default": 0.20000000298023224
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "PV_BinShift",
-      "arity": 3,
+      "arity": 4,
       "inputs": [
         {
           "name": "chain",
@@ -4249,6 +4364,28 @@
         },
         {
           "name": "shift",
+          "default": 0.0
+        },
+        {
+          "name": "interp",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_BinWipe",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain_a",
+          "default": 0.0
+        },
+        {
+          "name": "chain_b",
+          "default": 0.0
+        },
+        {
+          "name": "wipe",
           "default": 0.0
         }
       ]
@@ -4268,7 +4405,73 @@
       ]
     },
     {
+      "name": "PV_ConformalMap",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "areal",
+          "default": 0.0
+        },
+        {
+          "name": "aimag",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_Conj",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_Copy",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "PV_CopyPhase",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "chain_a",
+          "default": 0.0
+        },
+        {
+          "name": "chain_b",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_Diffuser",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_Div",
       "arity": 2,
       "inputs": [
         {
@@ -4287,6 +4490,20 @@
       "inputs": [
         {
           "name": "chain",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_LocalMax",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "threshold",
           "default": 0.0
         }
       ]
@@ -4334,6 +4551,24 @@
       ]
     },
     {
+      "name": "PV_MagDiv",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain_a",
+          "default": 0.0
+        },
+        {
+          "name": "chain_b",
+          "default": 0.0
+        },
+        {
+          "name": "zeroed",
+          "default": 9.999999747378752e-05
+        }
+      ]
+    },
+    {
       "name": "PV_MagFreeze",
       "arity": 2,
       "inputs": [
@@ -4357,6 +4592,16 @@
         },
         {
           "name": "chain_b",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_MagNoise",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
           "default": 0.0
         }
       ]
@@ -4389,6 +4634,16 @@
         },
         {
           "name": "bins",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_MagSquared",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
           "default": 0.0
         }
       ]
@@ -4431,6 +4686,154 @@
         },
         {
           "name": "chain_b",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_PhaseShift",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "shift",
+          "default": 0.0
+        },
+        {
+          "name": "integrate",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_PhaseShift270",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_PhaseShift90",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_RandComb",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "wipe",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_RandWipe",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "chain_a",
+          "default": 0.0
+        },
+        {
+          "name": "chain_b",
+          "default": 0.0
+        },
+        {
+          "name": "wipe",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PV_RectComb",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "num_teeth",
+          "default": 0.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
+        },
+        {
+          "name": "width",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "PV_RectComb2",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "chain_a",
+          "default": 0.0
+        },
+        {
+          "name": "chain_b",
+          "default": 0.0
+        },
+        {
+          "name": "num_teeth",
+          "default": 0.0
+        },
+        {
+          "name": "phase",
+          "default": 0.0
+        },
+        {
+          "name": "width",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "PackFFT",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "frombin",
+          "default": 0.0
+        },
+        {
+          "name": "tobin",
+          "default": 0.0
+        },
+        {
+          "name": "zeroothers",
           "default": 0.0
         }
       ]
@@ -4561,6 +4964,24 @@
         },
         {
           "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "PartConv",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "fftsize",
+          "default": 2048.0
+        },
+        {
+          "name": "irbufnum",
           "default": 0.0
         }
       ]
@@ -5568,6 +5989,40 @@
       ]
     },
     {
+      "name": "StereoConvolution2L",
+      "arity": 7,
+      "inputs": [
+        {
+          "name": "source",
+          "default": 0.0
+        },
+        {
+          "name": "kernel_l",
+          "default": 0.0
+        },
+        {
+          "name": "kernel_r",
+          "default": 0.0
+        },
+        {
+          "name": "trigger",
+          "default": 0.0
+        },
+        {
+          "name": "framesize",
+          "default": 2048.0
+        },
+        {
+          "name": "crossfade",
+          "default": 1.0
+        },
+        {
+          "name": "chan",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "StereoWidth",
       "arity": 4,
       "inputs": [
@@ -6085,6 +6540,24 @@
       "inputs": [
         {
           "name": "a",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Unpack1FFT",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chain",
+          "default": 0.0
+        },
+        {
+          "name": "binindex",
+          "default": 0.0
+        },
+        {
+          "name": "whichmeasure",
           "default": 0.0
         }
       ]

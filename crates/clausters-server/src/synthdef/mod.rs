@@ -36,7 +36,7 @@ use clausters_core::{builtins, pvprog};
 use crate::dsp::registry::{
     Arity, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
 };
-use crate::dsp::spectral::{MIN_HOP, resolve_fft_size, resolve_hop};
+use crate::dsp::spectral::{MIN_HOP, resolve_fft_size, resolve_frame, resolve_hop};
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 use clausters_core::fft;
 use clausters_core::window::Window;
@@ -154,6 +154,12 @@ pub struct UGenSpec {
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wintype: Option<i32>,
+    /// Spectral chain: the frame an `FFT` or `FFTTrigger` windows, in samples
+    /// (scsynth's `winsize`), at least one block and at most `fft_size`, which
+    /// it is zero-padded to; the default is `fft_size`. Given only on the
+    /// chain's first UGen, like `hop`. Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub winsize: Option<usize>,
     /// `Conv`: maximum partition count (FDL capacity -- the longest
     /// prepared kernel the instance accepts). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -367,6 +373,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         }
 
         let mut config = ugen_config(i, u, desc)?;
+        conv_size(i, u, desc, &mut config)?;
 
         // LocalBuf: its shape (inputs 0 and 1, scsynth's order) sizes memory
         // the instance allocates, so both must be constants.
@@ -610,14 +617,27 @@ fn parse_controls(
 #[derive(Clone, Copy)]
 struct ChainShape {
     winsize: usize,
+    /// The frame the chain's first UGen windows (`winsize` on the wire),
+    /// `None` for the whole transform.
+    frame: Option<usize>,
     hop: Option<f32>,
     wintype: Option<i32>,
+    /// Whether its frames are written (`FFTTrigger`) rather than analysed.
+    written: bool,
+}
+
+impl ChainShape {
+    /// The frame length in samples.
+    fn frame_len(&self) -> usize {
+        resolve_frame(self.winsize, self.frame)
+    }
 }
 
 /// UGen `i`'s place in a spectral chain, as `(chain slot, second chain
-/// slot)`. A `Source` (`FFT`) opens a chain and records its window size, hop
-/// and window; a filter, sink or two-chain combiner reads the chain its input
-/// carries and takes all three from it.
+/// slot)`. A `Source` (`FFT`) or `Trigger` (`FFTTrigger`) opens a chain and
+/// records its window size, frame, hop and window; a `Copy` (`PV_Copy`)
+/// opens one of its source's shape; a filter, sink or two-chain combiner
+/// reads the chain its input carries and takes all of it from it.
 fn spectral_chain(
     i: usize,
     u: &UGenSpec,
@@ -627,11 +647,12 @@ fn spectral_chain(
     chains: &mut Vec<ChainShape>,
     config: &mut UGenConfig,
 ) -> Result<(Option<usize>, Option<usize>), String> {
-    // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
-    // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
-    // `IFFT`) must take a spectral wire as input 0 and takes that chain's
-    // slot, window size, hop and window type -- so the client only specifies
-    // them once, on the `FFT`. One given again downstream must agree.
+    // Spectral chain. A `Source`/`Trigger` opens a new chain: validate its
+    // window size and record its slot. A `Filter`/`Sink` (`PV_*`/`IFFT`)
+    // must take a spectral wire as input 0 and takes that chain's slot,
+    // window size, frame, hop and window type -- so the client only
+    // specifies them once, on the chain's first UGen. One given again
+    // downstream must agree.
     let mut chain_slot: Option<usize> = None;
     let mut chain_slot_b: Option<usize> = None;
     // Resolves spectral input `k` to the chain slot it carries.
@@ -651,7 +672,9 @@ fn spectral_chain(
                 u.kind
             ));
         };
-        ugens[w].chain_slot.ok_or_else(|| {
+        // A sink's output is audio or a value, not the chain it read.
+        let carries = ugens[w].desc.spectral != SpectralRole::Sink;
+        ugens[w].chain_slot.filter(|_| carries).ok_or_else(|| {
             format!(
                 "ugens[{i}] ({}): input {k} (ugen {w}, {}) is not a spectral chain",
                 u.kind, ugens[w].desc.name
@@ -660,36 +683,60 @@ fn spectral_chain(
     };
     match desc.spectral {
         SpectralRole::None => {}
-        SpectralRole::Source => {
+        SpectralRole::Source | SpectralRole::Trigger => {
             let winsize = resolve_fft_size(u.fft_size);
             config.fft_size = Some(winsize);
-            // A hop is a fraction of the window in (0, 1], at least one block
+            if let Some(w) = u.winsize
+                && !(MIN_HOP..=winsize).contains(&w)
+            {
+                return Err(format!(
+                    "ugens[{i}] ({}): winsize {w} is out of range; it must be at least \
+                     {MIN_HOP} samples and at most the fft_size ({winsize})",
+                    u.kind
+                ));
+            }
+            let frame = resolve_frame(winsize, u.winsize);
+            // A hop is a fraction of the frame in (0, 1], at least one block
             // long: shorter would close twice in one slice, longer would leave
             // gaps no frame covers. Rejected rather than moved into range, so
             // a chain never runs at a hop other than the one it was given.
             if let Some(hop) = config.hop {
-                let samples = (winsize as f32 * hop).round();
+                let samples = (frame as f32 * hop).round();
                 if !(hop > 0.0 && hop <= 1.0) || samples < MIN_HOP as f32 {
                     return Err(format!(
-                        "ugens[{i}] ({}): hop {hop} of a {winsize}-sample window is out \
+                        "ugens[{i}] ({}): hop {hop} of a {frame}-sample frame is out \
                          of range; it must be in (0, 1] and at least {MIN_HOP} samples \
                          ({:.4} here)",
                         u.kind,
-                        MIN_HOP as f32 / winsize as f32
+                        MIN_HOP as f32 / frame as f32
                     ));
                 }
             }
+            let written = desc.spectral == SpectralRole::Trigger;
+            config.written = written;
             chain_slot = Some(chains.len());
             chains.push(ChainShape {
                 winsize,
+                frame: u.winsize,
                 hop: config.hop,
                 wintype: config.wintype,
+                written,
             });
         }
         SpectralRole::Filter | SpectralRole::Sink => {
             let slot = chain_of(0, inputs, ugens)?;
             chain_slot = Some(slot);
             take_chain_shape(i, u, chains[slot], config)?;
+        }
+        // A copy opens a chain of its source's shape; it runs as a pair,
+        // the copy as chain A, the source as chain B.
+        SpectralRole::Copy => {
+            let src = chain_of(0, inputs, ugens)?;
+            let shape = chains[src];
+            take_chain_shape(i, u, shape, config)?;
+            chain_slot = Some(chains.len());
+            chain_slot_b = Some(src);
+            chains.push(shape);
         }
         // A two-chain combiner: inputs 0 and 1 are chains of equal
         // window size and distinct slots; the result lands in chain A, so
@@ -711,17 +758,25 @@ fn spectral_chain(
                     u.kind, sa.winsize, sb.winsize
                 ));
             }
+            if sa.frame_len() != sb.frame_len() {
+                return Err(format!(
+                    "ugens[{i}] ({}): chain frames differ ({} vs {} samples)",
+                    u.kind,
+                    sa.frame_len(),
+                    sb.frame_len()
+                ));
+            }
             // The two frames are combined bin by bin and resynthesized as
             // chain A's: B has to be analysed at the same cadence and with the
             // same window, or the overlap-add scales and spaces its share
             // wrongly.
-            let winsize = sa.winsize;
-            if resolve_hop(winsize, sa.hop) != resolve_hop(winsize, sb.hop) {
+            let frame = sa.frame_len();
+            if resolve_hop(frame, sa.hop) != resolve_hop(frame, sb.hop) {
                 return Err(format!(
                     "ugens[{i}] ({}): chain hops differ ({} vs {} samples)",
                     u.kind,
-                    resolve_hop(winsize, sa.hop),
-                    resolve_hop(winsize, sb.hop)
+                    resolve_hop(frame, sa.hop),
+                    resolve_hop(frame, sb.hop)
                 ));
             }
             if window_of(sa.wintype) != window_of(sb.wintype) {
@@ -740,6 +795,76 @@ fn spectral_chain(
     Ok((chain_slot, chain_slot_b))
 }
 
+/// The convolution rows whose size is an input, as scsynth's
+/// constructors read it: which input, and whether the transform is twice it
+/// (a `framesize`) or it (an `fftsize`). `Convolution3`'s is its kernel
+/// length, in the time domain.
+fn conv_size_input(kind: &str) -> Option<(usize, Option<bool>)> {
+    match kind {
+        "PartConv" => Some((1, Some(false))),
+        "Convolution" => Some((2, Some(true))),
+        "Convolution2" | "Convolution2L" => Some((3, Some(true))),
+        "StereoConvolution2L" => Some((4, Some(true))),
+        "Convolution3" => Some((3, None)),
+        _ => None,
+    }
+}
+
+/// The longest kernel `Convolution3` takes, in samples: it sums the whole
+/// kernel at every sample, so a longer one is a partitioned convolution's.
+const MAX_DIRECT_KERNEL: usize = 65536;
+
+/// Resolves a convolution row's size input into its `fft_size`: a constant,
+/// since it sizes memory, and a transform size the FFT supports.
+fn conv_size(
+    i: usize,
+    u: &UGenSpec,
+    desc: &UGenDescriptor,
+    config: &mut UGenConfig,
+) -> Result<(), String> {
+    let Some((k, doubled)) = conv_size_input(desc.name) else {
+        return Ok(());
+    };
+    let name = desc.inputs[k].name;
+    let size = match u.inputs.get(k) {
+        Some(InputSpec::Const(x)) => *x,
+        None => desc.inputs[k].default,
+        Some(_) => {
+            return Err(format!(
+                "ugens[{i}] ({}): {name} (input {k}) sizes its memory, so it must be a constant",
+                u.kind
+            ));
+        }
+    };
+    let whole = size.is_finite() && size >= 1.0 && size.fract() == 0.0;
+    match doubled {
+        None => {
+            if !whole || size as usize > MAX_DIRECT_KERNEL {
+                return Err(format!(
+                    "ugens[{i}] ({}): {name} {size} must be a whole number of samples from 1 \
+                     to {MAX_DIRECT_KERNEL}",
+                    u.kind
+                ));
+            }
+        }
+        Some(doubled) => {
+            let n = if doubled { 2.0 * size } else { size };
+            if !whole || !fft::supports(n as usize) {
+                let sizes: Vec<usize> = fft::SUPPORTED_SIZES
+                    .iter()
+                    .map(|&s| if doubled { s / 2 } else { s })
+                    .collect();
+                return Err(format!(
+                    "ugens[{i}] ({}): unsupported {name} {size}; use one of {sizes:?}",
+                    u.kind
+                ));
+            }
+            config.fft_size = Some(n as usize);
+        }
+    }
+    Ok(())
+}
+
 /// The window a def's `wintype` names, with the default for an unset one.
 fn window_of(wintype: Option<i32>) -> Window {
     Window::from_wintype(wintype.unwrap_or(0))
@@ -754,15 +879,15 @@ fn take_chain_shape(
     shape: ChainShape,
     config: &mut UGenConfig,
 ) -> Result<(), String> {
-    let winsize = shape.winsize;
+    let frame = shape.frame_len();
     if let Some(hop) = config.hop
-        && resolve_hop(winsize, Some(hop)) != resolve_hop(winsize, shape.hop)
+        && resolve_hop(frame, Some(hop)) != resolve_hop(frame, shape.hop)
     {
         return Err(format!(
             "ugens[{i}] ({}): hop {hop} differs from its chain's FFT ({} samples); \
              give it only on the FFT",
             u.kind,
-            resolve_hop(winsize, shape.hop)
+            resolve_hop(frame, shape.hop)
         ));
     }
     if config.wintype.is_some() && window_of(config.wintype) != window_of(shape.wintype) {
@@ -774,9 +899,20 @@ fn take_chain_shape(
             window_of(shape.wintype)
         ));
     }
-    config.fft_size = Some(winsize);
+    if let Some(w) = config.winsize
+        && w != frame
+    {
+        return Err(format!(
+            "ugens[{i}] ({}): winsize {w} differs from its chain's FFT ({frame}); \
+             give it only on the FFT",
+            u.kind
+        ));
+    }
+    config.fft_size = Some(shape.winsize);
+    config.winsize = shape.frame;
     config.hop = shape.hop;
     config.wintype = shape.wintype;
+    config.written = shape.written;
     Ok(())
 }
 
@@ -877,6 +1013,8 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
         fft_size: u.fft_size,
         hop: u.hop,
         wintype: u.wintype,
+        winsize: u.winsize,
+        written: false,
         partitions: u.partitions,
         mag_prog: None,
         phase_prog: None,

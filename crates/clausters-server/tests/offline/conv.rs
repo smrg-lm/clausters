@@ -587,3 +587,291 @@ fn prepare_partconv_refuses_an_impulse_response_at_another_rate() {
         "{err}"
     );
 }
+
+// ---- scsynth's convolution names ----
+
+/// Direct convolution of `sig` with `ir` in f64, the first `len` samples.
+fn direct(sig: &[f32], ir: &[f32], len: usize) -> Vec<f32> {
+    (0..len)
+        .map(|t| {
+            let mut acc = 0.0f64;
+            for (j, &h) in ir.iter().enumerate() {
+                if t >= j {
+                    acc += h as f64 * sig[t - j] as f64;
+                }
+            }
+            acc as f32
+        })
+        .collect()
+}
+
+/// A def that plays buffer 0 through `ugen` (its input 0 the played signal)
+/// to the output.
+fn played_through(ugen: Value) -> UGenSynth {
+    spec_synth(json!({
+        "name": "through",
+        "controls": [{"name": "kernel", "default": 1.0}, {"name": "trig", "default": 0.0}],
+        "ugens": [
+            {"kind": "PlayBuf",
+             "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+            ugen,
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }))
+}
+
+/// Renders `ugen` over the shared test signal, with `buffers` from index 1.
+fn render_rows(ugen: Value, buffers: Vec<Buffer>, blocks: usize) -> Vec<f32> {
+    let sig = lcg_samples(4096, 12345);
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    set_buffer(
+        &mut engine,
+        &mut handle,
+        0,
+        Buffer::new(sig, 1, 4096, SR as f64),
+    );
+    for (k, b) in buffers.into_iter().enumerate() {
+        set_buffer(&mut engine, &mut handle, k + 1, b);
+    }
+    handle
+        .send(add_synth(1, played_through(ugen)))
+        .ok()
+        .unwrap();
+    render_channel(&mut engine, blocks)
+}
+
+fn mono(samples: Vec<f32>) -> Buffer {
+    let n = samples.len();
+    Buffer::new(samples, 1, n, SR as f64)
+}
+
+fn assert_late(name: &str, got: &[f32], want: &[f32], late: usize, tol: f32) {
+    let err = want
+        .iter()
+        .enumerate()
+        .map(|(t, &w)| (got[late + t] - w).abs())
+        .fold(0.0f32, f32::max);
+    assert!(err < tol, "{name}: max error {err}");
+    assert!(
+        rms(want, 0, want.len()) > 0.05,
+        "{name}: the reference is silent"
+    );
+}
+
+/// Every one of scsynth's convolution names convolves: `PartConv` and the
+/// raw-kernel rows are the input convolved with the kernel, one partition
+/// late; `Convolution3` is that with no latency; each channel of
+/// `StereoConvolution2L` is its own kernel's convolution.
+#[test]
+fn scsynths_convolution_rows_convolve() {
+    let sig = lcg_samples(4096, 12345);
+    let ir_a: Vec<f32> = lcg_samples(300, 999).iter().map(|x| x * 0.05).collect();
+    let ir_b: Vec<f32> = lcg_samples(200, 31).iter().map(|x| x * 0.05).collect();
+    let src = json!({"ugen": 0});
+    let k = |v: f32| json!({"const": v});
+    let rows: Vec<(&str, Value, Vec<f32>, usize)> = vec![
+        (
+            "Convolution2",
+            json!({"kind": "Convolution2", "inputs": [src, k(1.0), k(0.0), k(512.0)]}),
+            ir_a.clone(),
+            512,
+        ),
+        (
+            "Convolution2L",
+            json!({"kind": "Convolution2L", "inputs": [src, k(1.0), k(0.0), k(512.0), k(1.0)]}),
+            ir_a.clone(),
+            512,
+        ),
+        (
+            "StereoConvolution2L left",
+            json!({"kind": "StereoConvolution2L",
+                   "inputs": [src, k(1.0), k(2.0), k(0.0), k(512.0), k(1.0), k(0.0)]}),
+            ir_a.clone(),
+            512,
+        ),
+        (
+            "StereoConvolution2L right",
+            json!({"kind": "StereoConvolution2L",
+                   "inputs": [src, k(1.0), k(2.0), k(0.0), k(512.0), k(1.0), k(1.0)]}),
+            ir_b.clone(),
+            512,
+        ),
+        (
+            "Convolution3",
+            json!({"kind": "Convolution3", "inputs": [src, k(1.0), k(0.0), k(300.0)]}),
+            ir_a.clone(),
+            0,
+        ),
+    ];
+    for (name, ugen, ir, late) in rows {
+        let kernels = vec![mono(ir_a.clone()), mono(ir_b.clone())];
+        let got = render_rows(ugen, kernels, 48);
+        assert_late(name, &got, &direct(&sig, &ir, 2500), late, 5e-6);
+    }
+    // `PartConv` reads a prepared kernel, `Conv`'s.
+    let got = render_rows(
+        json!({"kind": "PartConv", "inputs": [src, k(512.0), k(1.0)], "partitions": 2}),
+        vec![prepare(&ir_a, 512)],
+        48,
+    );
+    assert_late("PartConv", &got, &direct(&sig, &ir_a, 2500), 256, 5e-6);
+}
+
+/// `Convolution` convolves each `framesize` samples of its input with the
+/// same samples of its kernel signal and overlap-adds them, `framesize`
+/// late.
+#[test]
+fn convolution_convolves_two_signals_frame_by_frame() {
+    let sig = lcg_samples(4096, 12345);
+    let kern = lcg_samples(4096, 77);
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    set_buffer(&mut engine, &mut handle, 0, mono(sig.clone()));
+    set_buffer(&mut engine, &mut handle, 1, mono(kern.clone()));
+    let play = |b: f32| {
+        json!({"kind": "PlayBuf",
+               "inputs": [{"const": b}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                          {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]})
+    };
+    let synth = spec_synth(json!({
+        "name": "cross",
+        "ugens": [play(0.0), play(1.0),
+            {"kind": "Convolution", "inputs": [{"ugen": 0}, {"ugen": 1}, {"const": 256.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}]
+    }));
+    handle.send(add_synth(1, synth)).ok().unwrap();
+    let got = render_channel(&mut engine, 48);
+    const F: usize = 256;
+    let mut want = vec![0.0f64; 2600];
+    for s in 0..8 {
+        for i in 0..F {
+            for j in 0..F {
+                if s * F + i + j < want.len() {
+                    want[s * F + i + j] += sig[s * F + i] as f64 * kern[s * F + j] as f64;
+                }
+            }
+        }
+    }
+    let want: Vec<f32> = want[..2048].iter().map(|&x| x as f32).collect();
+    assert_late("Convolution", &got, &want, F, 2e-4);
+}
+
+/// A raw kernel loads again at a trigger: `Convolution2` switches to it at
+/// the next frame, `Convolution2L` fades to it over `crossfade` frames, and
+/// before and after each is exactly one kernel's convolution.
+#[test]
+fn a_trigger_reloads_a_raw_kernel() {
+    const F: usize = 512;
+    let sig = lcg_samples(4096, 12345);
+    let ir_a: Vec<f32> = lcg_samples(300, 999).iter().map(|x| x * 0.05).collect();
+    let ir_b: Vec<f32> = lcg_samples(200, 31).iter().map(|x| x * 0.05).collect();
+    let (wa, wb) = (direct(&sig, &ir_a, 4096), direct(&sig, &ir_b, 4096));
+    for (kind, fade) in [("Convolution2", 0usize), ("Convolution2L", 2)] {
+        let mut inputs = vec![
+            json!({"ugen": 0}),
+            json!({"control": 0}),
+            json!({"control": 1}),
+            json!({"const": F as f32}),
+        ];
+        if kind == "Convolution2L" {
+            inputs.push(json!({"const": fade as f32}));
+        }
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        set_buffer(&mut engine, &mut handle, 0, mono(sig.clone()));
+        set_buffer(&mut engine, &mut handle, 1, mono(ir_a.clone()));
+        set_buffer(&mut engine, &mut handle, 2, mono(ir_b.clone()));
+        handle
+            .send(add_synth(
+                1,
+                played_through(json!({"kind": kind, "inputs": inputs})),
+            ))
+            .ok()
+            .unwrap();
+        // Switch inside the synth's fourth frame.
+        let mut got = render_channel(&mut engine, (3 * F + 64) / BLOCK_SIZE);
+        handle
+            .send(Cmd::SetControl {
+                id: 1,
+                index: 0,
+                value: 2.0,
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::SetControl {
+                id: 1,
+                index: 1,
+                value: 1.0,
+            })
+            .ok()
+            .unwrap();
+        got.extend(render_channel(&mut engine, 50));
+        // The frame closing after the trigger is the first of kernel B: its
+        // output plays from 4F, the convolution at 3F.
+        for t in F..4 * F {
+            assert!((got[t] - wa[t - F]).abs() < 5e-6, "{kind}: kernel A at {t}");
+        }
+        let end = 4 * F + fade * F;
+        for t in 4 * F..end {
+            let x = ((t - 4 * F) as f32 + 0.5) / (fade * F) as f32;
+            let want = wa[t - F] * (1.0 - x) + wb[t - F] * x;
+            assert!((got[t] - want).abs() < 5e-6, "{kind}: the fade at {t}");
+        }
+        for t in end..end + 2 * F {
+            assert!((got[t] - wb[t - F]).abs() < 5e-6, "{kind}: kernel B at {t}");
+        }
+    }
+}
+
+/// A raw kernel longer than the `framesize` the UGen holds is refused, not
+/// cut: silence, reported once with the buffer, its frames and the
+/// framesize.
+#[test]
+fn a_raw_kernel_longer_than_its_framesize_plays_silence_and_says_so() {
+    for (kind, size) in [("Convolution2", 256.0f32), ("Convolution3", 100.0)] {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        set_buffer(&mut engine, &mut handle, 0, mono(lcg_samples(4096, 1)));
+        set_buffer(&mut engine, &mut handle, 1, mono(lcg_samples(300, 2)));
+        let ugen = json!({"kind": kind, "inputs": [{"ugen": 0}, {"const": 1.0},
+                                                    {"const": 0.0}, {"const": size}]});
+        handle
+            .send(add_synth(1, played_through(ugen)))
+            .ok()
+            .unwrap();
+        let out = render_channel(&mut engine, 30);
+        assert!(
+            out.iter().all(|&x| x == 0.0),
+            "{kind}: a refused kernel is silence"
+        );
+        let faults = replies(&mut handle);
+        assert_eq!(faults.len(), 1, "{kind}: reported once");
+        assert_eq!(faults[0].id, fault::RAW_TOO_LONG);
+        assert_eq!(faults[0].values(), &[1.0, 300.0, size]);
+        assert!(describe_fault(&faults[0]).contains("has 300 frames, more than the framesize"));
+    }
+}
+
+/// The compiler takes a convolution row's size from a constant and holds it
+/// to a size the transform supports.
+#[test]
+fn compiler_holds_a_convolution_size_to_a_constant_it_supports() {
+    let compile = |size: Value| {
+        let spec: SynthDefSpec = serde_json::from_value(json!({
+            "name": "c",
+            "controls": [{"name": "size", "default": 512.0}],
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Convolution2", "inputs": [{"ugen": 0}, {"const": 1.0},
+                                                     {"const": 0.0}, size]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+            ]
+        }))
+        .unwrap();
+        clausters::synthdef::compile(spec)
+    };
+    assert!(compile(json!({"const": 512.0})).is_ok());
+    let err = compile(json!({"control": 0})).err().unwrap();
+    assert!(err.contains("must be a constant"), "{err}");
+    let err = compile(json!({"const": 300.0})).err().unwrap();
+    assert!(err.contains("unsupported framesize 300"), "{err}");
+}

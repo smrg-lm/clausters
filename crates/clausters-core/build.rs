@@ -1,13 +1,13 @@
-//! Generates the twiddle table the inverse real FFT (`fft::irfft_into`)
-//! post-rotates its odd half by: `e^{+j 2 pi k / 4096}` for `k` in
-//! `0..2048`, computed in `f64` and rounded once to `f32`. A smaller size
+//! Generates the twiddle table the inverse real FFT (`fft::irfft_with`)
+//! post-rotates its odd half by: `e^{+j 2 pi k / 32768}` for `k` in
+//! `0..16384`, computed in `f64` and rounded once to `f32`. A smaller size
 //! reads it at a stride. Built here rather than at run time because the
-//! audio thread may neither compute two thousand sines per transform nor
+//! audio thread may neither compute sixteen thousand sines per transform nor
 //! wait on a lazily initialized table.
 
 use std::fmt::Write as _;
 
-const N: usize = 4096;
+const N: usize = 32768;
 
 fn main() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("twiddle.rs");

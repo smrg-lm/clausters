@@ -554,18 +554,33 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `poll(trig, signal, trig_id=-1, *, label="poll")` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | | `check_bad_values(signal, id=0.0, post=2.0)` | the class of every sample (0 ordinary, 1 NaN, 2 infinity, 3 denormal), posted by `post` |
 | | `sanitize(signal, replace=0.0)` | `signal` with every NaN, infinity and denormal replaced by `replace` |
-| Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
+| Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0, winsize=None)` | opens a spectral chain (windows and transforms `source` per hop; `fft_size` from 64 to 32768, `winsize` a shorter frame zero-padded to it) |
+| | `fft_trigger(*, fft_size=1024, hop=0.5, wintype=0, winsize=None)` | opens a chain whose frames are written, not analysed |
+| | `pack_fft(chain, mags_phases, frombin=0, tobin=None, zeroothers=0)` | write a run of bins from `[mag0, phase0, ...]` |
+| | `unpack1_fft(chain, binindex, whichmeasure=0)` | one bin's magnitude (0) or phase (1) as a control signal |
+| | `pv_copy(chain)` | a copy of the chain, a branch of its own |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pv_mag_clip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
-| | `pv_brick_wall(chain, wipe)` | zero a band (`wipe > 0` low pass, `< 0` high pass) |
+| | `pv_brick_wall(chain, wipe)` | zero a band (`wipe > 0` from the bottom, a high pass; `< 0` from the top, a low pass) |
+| | `pv_mag_squared(chain)` / `pv_mag_noise(chain)` / `pv_local_max(chain, threshold=0)` | square the magnitudes / multiply them by noise / keep the peaks |
+| | `pv_conj(chain)` / `pv_phase_shift90(chain)` / `pv_phase_shift270(chain)` / `pv_phase_shift(chain, shift, integrate=0)` | turn every bin's phase |
+| | `pv_conformal_map(chain, areal=0, aimag=0)` | a Moebius map of every bin |
+| | `pv_rect_comb(chain, num_teeth=0, phase=0, width=0.5)` / `pv_rand_comb(chain, wipe=0, trig=0)` | zero the gaps of a comb / a random part of the bins |
+| | `pv_bin_scramble(chain, wipe=0, width=0.2, trig=0)` / `pv_diffuser(chain, trig=0)` | move bins to random places nearby / turn each phase at random |
+| | `pv_div(a, b)` / `pv_mag_div(a, b, zeroed=0.0001)` | two-chain combiners: per-bin complex quotient / A's magnitudes over B's |
+| | `pv_bin_wipe(a, b, wipe=0)` / `pv_rect_comb2(a, b, ...)` / `pv_rand_wipe(a, b, wipe=0, trig=0)` | A with a run / a comb's gaps / a random part of B's bins |
 | | `pv_add(a, b)` / `pv_mul(a, b)` / `pv_min(a, b)` / `pv_max(a, b)` | two-chain combiners: per-bin complex sum / product / smaller / larger magnitude |
 | | `pv_mag_mul(a, b)` / `pv_copy_phase(a, b)` | cross-synthesis: A's bins scaled by B's magnitudes / A's magnitudes with B's phases |
 | | `pv_mag_freeze(chain, freeze=0)` | hold the stored magnitude envelope while `freeze > 0` (phases keep running) |
 | | `pv_mag_smear(chain, bins=0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
-| | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
+| | `pv_bin_shift(chain, stretch=1, shift=0, interp=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
 | | `pv_kernel(chain, *, mag=None, phase=None, params=())` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 | Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `dest.gen("prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
+| | `part_conv(source, fftsize, irbufnum, *, partitions=16)` | `conv` with scsynth's `PartConv` inputs |
+| | `convolution2(source, kernel, trigger=0, framesize=2048)` / `convolution2_l(..., crossfade=1)` / `stereo_convolution2_l(source, kernel_l, kernel_r, ...)` | convolution with the samples of a buffer (at most `framesize`), reloaded at each `trigger`: switched, faded, in stereo |
+| | `convolution3(source, kernel, trigger=0, framesize=2048)` | direct convolution with a short kernel, no latency |
+| | `convolution(source, kernel, framesize=512)` | two signals convolved frame by frame (cross-synthesis) |
 <!-- /python -->
 <!-- web -->
 | Group | Callable | Does |
@@ -730,18 +745,33 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `poll(trig, signal, trigId = -1, { label = "poll" })` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | | `checkBadValues(signal, id = 0.0, post = 2.0)` | the class of every sample (0 ordinary, 1 NaN, 2 infinity, 3 denormal), posted by `post` |
 | | `sanitize(signal, replace = 0.0)` | `signal` with every NaN, infinity and denormal replaced by `replace` |
-| Spectral | `fft(source, active = 1.0, { fftSize = 1024, hop = 0.5, wintype = 0 })` | opens a spectral chain (windows and transforms `source` per hop) |
+| Spectral | `fft(source, active = 1.0, { fftSize = 1024, hop = 0.5, wintype = 0, winsize })` | opens a spectral chain (windows and transforms `source` per hop; `fftSize` from 64 to 32768, `winsize` a shorter frame zero-padded to it) |
+| | `fftTrigger({ fftSize = 1024, hop = 0.5, wintype = 0, winsize })` | opens a chain whose frames are written, not analysed |
+| | `packFft(chain, magsPhases, frombin = 0, tobin, zeroothers = 0)` | write a run of bins from `[mag0, phase0, ...]` |
+| | `unpack1Fft(chain, binindex, whichmeasure = 0.0)` | one bin's magnitude (0) or phase (1) as a control signal |
+| | `pvCopy(chain)` | a copy of the chain, a branch of its own |
 | | `pvMagAbove(chain, threshold)` / `pvMagBelow(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pvMagClip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
-| | `pvBrickWall(chain, wipe)` | zero a band (`wipe > 0` low pass, `< 0` high pass) |
+| | `pvBrickWall(chain, wipe)` | zero a band (`wipe > 0` from the bottom, a high pass; `< 0` from the top, a low pass) |
+| | `pvMagSquared(chain)` / `pvMagNoise(chain)` / `pvLocalMax(chain, threshold = 0.0)` | square the magnitudes / multiply them by noise / keep the peaks |
+| | `pvConj(chain)` / `pvPhaseShift90(chain)` / `pvPhaseShift270(chain)` / `pvPhaseShift(chain, shift, integrate = 0.0)` | turn every bin's phase |
+| | `pvConformalMap(chain, areal = 0.0, aimag = 0.0)` | a Moebius map of every bin |
+| | `pvRectComb(chain, numTeeth = 0.0, phase = 0.0, width = 0.5)` / `pvRandComb(chain, wipe = 0.0, trig = 0.0)` | zero the gaps of a comb / a random part of the bins |
+| | `pvBinScramble(chain, wipe = 0.0, width = 0.2, trig = 0.0)` / `pvDiffuser(chain, trig = 0.0)` | move bins to random places nearby / turn each phase at random |
+| | `pvDiv(chainA, chainB)` / `pvMagDiv(chainA, chainB, zeroed = 0.0001)` | two-chain combiners: per-bin complex quotient / A's magnitudes over B's |
+| | `pvBinWipe(chainA, chainB, wipe = 0.0)` / `pvRectComb2(chainA, chainB, ...)` / `pvRandWipe(chainA, chainB, wipe = 0.0, trig = 0.0)` | A with a run / a comb's gaps / a random part of B's bins |
 | | `pvAdd(chainA, chainB)` / `pvMul(chainA, chainB)` / `pvMin(chainA, chainB)` / `pvMax(chainA, chainB)` | two-chain combiners: per-bin complex sum / product / smaller / larger magnitude |
 | | `pvMagMul(chainA, chainB)` / `pvCopyPhase(chainA, chainB)` | cross-synthesis: A's bins scaled by B's magnitudes / A's magnitudes with B's phases |
 | | `pvMagFreeze(chain, freeze = 0.0)` | hold the stored magnitude envelope while `freeze > 0` (phases keep running) |
 | | `pvMagSmear(chain, bins = 0.0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
-| | `pvBinShift(chain, stretch = 1.0, shift = 0.0)` / `pvMagShift(chain, stretch = 1.0, shift = 0.0)` | remap bin positions (complex bins / magnitude envelope only) |
+| | `pvBinShift(chain, stretch = 1.0, shift = 0.0, interp = 0.0)` / `pvMagShift(chain, stretch = 1.0, shift = 0.0)` | remap bin positions (complex bins / magnitude envelope only) |
 | | `pvKernel(chain, { mag, phase, params = [] })` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 | Convolution | `conv(source, kernel, { fftSize = 1024, partitions = 16 })` | partitioned convolution against a kernel prepared with `dest.gen("prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconvFrames`); latency `fft_size / 2` samples |
+| | `partConv(source, fftsize, irbufnum, { partitions = 16 })` | `conv` with scsynth's `PartConv` inputs |
+| | `convolution2(source, kernel, trigger = 0.0, framesize = 2048)` / `convolution2L(..., crossfade = 1.0)` / `stereoConvolution2L(source, kernelL, kernelR, ...)` | convolution with the samples of a buffer (at most `framesize`), reloaded at each `trigger`: switched, faded, in stereo |
+| | `convolution3(source, kernel, trigger = 0.0, framesize = 2048)` | direct convolution with a short kernel, no latency |
+| | `convolution(source, kernel, framesize = 512)` | two signals convolved frame by frame (cross-synthesis) |
 <!-- /web -->
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/synth_new` time.
@@ -901,7 +931,7 @@ Spectral processing wires an `fft` to an `ifft` with any number of `pv_*` filter
 from clausters.defs import SynthDef, white_noise, fft, pv_brick_wall, ifft, out
 
 chain = fft(white_noise() * 0.25, fft_size=1024, hop=0.5, wintype=0)
-chain = pv_brick_wall(chain, 0.75)      # keep the bottom 25% of bins (a low pass)
+chain = pv_brick_wall(chain, -0.75)     # keep the bottom 25% of bins (a low pass)
 sdef = SynthDef("spec_lp", out(0.0, ifft(chain)))
 ```
 
@@ -909,7 +939,7 @@ sdef = SynthDef("spec_lp", out(0.0, ifft(chain)))
 import { SynthDef, fft, ifft, out, pvBrickWall, whiteNoise } from "clausters/defs";
 
 let chain = fft(whiteNoise().mul(0.25), 1.0, { fftSize: 1024, hop: 0.5, wintype: 0 });
-chain = pvBrickWall(chain, 0.75);       // keep the bottom 25% of bins (a low pass)
+chain = pvBrickWall(chain, -0.75);      // keep the bottom 25% of bins (a low pass)
 const sdef = new SynthDef("spec_lp", out(0.0, ifft(chain)));
 ```
 

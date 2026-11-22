@@ -7,48 +7,87 @@
 // to allocate), which is why only `fft` names a size -- the server propagates
 // it down the chain.
 
-import { Ugen } from "./graph.ts";
+import { ChannelList, Ugen, chans } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 import { pvTokens } from "../pv_expr.ts";
 import type { PvOperand } from "../pv_expr.ts";
 export * from "./_generated/spectral.ts";
 
-/** The window `fft` transforms with (`0` Hann, `1` sine, ...). */
+/** The frame an `fft` or `fftTrigger` takes. */
 export interface FftOptions {
-    /** The window size, a power of two: 256/512/1024/2048/4096. */
+    /** The transform size, a power of two from 64 to 32768. */
     fftSize?: number;
     /**
-     * The fraction of the window between frames: in (0, 1], and at least one
+     * The fraction of the frame between frames: in (0, 1], and at least one
      * 64-sample block (0.25 of 256).
      */
     hop?: number;
-    /** The window shape. */
+    /** The window shape (`0` Hann, `1` sine, ...). */
     wintype?: number;
+    /**
+     * The frame of signal windowed, when shorter than the transform: at least
+     * one 64-sample block, padded with zeros to `fftSize`.
+     */
+    winsize?: number;
 }
+
+const frameFields = ({ fftSize = 1024, hop = 0.5, wintype = 0, winsize }: FftOptions) => {
+    const fields: Record<string, number> = {
+        fft_size: Math.trunc(fftSize),
+        hop: Number(hop),
+        wintype: Math.trunc(wintype),
+    };
+    if (winsize !== undefined) fields.winsize = Math.trunc(winsize);
+    return fields;
+};
 
 /**
  * Opens a spectral chain: windows `source` (an audio signal) and transforms
  * it to a spectral frame once per **hop**. `active` gates the input, per
  * sample: `<= 0` is analysed as silence, so the round trip is the gated input
  * exactly, and a frame whose whole window was gated is not taken -- the chain
- * does no work while it stays off. The options size the transform, so they
- * are static fields given **only here** -- the server propagates them to the
- * rest of the chain. The chain's window is also settable live with
- * `Server.uCmd` addressed to this `fft` (the `ifft` follows it). Feed the
- * result to a `pv*` filter or `ifft`.
+ * does no work while it stays off. `fftSize` is the transform size,
+ * `winsize` the frame of signal windowed when shorter (the transform pads it
+ * with zeros, a finer grid of bins over the same stretch of time). The
+ * options size the transform, so they are static fields given **only here**
+ * -- the server propagates them to the rest of the chain. The chain's window
+ * is also settable live with `Server.uCmd` addressed to this `fft` (the
+ * `ifft` follows it). Feed the result to a `pv*` filter or `ifft`.
  */
-export const fft = (
-    source: Channel,
-    active: Channel = 1.0,
-    { fftSize = 1024, hop = 0.5, wintype = 0 }: FftOptions = {},
-): Ugen =>
-    new Ugen("FFT", [source, active], {
-        static: {
-            fft_size: Math.trunc(fftSize),
-            hop: Number(hop),
-            wintype: Math.trunc(wintype),
-        },
-    });
+export const fft = (source: Channel, active: Channel = 1.0, options: FftOptions = {}): Ugen =>
+    new Ugen("FFT", [source, active], { static: frameFields(options) });
+
+/**
+ * Opens a spectral chain whose frames are **written**, not analysed: it marks
+ * the frame fresh once per hop and leaves its bins to what follows --
+ * `packFft` setting them, or a `pvKernel` program computing them -- and an
+ * `ifft` resynthesizes them like any other frame. The options are `fft`'s.
+ * The frame starts silent and keeps what was written into it from one hop to
+ * the next. Its frames carry no analysis window, so the `ifft` normalizes
+ * their overlap by the synthesis window alone: a bin of magnitude `m` comes
+ * back as a partial of amplitude `2 * m / fftSize`.
+ */
+export const fftTrigger = (options: FftOptions = {}): Ugen =>
+    new Ugen("FFTTrigger", [], { static: frameFields(options) });
+
+/**
+ * Writes a run of bins from signals: `magsPhases` is the flat list `[mag0,
+ * phase0, mag1, phase1, ...]`, pair `j` setting bin `frombin + j` (up to
+ * `tobin`, by default the last pair's), read at each frame. With `zeroothers`
+ * above 0 every other bin is zeroed. DC and Nyquist, which are real, take
+ * `mag * cos(phase)`. Usually on an `fftTrigger` chain, so the frame is what
+ * the def writes; on an analysed one it replaces the bins it names.
+ */
+export function packFft(
+    chain: Channel,
+    magsPhases: readonly Channel[],
+    frombin: Channel = 0,
+    tobin?: Channel,
+    zeroothers: Channel = 0,
+): Ugen {
+    const last = tobin ?? Number(frombin) + Math.floor(magsPhases.length / 2) - 1;
+    return new Ugen("PackFFT", [chain, frombin, last, zeroothers, ...magsPhases]);
+}
 
 /** The per-bin expressions and extra inputs `pvKernel` applies to a frame. */
 export interface PvKernelOptions {
@@ -140,6 +179,57 @@ export const conv = (
             partitions: Math.trunc(partitions),
         },
     });
+
+/** The kernel capacity of a `partConv`. */
+export interface PartConvOptions {
+    /** How long a kernel this instance accepts, in partitions. */
+    partitions?: number;
+}
+
+/**
+ * `conv` with scsynth's `PartConv` inputs: `fftsize` (a constant, a supported
+ * power of two) and `irbufnum`, a kernel prepared with
+ * `dest.gen("prepare_partconv", fftsize, irBufnum)`. `partitions` is the most
+ * partitions a kernel may have, `conv`'s.
+ */
+export const partConv = (
+    source: Channel,
+    fftsize: Channel,
+    irbufnum: Channel,
+    { partitions = 16 }: PartConvOptions = {},
+): Ugen =>
+    new Ugen("PartConv", [source, fftsize, irbufnum], {
+        static: { partitions: Math.trunc(partitions) },
+    });
+
+/**
+ * `convolution2L` with a kernel per channel: `source` convolved with the
+ * samples of buffer `kernelL` on the left and `kernelR` on the right, both
+ * read at the start and again at each `trigger` and faded in over
+ * `crossfade` frames. Returns the two channels.
+ */
+export const stereoConvolution2L = (
+    source: Channel,
+    kernelL: Channel,
+    kernelR: Channel,
+    trigger: Channel = 0.0,
+    framesize: Channel = 2048,
+    crossfade: Channel = 1.0,
+): ChannelList =>
+    chans(
+        [0.0, 1.0].map(
+            (c) =>
+                new Ugen("StereoConvolution2L", [
+                    source,
+                    kernelL,
+                    kernelR,
+                    trigger,
+                    framesize,
+                    crossfade,
+                    c,
+                ]),
+        ),
+    );
 
 /**
  * Frames a kernel buffer needs to hold `irFrames` of impulse response

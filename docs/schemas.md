@@ -886,10 +886,11 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `Poll` | trig, signal, trig_id | on each trigger of `trig`, posts `label: value` (the `signal` value) to the server console (a static `label` field) and, when `trig_id ≥ 0`, also sends `/node_trigger nodeID trig_id value`; passes `signal` through as its output |
 | `CheckBadValues` | signal, id=0, post=2 | the class of every sample: 0 an ordinary number (zero included), 1 a NaN, 2 an infinity, 3 a denormal. `post` 0 posts nothing, 1 a line at every bad sample, 2 a line whenever the class changes, with how long the previous one lasted (logged at `warn`) |
 | `Sanitize` | signal, replace=0 | `signal` with every NaN, infinity and denormal replaced by `replace` |
-| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active`, read per sample, gates the input: `≤ 0` is analysed as silence, so the round trip is the gated input exactly, and a frame whose whole window was gated is not taken — the chain does no work while it stays off, and reads as silence to a combiner); static fields `fft_size` (default 1024), `hop` (fraction of the window in (0, 1], at least one 64-sample block; default 0.5), `wintype` (default 0 = Hann); the chain's window is also settable live via `/node_ugenCmd` to the `FFT` — see the FFT-chain note below |
+| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active`, read per sample, gates the input: `≤ 0` is analysed as silence, so the round trip is the gated input exactly, and a frame whose whole window was gated is not taken — the chain does no work while it stays off, and reads as silence to a combiner); static fields `fft_size` (a power of two from 64 to 32768, default 1024), `winsize` (the frame of signal windowed, at least one 64-sample block and at most `fft_size`, zero-padded to it; default `fft_size`), `hop` (fraction of the frame in (0, 1], at least one 64-sample block; default 0.5), `wintype` (default 0 = Hann; scsynth's numbers differ, see the FFT-chain note); the chain's window is also settable live via `/node_ugenCmd` to the `FFT` — see the FFT-chain note below |
+| `FFTTrigger` | — | opens a chain whose frames are **written**, not analysed: marks the frame fresh once per hop and leaves its bins to what follows (`PackFFT`, a `PV_Kernel` program); the frame starts silent and keeps what is written into it; the static fields are `FFT`'s, and its `IFFT` normalizes by the synthesis window alone, so a bin of magnitude `m` plays a partial of `2m/fft_size` |
 | `PV_MagAbove` | chain, threshold | passes only bins whose magnitude is **above** `threshold`, zeroing the rest; `chain` is the wire from an earlier `FFT`/`PV_*` |
 | `PV_MagBelow` | chain, threshold | passes only bins whose magnitude is **below** `threshold` |
-| `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (low pass), `wipe < 0` the bottom (high pass), `0` passes everything (`wipe` in −1..1) |
+| `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes that fraction of the bins between DC and Nyquist from the bottom up, DC with them (a high pass), `wipe < 0` from the top down, Nyquist with them (a low pass), `0` passes everything (`wipe` in −1..1; scsynth's direction) |
 | `PV_MagClip` | chain, threshold | limits each bin's magnitude **to** `threshold` (louder bins are scaled down, phases kept) |
 | `PV_Add` | chainA, chainB | two-chain combiner: per-bin complex sum, result in chain A — see the combiner note below |
 | `PV_Mul` | chainA, chainB | two-chain combiner: per-bin complex product |
@@ -897,13 +898,38 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `PV_Max` | chainA, chainB | two-chain combiner: per bin, whichever input has the **larger** magnitude |
 | `PV_MagMul` | chainA, chainB | two-chain combiner: A's bins scaled by B's magnitudes (A's phases kept) |
 | `PV_CopyPhase` | chainA, chainB | two-chain combiner: A's magnitudes with B's phases |
-| `PV_MagFreeze` | chain, freeze | while `freeze ≤ 0` stores each frame's magnitudes and passes through; while `> 0` rescales every bin to the stored magnitude (phases keep running) |
+| `PV_MagFreeze` | chain, freeze | while `freeze ≤ 0` stores each frame's magnitudes and passes through; while `> 0` rescales every bin to the stored magnitude (phases keep running); the first frame is always stored |
 | `PV_MagSmear` | chain, bins | averages each bin's magnitude over `bins` neighbors on each side (`0` is transparent), phases untouched |
-| `PV_BinShift` | chain, stretch, shift | remaps bin `b` to `round(b·stretch + shift)`: colliding bins sum, out-of-range bins are dropped |
+| `PV_BinShift` | chain, stretch, shift, interp | remaps bin `b` to `round(b·stretch + shift)`: colliding bins sum, out-of-range bins are dropped; with `interp > 0` a bin is split linearly between the two bins around `b·stretch + shift` |
 | `PV_MagShift` | chain, stretch, shift | the same remap applied to the magnitude envelope only, over the frame's original phases |
 | `PV_Kernel` | chain, p0, p1, … | applies user-written **bin expressions** to every bin of each fresh frame: static fields `mag_expr`/`phase_expr` are postfix token lists mapping one bin's values to its new magnitude / phase; the variadic `p0…` inputs are parameters the expressions read, sampled at the hop — see the bin-expression note below |
-| `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
+| `PV_MagSquared` | chain | squares every bin's magnitude, phases (DC's sign included) kept |
+| `PV_MagNoise` | chain | multiplies every bin by its own random factor in [−1, 1), drawn each frame (the inner bins, then DC, then Nyquist: scsynth's order) |
+| `PV_Conj` | chain | the complex conjugate of every bin between DC and Nyquist |
+| `PV_PhaseShift90` / `PV_PhaseShift270` | chain | every bin between DC and Nyquist turned a quarter turn forward / back |
+| `PV_PhaseShift` | chain, shift, integrate | every bin between DC and Nyquist turned by `shift` radians; with `integrate > 0` the shift sums frame to frame (kept in [0, 2π)) |
+| `PV_Div` | chainA, chainB | two-chain combiner: per-bin complex quotient A / B, as A times the conjugate of B over B's squared magnitude plus 1e-20, so a silent bin of B gives 0 |
+| `PV_MagDiv` | chainA, chainB, zeroed | two-chain combiner: A's magnitudes divided by B's, each floored at `zeroed` (default 0.0001), A's phases kept |
+| `PV_BinWipe` | chainA, chainB, wipe | two-chain combiner: A with a run of B's bins, chosen as `PV_BrickWall` chooses the bins it zeroes |
+| `PV_RectComb` | chain, num_teeth, phase, width | zeroes the bins between the teeth of a comb over the bins: `num_teeth` teeth from DC to Nyquist, starting at `phase` and each `width` of a period wide (both fractions of a period) |
+| `PV_RectComb2` | chainA, chainB, num_teeth, phase, width | two-chain combiner: the same comb, the bins between the teeth taken from B |
+| `PV_RandComb` | chain, wipe, trig | zeroes a random `wipe` fraction of the bins between DC and Nyquist (all of them, DC and Nyquist too, at 1), in an order drawn at the first frame and again at each `trig` |
+| `PV_RandWipe` | chainA, chainB, wipe, trig | two-chain combiner: a random `wipe` fraction of the bins taken from B, in the same kind of order; at 1 it is B |
+| `PV_BinScramble` | chain, wipe, width, trig | moves a random `wipe` fraction of the bins between DC and Nyquist to random places, each from up to `width` (a fraction of the bins) away; the arrangement is drawn at the first frame and again at each `trig` |
+| `PV_Diffuser` | chain, trig | turns every bin between DC and Nyquist by its own random phase, drawn at the first frame and again at each `trig` |
+| `PV_LocalMax` | chain, threshold | keeps the bins no neighbor of which is louder and at least `threshold`, zeroing the rest |
+| `PV_ConformalMap` | chain, areal, aimag | maps each bin `z` between DC and Nyquist to `(z − a) / (1 − conj(a)·z)`, `a = areal + i·aimag` (a denominator's squared modulus held at 0.001 at least) |
+| `PV_Copy` | chain | a chain of its own, a copy of `chain` with its shape: one analysis feeding two branches. It copies at its place in the graph, each fresh frame |
+| `PackFFT` | chain, frombin, tobin, zeroothers, mag0, phase0, … | writes bins `frombin` to `tobin` (and no further than the pairs given) from the pairs that follow, read at each frame; DC and Nyquist take `mag·cos(phase)`; with `zeroothers > 0` every other bin is zeroed |
+| `Unpack1FFT` | chain, binindex, whichmeasure | a control-rate value: the magnitude (`whichmeasure` 0) or the phase (1) of bin `binindex`, updated at each fresh frame; DC's and Nyquist's magnitude is their absolute value and their phase 0 or π. It reads the chain and its output is not one |
+| `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`winsize`/`hop`/`wintype` are inherited from the chain's first UGen (given only there) |
 | `Conv` | source, kernel | partitioned convolution against a **prepared** kernel buffer (`/buffer_gen prepare_partconv`); static fields `fft_size` (transform size; the partition — and intrinsic latency — is `fft_size/2`) and `partitions` (the longest kernel accepted, in partitions, 1–256, default 16 — a longer kernel is refused, not cut); see the convolution note below |
+| `PartConv` | source, fftsize, irbufnum | `Conv` with scsynth's inputs: `fftsize` is a constant (the transform size), `irbufnum` the prepared kernel; static field `partitions`, as on `Conv` |
+| `Convolution2` | source, kernel, trigger, framesize | convolves `source` with the samples of buffer `kernel` (channel 0, at most `framesize` of them, a longer one refused with a fault), read at the start and again at each `trigger`, switching at the next frame; `framesize` is a constant power of two from 32 to 16384, and the latency |
+| `Convolution2L` | source, kernel, trigger, framesize, crossfade | `Convolution2`, fading to a reloaded kernel over `crossfade` frames (read at the trigger) |
+| `StereoConvolution2L` | source, kernelL, kernelR, trigger, framesize, crossfade, chan | one channel of a stereo `Convolution2L`: channel `chan` (0 or 1) convolves with `kernelL` or `kernelR`; a builder makes both rows |
+| `Convolution3` | source, kernel, trigger, framesize | direct convolution in time with the samples of buffer `kernel` (channel 0, at most `framesize` of them, a constant up to 65536), read at the start and at each `trigger`: no latency, a cost per sample of the kernel's length. `ar` or `kr` |
+| `Convolution` | source, kernel, framesize | convolves two signals frame by frame: each `framesize` samples of `source` with the same samples of `kernel`, overlap-added (a cross-synthesis); `framesize` is a constant power of two from 32 to 16384, and the latency |
 
 **Envelopes (`EnvGen`).** `EnvGen` plays a breakpoint envelope, modelled on SuperCollider's. Its inputs are five fixed signals followed by a flat **envelope array**: `gate, level_scale, level_bias, time_scale, done_action`, then `initLevel, numSegments, releaseNode, loopNode`, then four values **per segment** — `target, duration, shape, curve`. The output is `envelope · level_scale + level_bias`; `time_scale` stretches every segment's duration. A rising `gate` (re)triggers from `initLevel`; while the gate is held the envelope **sustains** at `releaseNode` (an index into the levels — hold that level until release); when the gate falls it plays the segments from `releaseNode` on. A gate found **already closed on the node's very first sample** also counts as a release: a live note-on and its note-off can both apply before the node's first block, and the envelope then plays the release from `initLevel` and finishes (so the `doneAction` still frees the node) instead of sustaining forever on a closed gate. `releaseNode < 0` disables the sustain, so the envelope plays straight through (a one-shot). With a `loopNode` (an index `< releaseNode`), the held phase **cycles** the segments in `[loopNode, releaseNode)` instead of holding a single level, carrying the level at the release node back as the loop's start; the release still plays out from `releaseNode` when the gate falls. `loopNode < 0` disables looping. The **shape** numbers are `0` step, `1` linear, `2` exponential (needs same-sign, non-zero levels), `3` sine, `4` welch, `5` custom-curvature (bent by the `curve` value: 0 linear, positive starts slow, negative starts fast), `6` squared, `7` cubed, `8` hold. When the last segment finishes the UGen applies its `done_action` — scsynth's full set (0–15), with the freeing done on the audio thread through the garbage FIFO, never a blocking free:
 
@@ -974,7 +1000,7 @@ End-of-stream reaches the drivers differently. `Demand` holds the last value it 
 
 **Side-effect UGens (`SendTrig`/`SendReply`/`Poll`).** Some UGens exist for a **side effect** — an OSC reply or a console post — not for audio on a bus, and a def may contain *only* these with **no `Out` at all** (the server requires at least one UGen, never an `Out`). All three fire on a **trigger**: a signal crossing from `≤ 0` up to `> 0`. `SendTrig` replies `/node_trigger nodeID id value`; `SendReply` replies at a custom address (its static `label` field, default `/reply`) carrying `nodeID reply_id value…` for an arbitrary value list; `Poll` posts `label: value` to the server console and, with a non-negative `trig_id`, also emits a `/node_trigger`. The replies reach every client registered with `/server_notify` (`SendReply`'s custom address is delivered verbatim). A `Poll`'s line is logged at `info`, so the server prints it with `-v`; an offline render posts it the same way. `Dpoll` posts the same line for each item of a demand stream, and `CheckBadValues` posts what kind of number it found, at `warn`.
 
-**Faults (`/node_fault`).** A UGen that cannot honour what it was given exactly — a `Conv` kernel it cannot use whole, a combiner whose two chains' windows differ — plays **silence rather than a wrong result**, and says so once: the live server logs a warning and sends **`/node_fault <int32 nodeID> <string kind> <int32 code> <string sentence>`** to every `/server_notify` client, where `kind` is the UGen's (`Conv`, `PV_Add`, …), `code` its fault (the `Conv` codes are `1` partition size, `2` too long; a combiner's `1` is windows that differ) and `sentence` the explanation the server logged. Both clients warn it (Python on the `clausters.server` logger, the web client on the console). An **offline render fails** with the sentence instead, since a file of silence and no error is a wrong result nobody is told about. Mechanically the reply leaves the audio thread through a lock-free FIFO — the same discipline as the `/node_start`/`/node_end` node events — so triggering never allocates or blocks; a burst of triggers beyond the per-block buffer is dropped (best-effort, like the node events). The `id`/`reply_id`/`trig_id` and `value`s can be any signal (sampled at the trigger). The Python client builds them with `send_trig`/`send_reply`/`poll` and passes them as `SynthDef` roots.
+**Faults (`/node_fault`).** A UGen that cannot honour what it was given exactly — a `Conv` kernel it cannot use whole, a combiner whose two chains' windows differ — plays **silence rather than a wrong result**, and says so once: the live server logs a warning and sends **`/node_fault <int32 nodeID> <string kind> <int32 code> <string sentence>`** to every `/server_notify` client, where `kind` is the UGen's (`Conv`, `PV_Add`, …), `code` its fault (the convolution codes are `1` partition size, `2` too long, `3` a raw kernel longer than its `framesize`; a combiner's `1` is windows that differ) and `sentence` the explanation the server logged. Both clients warn it (Python on the `clausters.server` logger, the web client on the console). An **offline render fails** with the sentence instead, since a file of silence and no error is a wrong result nobody is told about. Mechanically the reply leaves the audio thread through a lock-free FIFO — the same discipline as the `/node_start`/`/node_end` node events — so triggering never allocates or blocks; a burst of triggers beyond the per-block buffer is dropped (best-effort, like the node events). The `id`/`reply_id`/`trig_id` and `value`s can be any signal (sampled at the trigger). The Python client builds them with `send_trig`/`send_reply`/`poll` and passes them as `SynthDef` roots.
 
 **Frequency-domain chain (`FFT`/`PV_*`/`IFFT`).** Spectral processing bookends a
 chain of `PV_*` (phase-vocoder) UGens between an `FFT` and an `IFFT`: `FFT`
@@ -987,10 +1013,13 @@ feeds `IFFT` — exactly like scsynth's chain. A def may of course also feed
 
 The chain is **not** block-rate: `FFT`/`PV_*` are control rate (`kr`, a per-block
 ready marker on the wire) and only do work on hop boundaries; `IFFT` is audio
-rate. The window size is a **static** field (`fft_size`, a power of two in
-256/512/1024/2048/4096) given **only on the `FFT`** — the compiler propagates it,
-the hop and the window type to the rest of the chain, so `PV_*`/`IFFT` need none
-of them. The resynthesis is exact only at the analysis hop with the analysis
+rate. The window size is a **static** field (`fft_size`, a power of two from 64
+to 32768, scsynth's range) given **only on the `FFT`** — the compiler propagates
+it, the frame (`winsize`), the hop and the window type to the rest of the
+chain, so `PV_*`/`IFFT` need none of them. A `winsize` below `fft_size` windows
+that many samples and pads the transform with zeros, a finer grid of bins over
+the same stretch of time; the `IFFT` keeps the frame's own samples of the
+inverse. The resynthesis is exact only at the analysis hop with the analysis
 window, so a `PV_*`/`IFFT` that repeats a `hop` or `wintype` other than its
 chain's fails the def. An unsupported size, or a `PV_*`/`IFFT` whose first
 input is not a spectral chain, fails the def with `/fail`.
@@ -1005,6 +1034,15 @@ carries chain A onward, and whatever `PV_*`/`IFFT` follows reads the combined
 frame. It acts on the blocks where chain A has a fresh frame, reading chain B's
 latest frame. The operator is a property of the *name*; all six are one
 server-side implementation.
+
+**Copies, written frames and readers.** A chain wire feeding two `PV_*`
+branches is one frame both change in turn, as in scsynth; `PV_Copy` makes the
+second branch a chain of its own, of its source's shape (and combinable with
+it). `FFTTrigger` opens a chain no signal is analysed into: `PackFFT` or a
+`PV_Kernel` program writes its bins, and since its frames carry no analysis
+window the `IFFT` divides their overlap by the synthesis window alone.
+`Unpack1FFT` reads a bin out as a control-rate value; its output is a value, so
+the compiler refuses it (and an `IFFT`'s) where a chain is expected.
 
 **Bin expressions (`PV_Kernel`).** The general per-frame mechanism: instead of
 one registered name per spectral operation, `PV_Kernel` interprets a pair of
@@ -1064,9 +1102,14 @@ offline render fails with it.
 Analysis and resynthesis use the same window (Hann by default), and the
 overlap-add is **window-normalized** (divided by the steady-state window-overlap
 denominator, COLA), so a plain `FFT`→`IFFT` reconstructs the signal at unity
-gain, delayed by exactly one window. A frame is taken at exactly every hop of
+gain, delayed by exactly one frame. A frame is taken at exactly every hop of
 the synth's own input, whatever slices a timed event cuts the block into, so
-any hop in range reconstructs exactly, not only whole blocks.
+any hop in range reconstructs exactly, not only whole blocks. The first frame
+ends one hop in and holds the silence before the synth started, so the first
+samples come back whole too. scsynth plays a frame one block sooner, in the
+block it closes, and numbers its windows `0` sine and `1` Hann where `wintype`
+here is `0` Hann and `1` sine (the core's `Window`, which the GUI and the
+clients share).
 
 The window is settable live with `/node_ugenCmd <nodeID> <ugenIndex> window
 <wintype>` (`-1` rectangular, `0` Hann, `1` sine, `2` Welch, `3` Hamming, `4`
@@ -1505,7 +1548,7 @@ Each of the two multi-reply queries sends **one reply message per item** — the
 - **`/ugen_query [kind...]`** → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`. With no argument, the whole catalog. Layout: `name, arity, defaultRate, rates, exec, bus, needsPath, opFamily, spectral, numInputs`, then per input `name, default`.
   - `arity` is the input count, or `-1` for a **variadic** kind — whose named inputs are then its **fixed head** only (`EnvGen`'s five before the envelope array, `Dseq`'s `repeats`).
   - `rates` is a comma list (`"kr,ar"`) of the rates the kind may be instantiated at; `defaultRate` is the one a def gets by omitting `rate`.
-  - `exec`, `bus`, `opFamily` and `spectral` expose the compiler's own classification (`normal`/`local_in`/`local_out`/`demand_driver`/`spectral`; `read`/`write`/`read_write` for an audio bus, `read_control`/`write_control` for a control bus; `unary`/`binary`; `source`/`filter`/`filter2`/`sink`), each an empty string when it does not apply.
+  - `exec`, `bus`, `opFamily` and `spectral` expose the compiler's own classification (`normal`/`local_in`/`local_out`/`demand_driver`/`spectral`; `read`/`write`/`read_write` for an audio bus, `read_control`/`write_control` for a control bus; `unary`/`binary`; `source`/`trigger`/`copy`/`filter`/`filter2`/`sink`), each an empty string when it does not apply.
   - The input **names are descriptive**: the wire stays positional and no input is ever addressed by name. They are what a palette labels an inlet with, and `default` what to offer when the user leaves a slot alone — the server applies no default of its own, a def that omits an input is simply short and fails on arity.
   - An unknown kind comes back with an empty rate set and no inputs. A server built **without the `synth` feature** has no UGen catalog at all and replies with an empty listing (not a failure) — its defs would all be FaustDefs, and the Faust box vocabulary is Faust's own, held client-side rather than published here.
 

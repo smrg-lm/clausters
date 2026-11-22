@@ -161,7 +161,7 @@ fn spectral_props(
         .or_else(|| props.get("window_size"))
         .and_then(Value::as_u64)
         .map(|n| n as usize)
-        .filter(|n| clausters_core::fft::supports(*n))
+        .filter(|n| clausters_core::fft::supports_analysis(*n))
         .unwrap_or(base.fft_size);
     signal::Spectral {
         fft_size: size,

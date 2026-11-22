@@ -88,7 +88,7 @@ def noisy(name: str = "noisy") -> SynthDef:
 def spectral_lowpass(name: str = "spectral_lp") -> SynthDef:
     """White noise -> FFT -> PV_BrickWall (low pass) -> IFFT, on the right."""
     chain = fft(white_noise() * 0.25, fft_size=1024, hop=0.5, wintype=0)
-    chain = pv_brick_wall(chain, 0.75)  # keep the bottom 25% of bins
+    chain = pv_brick_wall(chain, -0.75)  # keep the bottom 25% of bins
     return SynthDef(name, out(1.0, ifft(chain) * fade()))
 
 

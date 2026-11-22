@@ -31,7 +31,7 @@ const HALF: usize = N / 2;
 /// Samples rendered.
 const LEN: usize = 150 * BLOCK_SIZE;
 /// A node id a multiple of the hop's block count, so the hop-phase stagger is
-/// 0 and the first frame ends at `N`.
+/// 0 and the first frame ends at `HOP`.
 const NODE: i32 = 8;
 
 /// Deterministic input: noise at 0.3 plus a 0.3 tone at `freq`, so some bins
@@ -154,11 +154,12 @@ fn mag((re, im): (f32, f32)) -> f32 {
     (re * re + im * im).sqrt()
 }
 
-/// The chain's weighted overlap-add, done here: frames ending at `N`, `N +
-/// HOP`, ... over `a` and `b`, each windowed and transformed, `op(end, frame
-/// a, frame b)` applied to frame a, inverse-transformed, windowed again and
-/// added at its place, the sum divided by the window's steady-state overlap.
-/// Indexed by input position; the chain outputs it one window late.
+/// The chain's weighted overlap-add, done here: frames ending at `HOP`, `2 *
+/// HOP`, ... over `a` and `b` (the silence before the start read as zeros),
+/// each windowed and transformed, `op(end, frame a, frame b)` applied to
+/// frame a, inverse-transformed, windowed again and added at its place, the
+/// sum divided by the window's steady-state overlap. Indexed by input
+/// position; the chain outputs it one window late.
 fn reference(a: &[f32], b: &[f32], mut op: impl FnMut(usize, &mut [f32], &[f32])) -> Vec<f32> {
     let mut w = vec![0.0f32; N];
     Window::Hann.fill(&mut w);
@@ -167,17 +168,20 @@ fn reference(a: &[f32], b: &[f32], mut op: impl FnMut(usize, &mut [f32], &[f32])
         .collect();
     let mut acc = vec![0.0f32; LEN];
     let (mut fa, mut fb, mut t) = (vec![0.0f32; N], vec![0.0f32; N], vec![0.0f32; N]);
-    let mut end = N;
+    let at = |x: &[f32], i: isize| if i < 0 { 0.0 } else { x[i as usize] };
+    let mut end = HOP;
     while end <= LEN {
-        let s = end - N;
-        let wa: Vec<f32> = (0..N).map(|k| a[s + k] * w[k]).collect();
-        let wb: Vec<f32> = (0..N).map(|k| b[s + k] * w[k]).collect();
+        let s = end as isize - N as isize;
+        let wa: Vec<f32> = (0..N).map(|k| at(a, s + k as isize) * w[k]).collect();
+        let wb: Vec<f32> = (0..N).map(|k| at(b, s + k as isize) * w[k]).collect();
         rfft_into(&wa, &mut fa);
         rfft_into(&wb, &mut fb);
         op(end, &mut fa, &fb);
         irfft_into(&fa, &mut t);
         for k in 0..N {
-            acc[s + k] += t[k] * w[k];
+            if s + (k as isize) >= 0 {
+                acc[(s + k as isize) as usize] += t[k] * w[k];
+            }
         }
         end += HOP;
     }
@@ -250,13 +254,18 @@ fn the_brick_wall_matches() {
             vec![filter("PV_BrickWall", &[wipe])],
             vec![],
         );
-        let nbins = (HALF + 1) as f32;
+        // scsynth's: the inner bins counted without DC and Nyquist, a
+        // positive wipe clearing from the bottom up (with DC), a negative
+        // one from the top down (with Nyquist).
+        let inner = HALF as i32 - 1;
         let want = reference(&a, &b, |_, f, _| {
+            let m = (wipe * inner as f32) as i32;
             let zeroed = |k: usize| {
-                if wipe > 0.0 {
-                    k >= (nbins * (1.0 - wipe)).round() as usize
+                let k = k as i32;
+                if m > 0 {
+                    k == 0 || k <= m || (k == HALF as i32 && m >= inner)
                 } else {
-                    k < (nbins * -wipe).round() as usize
+                    k == HALF as i32 || k > inner + m || (k == 0 && m <= -inner)
                 }
             };
             for k in (0..=HALF).filter(|&k| zeroed(k)) {
@@ -467,4 +476,271 @@ fn a_kernel_phase_program_matches() {
         }
     });
     assert_matches("PV_Kernel phase + pi", &got, &want);
+}
+
+/// Two chains combined by `kind` with constant `params` after them.
+fn combine(kind: &str, params: &[f32]) -> Value {
+    let mut inputs = vec![json!({"ugen": 2}), json!({"ugen": 3})];
+    inputs.extend(params.iter().map(|p| json!({"const": p})));
+    json!({"kind": kind, "inputs": inputs})
+}
+
+/// Scales bin `k` to magnitude `m`, its phase kept (0 for a silent one).
+fn with_mag(f: &mut [f32], k: usize, m: f32) {
+    let (re, im) = get(f, k);
+    let cur = mag((re, im));
+    set(
+        f,
+        k,
+        if cur > 0.0 {
+            (re * m / cur, im * m / cur)
+        } else {
+            (m, 0.0)
+        },
+    );
+}
+
+/// Normalizes a pair of renders by the reference's peak, for operations
+/// whose output is far louder than their input.
+fn scaled(got: &[f32], want: &[f32]) -> (Vec<f32>, Vec<f32>) {
+    let s = want.iter().fold(0.0f32, |m, x| m.max(x.abs())).max(1.0);
+    (
+        got.iter().map(|x| x / s).collect(),
+        want.iter().map(|x| x / s).collect(),
+    )
+}
+
+#[test]
+fn the_new_bin_maps_match() {
+    let (a, b) = inputs();
+    // The magnitude squared, the phase kept -- DC's sign too.
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_MagSquared", &[])],
+        vec![],
+    );
+    let want = reference(&a, &b, |_, f, _| {
+        for k in 0..=HALF {
+            let m = mag(get(f, k));
+            with_mag(f, k, m * m);
+        }
+    });
+    let (got, want) = scaled(&got, &want);
+    assert_matches("PV_MagSquared", &got, &want);
+
+    // A bin no neighbor of which is louder, at least the threshold, against
+    // the frame as it came.
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_LocalMax", &[4.0])],
+        vec![],
+    );
+    let want = reference(&a, &b, |_, f, _| {
+        let mags: Vec<f32> = (0..=HALF).map(|k| mag(get(f, k))).collect();
+        for k in 0..=HALF {
+            let m = mags[k];
+            let louder = (k > 0 && mags[k - 1] > m) || (k < HALF && mags[k + 1] > m);
+            if m < 4.0 || louder {
+                set(f, k, (0.0, 0.0));
+            }
+        }
+    });
+    assert_matches("PV_LocalMax", &got, &want);
+
+    // z -> (z - a) / (1 - conj(a) z) on the inner bins.
+    let (ar, ai) = (0.3f32, -0.2f32);
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_ConformalMap", &[ar, ai])],
+        vec![],
+    );
+    let want = reference(&a, &b, |_, f, _| {
+        for k in 1..HALF {
+            let (zr, zi) = get(f, k);
+            let (nr, ni) = (zr - ar, zi - ai);
+            // 1 - conj(a) z
+            let (dr, di) = (1.0 - (ar * zr + ai * zi), -(ar * zi - ai * zr));
+            let d2 = (dr * dr + di * di).max(0.001);
+            set(f, k, ((nr * dr + ni * di) / d2, (ni * dr - nr * di) / d2));
+        }
+    });
+    let (got, want) = scaled(&got, &want);
+    assert_matches("PV_ConformalMap", &got, &want);
+
+    // The phase turned by a running sum of the shift, kept in [0, 2 pi).
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_PhaseShift", &[0.9, 1.0])],
+        vec![],
+    );
+    let mut sum = 0.0f32;
+    let want = reference(&a, &b, |_, f, _| {
+        let shift = 0.9 + sum;
+        sum = shift % std::f32::consts::TAU;
+        let (s, c) = shift.sin_cos();
+        for k in 1..HALF {
+            let (re, im) = get(f, k);
+            set(f, k, (re * c - im * s, re * s + im * c));
+        }
+    });
+    assert_matches("PV_PhaseShift integrate", &got, &want);
+}
+
+#[test]
+fn the_divisions_match() {
+    let (a, b) = inputs();
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![combine("PV_MagDiv", &[0.5])],
+        vec![],
+    );
+    let want = reference(&a, &b, |_, fa, fb| {
+        for k in 0..=HALF {
+            let (x, y) = (get(fa, k), get(fb, k));
+            let d = mag(y).max(0.5);
+            set(fa, k, (x.0 / d, x.1 / d));
+        }
+    });
+    assert_matches("PV_MagDiv", &got, &want);
+    let got = render(&a, &b, json!([]), vec![combine("PV_Div", &[])], vec![]);
+    let want = reference(&a, &b, |_, fa, fb| {
+        for k in 0..=HALF {
+            let (x, y) = (get(fa, k), get(fb, k));
+            let d = y.0 * y.0 + y.1 * y.1 + 1e-20;
+            set(
+                fa,
+                k,
+                ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d),
+            );
+        }
+    });
+    let (got, want) = scaled(&got, &want);
+    assert_matches("PV_Div", &got, &want);
+}
+
+/// `PV_BinShift` with `interp`: each bin split between the two around its
+/// new place, from DC.
+#[test]
+fn the_interpolated_bin_shift_matches() {
+    let (a, b) = inputs();
+    let (stretch, shift) = (1.37f32, 2.6f32);
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_BinShift", &[stretch, shift, 1.0])],
+        vec![],
+    );
+    let want = reference(&a, &b, |_, f, _| {
+        let src: Vec<(f32, f32)> = (0..=HALF).map(|k| get(f, k)).collect();
+        let mut moved = vec![(0.0f32, 0.0f32); HALF + 1];
+        for (k, &(re, im)) in src.iter().enumerate() {
+            let pos = k as f32 * stretch + shift;
+            let lo = pos.floor();
+            let beta = pos - lo;
+            for (t, w) in [(lo, 1.0 - beta), (lo + 1.0, beta)] {
+                if t < 0.0 || t > HALF as f32 || w == 0.0 {
+                    continue;
+                }
+                let t = t as usize;
+                let im = if t == 0 || t == HALF { 0.0 } else { im };
+                moved[t] = (moved[t].0 + w * re, moved[t].1 + w * im);
+            }
+        }
+        for (k, &m) in moved.iter().enumerate() {
+            set(f, k, m);
+        }
+    });
+    assert_matches("PV_BinShift interp", &got, &want);
+}
+
+/// A `PV_MagFreeze` frozen from its start holds its first frame.
+#[test]
+fn a_freeze_from_the_start_holds_the_first_frame() {
+    let (a, b) = inputs();
+    let freeze = json!({"kind": "PV_MagFreeze", "inputs": [{"ugen": 2}, {"const": 1.0}]});
+    let got = render(&a, &b, json!([]), vec![freeze], vec![]);
+    let mut held: Option<Vec<f32>> = None;
+    let want = reference(&a, &b, |_, f, _| match &held {
+        None => held = Some((0..=HALF).map(|k| mag(get(f, k))).collect()),
+        Some(h) => {
+            for (k, &m) in h.iter().enumerate() {
+                if mag(get(f, k)) > 0.0 {
+                    with_mag(f, k, m);
+                }
+            }
+        }
+    });
+    assert_matches("PV_MagFreeze from the start", &got, &want);
+}
+
+/// The random masks at their ends: a full `PV_RandWipe` is chain B, DC and
+/// Nyquist included; a full `PV_RandComb` is silence; neither at 0 changes
+/// anything.
+#[test]
+fn the_random_masks_at_their_ends() {
+    let (a, b) = inputs();
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![combine("PV_RandWipe", &[1.0, 0.0])],
+        vec![],
+    );
+    assert_matches("PV_RandWipe 1", &got, &reference(&b, &a, |_, _, _| {}));
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![combine("PV_RandWipe", &[0.0, 0.0])],
+        vec![],
+    );
+    assert_matches("PV_RandWipe 0", &got, &reference(&a, &b, |_, _, _| {}));
+    let got = render(
+        &a,
+        &b,
+        json!([]),
+        vec![filter("PV_RandComb", &[1.0, 0.0])],
+        vec![],
+    );
+    assert!(
+        got.iter().all(|&x| x.abs() < 1e-6),
+        "PV_RandComb 1 is silence"
+    );
+    for (kind, params) in [
+        ("PV_RandComb", vec![0.0f32, 0.0]),
+        ("PV_BinScramble", vec![0.0, 0.3, 0.0]),
+        ("PV_BinScramble", vec![1.0, 0.0, 0.0]),
+    ] {
+        let got = render(&a, &b, json!([]), vec![filter(kind, &params)], vec![]);
+        assert_matches(
+            &format!("{kind} {params:?}"),
+            &got,
+            &reference(&a, &b, |_, _, _| {}),
+        );
+    }
+}
+
+/// `PV_Copy` opens a branch: zeroing the chain it copied, after the copy,
+/// leaves the copy the round trip.
+#[test]
+fn a_copy_is_a_branch_of_its_own() {
+    let (a, b) = inputs();
+    let middle = vec![
+        json!({"kind": "PV_Copy", "inputs": [{"ugen": 2}]}),
+        json!({"kind": "PV_MagAbove", "inputs": [{"ugen": 2}, {"const": 1e9}]}),
+        json!({"kind": "PV_MagClip", "inputs": [{"ugen": 4}, {"const": 1e9}]}),
+    ];
+    let got = render(&a, &b, json!([]), middle, vec![]);
+    assert_matches("PV_Copy", &got, &reference(&a, &b, |_, _, _| {}));
 }

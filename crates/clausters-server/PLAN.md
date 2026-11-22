@@ -1682,7 +1682,15 @@ holds what is open.
     the grains: `GrainBuf`, `GrainFM`, `GrainIn`, `GrainSin`, `Warp1`,
     `TGrains`, `GrainTap`; the rest of the demand family and the test
     UGens: `Dbufwr`, `Dconst`, `Ddup`, `DemandEnvGen`, `Dpoll`, `Dreset`,
-    `Dser`, `Dswitch`, `Dwrand`, `CheckBadValues`, `Sanitize`.
+    `Dser`, `Dswitch`, `Dwrand`, `CheckBadValues`, `Sanitize`; the FFT
+    chain and convolution: `FFTTrigger`, `PackFFT`, `Unpack1FFT`, the rest of
+    the `PV_*` set (`PV_BinScramble`, `PV_BinWipe`, `PV_ConformalMap`,
+    `PV_Conj`, `PV_Copy`, `PV_Diffuser`, `PV_Div`, `PV_LocalMax`,
+    `PV_MagDiv`, `PV_MagNoise`, `PV_MagSquared`, `PV_PhaseShift`,
+    `PV_PhaseShift90`, `PV_PhaseShift270`, `PV_RandComb`, `PV_RandWipe`,
+    `PV_RectComb`, `PV_RectComb2`, rows of a few implementations),
+    `PartConv`, `Convolution`, `Convolution2`, `Convolution2L`,
+    `Convolution3`, `StereoConvolution2L`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1710,15 +1718,6 @@ holds what is open.
     names, 19 of them out of scope above, 188 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **12. The FFT chain and convolution:** `FFTTrigger`, `PackFFT`,
-      `Unpack1FFT`, the remaining `PV_*` (`PV_BinScramble`, `PV_BinWipe`,
-      `PV_ConformalMap`, `PV_Conj`, `PV_Copy`, `PV_Diffuser`, `PV_Div`,
-      `PV_LocalMax`, `PV_MagDiv`, `PV_MagNoise`, `PV_MagSquared`,
-      `PV_PhaseShift`, `PV_PhaseShift90`, `PV_PhaseShift270`,
-      `PV_RandComb`, `PV_RandWipe`, `PV_RectComb`, `PV_RectComb2`; each
-      a row of a parameterized implementation or named, per "The PV set
-      is curated"), `PartConv`, `Convolution`, `Convolution2`,
-      `Convolution2L`, `Convolution3`, `StereoConvolution2L`.
     - ⬜ **13. Analysis:** `Pitch`, `Onsets`, `PV_HainsworthFoote`,
       `PV_JensenAndersen`, `BeatTrack`, `BeatTrack2`, `KeyTrack`,
       `Loudness`, `MFCC`, `SpecCentroid`, `SpecFlatness`, `SpecPcile`.

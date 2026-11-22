@@ -26,8 +26,11 @@
 //!   rebuilding the full Hermitian spectrum -- producing the real time-domain
 //!   frame for overlap-add resynthesis.
 //!
-//! All three are zero-allocation (the transforms run in stack buffers), so the
-//! server's UGens call them per hop on the audio thread without allocating.
+//! Each runs in working memory of its size: [`rfft_with`] and [`irfft_with`]
+//! in an [`FftScratch`] the caller built beforehand, so the server's UGens
+//! transform per hop on the audio thread without allocating at any size, and
+//! the convenience forms in a stack buffer up to [`STACK_SIZE`] (allocating
+//! above it).
 
 use microfft::{Complex32, inverse, real};
 
@@ -39,15 +42,94 @@ mod twiddle {
 
 /// The transform size the twiddle table is laid out for: the largest
 /// supported one. A size `n` reads it at a stride of `TWIDDLE_N / n`.
-const TWIDDLE_N: usize = 4096;
+const TWIDDLE_N: usize = MAX_SIZE;
 
-/// The window sizes [`rfft_magnitudes_into`] accepts: the powers of two
-/// `microfft` is built for, up to its default `size-4096`.
-pub const SUPPORTED_SIZES: &[usize] = &[256, 512, 1024, 2048, 4096];
+/// The window sizes the transforms accept: every power of two from 64 to
+/// 32768, the range scsynth's `FFT` takes (a frame a whole number of
+/// blocks long, up to its absolute maximum).
+pub const SUPPORTED_SIZES: &[usize] = &[64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
+
+/// The largest supported size.
+pub const MAX_SIZE: usize = 32768;
+
+/// The largest size the convenience transforms ([`rfft_into`],
+/// [`irfft_into`], [`rfft_magnitudes_into`]) run on the stack; above it they
+/// allocate their scratch, so a real-time caller uses [`rfft_with`] /
+/// [`irfft_with`] and an [`FftScratch`] built beforehand.
+pub const STACK_SIZE: usize = 4096;
 
 /// Whether a window of `n` samples is a supported FFT size.
 pub fn supports(n: usize) -> bool {
     SUPPORTED_SIZES.contains(&n)
+}
+
+/// The window sizes the analysis views take (the STFT, the spectrogram, a
+/// scope's spectrum): the ones [`rfft_magnitudes_into`] runs on the stack,
+/// since a view transforms a column at a time and would otherwise allocate
+/// at every one.
+pub const ANALYSIS_SIZES: &[usize] = &[256, 512, 1024, 2048, 4096];
+
+/// Whether a window of `n` samples is one an analysis view takes.
+pub fn supports_analysis(n: usize) -> bool {
+    ANALYSIS_SIZES.contains(&n)
+}
+
+/// The working memory of one transform size, allocated once: what
+/// [`rfft_with`] and [`irfft_with`] run in, so a real-time caller transforms
+/// any supported size without allocating and without a stack frame the size
+/// of the transform.
+pub struct FftScratch {
+    real: Vec<f32>,
+    complex: Vec<Complex32>,
+}
+
+impl FftScratch {
+    /// Scratch for transforms of `n` samples.
+    pub fn new(n: usize) -> Self {
+        Self {
+            real: vec![0.0; n],
+            complex: vec![Complex32::new(0.0, 0.0); n / 2],
+        }
+    }
+
+    /// The transform size this scratch serves.
+    pub fn size(&self) -> usize {
+        self.real.len()
+    }
+}
+
+/// The forward real transform of `buf` in place, by its length: the packed
+/// half-spectrum `microfft` returns (`[0]` holds DC and Nyquist).
+fn rfft_slice(buf: &mut [f32]) -> Option<&mut [Complex32]> {
+    macro_rules! go {
+        ($($n:literal => $f:path),*) => {
+            match buf.len() {
+                $($n => Some(&mut $f(buf.try_into().ok()?)[..]),)*
+                _ => None,
+            }
+        };
+    }
+    go!(64 => real::rfft_64, 128 => real::rfft_128, 256 => real::rfft_256,
+        512 => real::rfft_512, 1024 => real::rfft_1024, 2048 => real::rfft_2048,
+        4096 => real::rfft_4096, 8192 => real::rfft_8192, 16384 => real::rfft_16384,
+        32768 => real::rfft_32768)
+}
+
+/// The inverse complex transform of `z` in place, by its length (normalized
+/// by `1/len`).
+fn ifft_slice(z: &mut [Complex32]) -> Option<&mut [Complex32]> {
+    macro_rules! go {
+        ($($n:literal => $f:path),*) => {
+            match z.len() {
+                $($n => Some(&mut $f(z.try_into().ok()?)[..]),)*
+                _ => None,
+            }
+        };
+    }
+    go!(32 => inverse::ifft_32, 64 => inverse::ifft_64, 128 => inverse::ifft_128,
+        256 => inverse::ifft_256, 512 => inverse::ifft_512, 1024 => inverse::ifft_1024,
+        2048 => inverse::ifft_2048, 4096 => inverse::ifft_4096, 8192 => inverse::ifft_8192,
+        16384 => inverse::ifft_16384)
 }
 
 /// Forward real FFT magnitudes of `input` into `mags`.
@@ -58,41 +140,41 @@ pub fn supports(n: usize) -> bool {
 /// term, which `microfft` packs into the DC bin's imaginary part, is not
 /// returned -- matching the half-spectrum the spectrogram draws). Returns
 /// `false`, leaving `mags` untouched, if the size is unsupported or `mags` has
-/// the wrong length. Zero-allocation: the transform runs in a stack buffer.
+/// the wrong length. Up to [`STACK_SIZE`] the transform runs in a stack
+/// buffer; above it, in one it allocates.
 pub fn rfft_magnitudes_into(input: &[f32], mags: &mut [f32]) -> bool {
     let n = input.len();
-    if mags.len() != n / 2 {
+    if mags.len() != n / 2 || !supports(n) {
         return false;
     }
-    macro_rules! arm {
-        ($size:literal, $f:path) => {{
-            let mut buf = [0.0f32; $size];
-            buf.copy_from_slice(input);
-            let spec = $f(&mut buf);
-            // spec[0] packs (DC, Nyquist) in (re, im); the rest are ordinary
-            // bins. We expose the DC magnitude and bins 1..n/2.
-            mags[0] = spec[0].re.abs();
-            for b in 1..$size / 2 {
-                mags[b] = (spec[b].re * spec[b].re + spec[b].im * spec[b].im).sqrt();
-            }
-            true
-        }};
+    let mut stack = [0.0f32; STACK_SIZE];
+    let mut heap = Vec::new();
+    let buf = if n <= STACK_SIZE {
+        &mut stack[..n]
+    } else {
+        heap.resize(n, 0.0);
+        &mut heap[..]
+    };
+    buf.copy_from_slice(input);
+    let Some(spec) = rfft_slice(buf) else {
+        return false;
+    };
+    // spec[0] packs (DC, Nyquist) in (re, im); the rest are ordinary bins.
+    // We expose the DC magnitude and bins 1..n/2.
+    mags[0] = spec[0].re.abs();
+    for b in 1..n / 2 {
+        mags[b] = (spec[b].re * spec[b].re + spec[b].im * spec[b].im).sqrt();
     }
-    match n {
-        256 => arm!(256, real::rfft_256),
-        512 => arm!(512, real::rfft_512),
-        1024 => arm!(1024, real::rfft_1024),
-        2048 => arm!(2048, real::rfft_2048),
-        4096 => arm!(4096, real::rfft_4096),
-        _ => false,
-    }
+    true
 }
 
-/// Forward real FFT of `input` into the packed complex `frame`.
+/// Forward real FFT of `input` into the packed complex `frame`, in the
+/// working memory of `scratch`.
 ///
-/// `input.len()` must be a [supported](SUPPORTED_SIZES) power of two `n` and
-/// `frame.len()` must be `n`. On success `frame` holds the half-spectrum in the
-/// canonical spectral-buffer layout -- the same one scsynth's `FFT` buffer uses:
+/// `input.len()` must be a [supported](SUPPORTED_SIZES) power of two `n`, and
+/// `frame.len()` and `scratch` must be of `n` too. On success `frame` holds
+/// the half-spectrum in the canonical spectral-buffer layout -- the same one
+/// scsynth's `FFT` buffer uses:
 ///
 /// ```text
 /// frame = [ DC, Nyquist, re1, im1, re2, im2, ..., re_{n/2-1}, im_{n/2-1} ]
@@ -101,42 +183,59 @@ pub fn rfft_magnitudes_into(input: &[f32], mags: &mut [f32]) -> bool {
 /// The two purely-real terms (DC and Nyquist) share the first two slots; bins
 /// `1..n/2` follow as interleaved real/imaginary pairs. Returns `false`,
 /// leaving `frame` untouched, on a size mismatch. Zero-allocation.
-pub fn rfft_into(input: &[f32], frame: &mut [f32]) -> bool {
+pub fn rfft_with(input: &[f32], frame: &mut [f32], scratch: &mut FftScratch) -> bool {
     let n = input.len();
-    if frame.len() != n {
+    if frame.len() != n || scratch.size() != n {
         return false;
     }
-    macro_rules! arm {
-        ($size:literal, $f:path) => {{
-            let mut buf = [0.0f32; $size];
-            buf.copy_from_slice(input);
-            let spec = $f(&mut buf);
-            // spec[0] packs (DC, Nyquist) in (re, im); spec[1..n/2] are bins.
-            frame[0] = spec[0].re;
-            frame[1] = spec[0].im;
-            for b in 1..$size / 2 {
-                frame[2 * b] = spec[b].re;
-                frame[2 * b + 1] = spec[b].im;
-            }
-            true
-        }};
+    scratch.real.copy_from_slice(input);
+    let Some(spec) = rfft_slice(&mut scratch.real) else {
+        return false;
+    };
+    pack(spec, frame);
+    true
+}
+
+/// [`rfft_with`] in its own scratch: on the stack up to [`STACK_SIZE`],
+/// allocated above it.
+pub fn rfft_into(input: &[f32], frame: &mut [f32]) -> bool {
+    let n = input.len();
+    if frame.len() != n || !supports(n) {
+        return false;
     }
-    match n {
-        256 => arm!(256, real::rfft_256),
-        512 => arm!(512, real::rfft_512),
-        1024 => arm!(1024, real::rfft_1024),
-        2048 => arm!(2048, real::rfft_2048),
-        4096 => arm!(4096, real::rfft_4096),
-        _ => false,
+    let mut stack = [0.0f32; STACK_SIZE];
+    let mut heap = Vec::new();
+    let buf = if n <= STACK_SIZE {
+        &mut stack[..n]
+    } else {
+        heap.resize(n, 0.0);
+        &mut heap[..]
+    };
+    buf.copy_from_slice(input);
+    let Some(spec) = rfft_slice(buf) else {
+        return false;
+    };
+    pack(spec, frame);
+    true
+}
+
+/// `microfft`'s half-spectrum into the packed layout.
+fn pack(spec: &[Complex32], frame: &mut [f32]) {
+    // spec[0] packs (DC, Nyquist) in (re, im); spec[1..n/2] are bins.
+    frame[0] = spec[0].re;
+    frame[1] = spec[0].im;
+    for (b, c) in spec.iter().enumerate().skip(1) {
+        frame[2 * b] = c.re;
+        frame[2 * b + 1] = c.im;
     }
 }
 
-/// Inverse of [`rfft_into`]: the packed complex `frame` back to a real time
-/// frame in `output`.
+/// Inverse of [`rfft_with`]: the packed complex `frame` back to a real time
+/// frame in `output`, in the working memory of `scratch`.
 ///
-/// `output.len()` must be a [supported](SUPPORTED_SIZES) power of two `n` and
-/// `frame.len()` must be `n` (the [`rfft_into`] layout). Returns `false` on a
-/// size mismatch. Zero-allocation: the half-size spectrum is a stack buffer.
+/// `output.len()` must be a [supported](SUPPORTED_SIZES) power of two `n`, and
+/// `frame.len()` and `scratch` must be of `n` too (the [`rfft_with`] layout).
+/// Returns `false` on a size mismatch. Zero-allocation.
 ///
 /// The spectrum `X` of a real frame is `E[k] + W^k O[k]`, with `E`, `O` the
 /// `n/2`-point spectra of its even and odd samples and `W = e^{-j 2 pi / n}`;
@@ -145,48 +244,65 @@ pub fn rfft_into(input: &[f32], frame: &mut [f32]) -> bool {
 /// `n/2`-point inverse of `E + jO` is then `even + j odd`, both real --
 /// `microfft::inverse` scales by `1/(n/2)`, the even and odd samples' own
 /// transform length, so they come out at their level.
+pub fn irfft_with(frame: &[f32], output: &mut [f32], scratch: &mut FftScratch) -> bool {
+    let n = output.len();
+    if frame.len() != n || scratch.size() != n {
+        return false;
+    }
+    irfft_in(frame, output, &mut scratch.complex)
+}
+
+/// [`irfft_with`] in its own scratch: on the stack up to [`STACK_SIZE`],
+/// allocated above it.
 pub fn irfft_into(frame: &[f32], output: &mut [f32]) -> bool {
     let n = output.len();
-    if frame.len() != n {
+    if frame.len() != n || !supports(n) {
+        return false;
+    }
+    let mut stack = [Complex32::new(0.0, 0.0); STACK_SIZE / 2];
+    let mut heap = Vec::new();
+    let z = if n <= STACK_SIZE {
+        &mut stack[..n / 2]
+    } else {
+        heap.resize(n / 2, Complex32::new(0.0, 0.0));
+        &mut heap[..]
+    };
+    irfft_in(frame, output, z)
+}
+
+/// The inverse in `z`, `n / 2` complex values.
+fn irfft_in(frame: &[f32], output: &mut [f32], z: &mut [Complex32]) -> bool {
+    let n = output.len();
+    let half = n / 2;
+    if z.len() != half || half == 0 {
         return false;
     }
     // Bin `k` of the half-frame, `0..=n/2` (DC and Nyquist are real).
     let bin = |k: usize| -> Complex32 {
         if k == 0 {
             Complex32::new(frame[0], 0.0)
-        } else if k == n / 2 {
+        } else if k == half {
             Complex32::new(frame[1], 0.0)
         } else {
             Complex32::new(frame[2 * k], frame[2 * k + 1])
         }
     };
-    macro_rules! arm {
-        ($half:literal, $f:path) => {{
-            let stride = TWIDDLE_N / (2 * $half);
-            let mut z = [Complex32::new(0.0, 0.0); $half];
-            for (k, zk) in z.iter_mut().enumerate() {
-                let (a, b) = (bin(k), bin($half - k).conj());
-                let even = (a + b) * 0.5;
-                let w = Complex32::new(twiddle::COS[k * stride], twiddle::SIN[k * stride]);
-                let odd = (a - b) * 0.5 * w;
-                *zk = even + Complex32::new(-odd.im, odd.re);
-            }
-            let time = $f(&mut z);
-            for (pair, c) in output.chunks_exact_mut(2).zip(time.iter()) {
-                pair[0] = c.re;
-                pair[1] = c.im;
-            }
-            true
-        }};
+    let stride = TWIDDLE_N / n;
+    for (k, zk) in z.iter_mut().enumerate() {
+        let (a, b) = (bin(k), bin(half - k).conj());
+        let even = (a + b) * 0.5;
+        let w = Complex32::new(twiddle::COS[k * stride], twiddle::SIN[k * stride]);
+        let odd = (a - b) * 0.5 * w;
+        *zk = even + Complex32::new(-odd.im, odd.re);
     }
-    match n {
-        256 => arm!(128, inverse::ifft_128),
-        512 => arm!(256, inverse::ifft_256),
-        1024 => arm!(512, inverse::ifft_512),
-        2048 => arm!(1024, inverse::ifft_1024),
-        4096 => arm!(2048, inverse::ifft_2048),
-        _ => false,
+    let Some(time) = ifft_slice(z) else {
+        return false;
+    };
+    for (pair, c) in output.as_chunks_mut::<2>().0.iter_mut().zip(time.iter()) {
+        pair[0] = c.re;
+        pair[1] = c.im;
     }
+    true
 }
 
 #[cfg(test)]
@@ -309,6 +425,28 @@ mod tests {
                 assert!((a - b).abs() < 2e-6, "n {n} at {i}: {a} vs {b}");
             }
         }
+    }
+
+    /// The transforms in a scratch built beforehand are the convenience
+    /// ones, bit for bit, at every size -- the stack and the heap paths
+    /// included.
+    #[test]
+    fn the_scratch_transforms_are_the_convenience_ones() {
+        for &n in SUPPORTED_SIZES {
+            let signal: Vec<f32> = (0..n).map(|i| ((i * 31) % 17) as f32 / 8.0 - 1.0).collect();
+            let mut scratch = FftScratch::new(n);
+            let (mut a, mut b) = (vec![0.0f32; n], vec![0.0f32; n]);
+            assert!(rfft_into(&signal, &mut a));
+            assert!(rfft_with(&signal, &mut b, &mut scratch));
+            assert_eq!(a, b, "forward at {n}");
+            let (mut ta, mut tb) = (vec![0.0f32; n], vec![0.0f32; n]);
+            assert!(irfft_into(&a, &mut ta));
+            assert!(irfft_with(&a, &mut tb, &mut scratch));
+            assert_eq!(ta, tb, "inverse at {n}");
+        }
+        // A scratch of another size is refused.
+        let mut scratch = FftScratch::new(256);
+        assert!(!rfft_with(&[0.0; 512], &mut [0.0; 512], &mut scratch));
     }
 
     #[test]

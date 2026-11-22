@@ -355,6 +355,7 @@ _WIRE_ORDER_FORCED = {
     "ScopeOut": "the signals lead in Python; the buffer leads on the wire",
     "LocalBuf": "the frames lead in Python, as in every buffer's shape; the channels lead on the wire",
     "SetBuf": "the value list comes before offset in Python, after offset and its count on the wire",
+    "PackFFT": "the magnitude and phase list comes before the run's bounds in Python, after them on the wire",
 }
 
 # Once four kinds took their **static** (non-signal) fields as ordinary
@@ -392,6 +393,7 @@ _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "GrainBuf": "built numchans times; numchans leads in Python, trails on the wire",
     "TGrains": "built numchans times; numchans leads in Python, trails on the wire",
     "Warp1": "built once a channel of the buffer; their count leads in Python",
+    "StereoConvolution2L": "built twice, one row per output channel",
 }
 
 _WIRE_ORDER_DIFFERS = {

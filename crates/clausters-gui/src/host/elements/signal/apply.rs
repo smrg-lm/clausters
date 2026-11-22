@@ -91,7 +91,7 @@ impl SignalElement {
             // `window_size` -- since one field is behind them.
             "fft_size" | "window_size" => v
                 .as_u64()
-                .filter(|n| clausters_core::fft::supports(*n as usize))
+                .filter(|n| clausters_core::fft::supports_analysis(*n as usize))
                 .map(|n| self.spectral.fft_size = n as usize)
                 .is_some(),
             "db_floor" => set_f(&mut self.spectral.db_floor, v),
