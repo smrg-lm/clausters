@@ -73,6 +73,18 @@ export {
     sub,
     sum3,
     sum4,
+    linExp,
+    inRange,
+    inRect,
+    modDif,
+    unwrap,
+    ampComp,
+    ampCompA,
+    k2a,
+    a2k,
+    t2a,
+    t2k,
+    dc,
 } from "./graph.ts";
 export type {
     Channel, ChannelFan, ControlDisplay, ControlOptions, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
@@ -101,6 +113,10 @@ export {
     sine,
     varSaw,
     whiteNoise,
+    lfCub,
+    lfPar,
+    syncSaw,
+    vibrato,
 } from "./osc.ts";
 
 export {
@@ -315,6 +331,9 @@ export {
     pointsToEnv,
     quads,
     xLine,
+    ienvGen,
+    linen,
+    lfGauss,
 } from "./env.ts";
 export type { Curve, Point, PointsLike, Quad } from "./env.ts";
 export type { SynthLeaf } from "./graph.ts";
@@ -330,6 +349,7 @@ export type { SynthLeaf } from "./graph.ts";
  */
 const INPUT_NAMES_MISALIGNED = new Set([
     "EnvGen",
+    "IEnvGen",
     "SendReply",
     "Dseq",
     "Poll",

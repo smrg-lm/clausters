@@ -402,6 +402,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Modulation | `lf_saw(freq, iphase=0.0)` / `lf_tri(freq, iphase=0.0)` | saw and triangle in ±1, **not** band-limited — cheap shapes to modulate with rather than listen to; `iphase` in cycles |
 | | `lf_pulse(freq, iphase=0.0, width=0.5)` | square in `[0, 1]` — a gate, not a bipolar waveform like `pulse` |
 | | `var_saw(freq, iphase=0.0, width=0.5)` | triangle whose peak sits at `width` of the cycle: falling ramp → triangle → rising ramp |
+| | `lf_cub`, `lf_par(freq, iphase=0.0)` | sine- and cosine-like shapes of cubic and parabolic arcs; not band-limited |
+| | `sync_saw(sync_freq, saw_freq)` | a sawtooth hard-synced to a master |
+| | `vibrato(freq, rate=6, depth=0.02, delay=0, onset=0, ratevariation=0.04, depthvariation=0.1, iphase=0, trig=0)` | `freq` wobbled by a randomized parabolic sine |
 | | `phasor(trig, rate, start, end, reset_pos)` | a ramp in units **per sample**, wrapping at `end`; a rising `trig` jumps to `reset_pos` — an index generator, deliberately not band-limited |
 | Filters | `lpf(signal, freq)` / `hpf(signal, freq)` | second-order Butterworth low / highpass: −3 dB at `freq`, −12 dB/octave |
 | | `rlpf(signal, freq, rq=None, *, q=None)` / `rhpf(...)` | the resonant pair; give the resonance as `rq` (1/Q, 0 = infinite) **or** as `q` |
@@ -415,6 +418,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `allpass_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | an allpass: scatters phase and leaves the magnitude alone |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
+| | `ienv_gen(env, index, offset=0.0)` | an `Env` read at a position rather than played in time |
+| | `linen(gate, attacktime, suslevel, releasetime, done_action)` | the trapezoid of a gate, at control rate |
+| | `lf_gauss(duration, width, iphase, loop, done_action)` | a Gaussian bell, repeated or once |
 | Noise | `pink_noise()` / `brown_noise()` | −3 dB/octave (quiet by construction, ~0.13 RMS) / −6, a reflecting random walk |
 | | `gray_noise()` / `clip_noise()` | one random bit flipped per sample, grainy and low-leaning / ±1 only |
 | | `lf_noise0(freq)` / `lf_noise1(freq)` / `lf_noise2(freq)` | a new random value every `1/freq` s: held / ramped / curved (overshoots to ±1.7) |
@@ -490,6 +496,11 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `tduty(dur, reset=0.0, level=1.0, done_action=0, gap_first=0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
+| Maps | `lin_exp(signal, srclo, srchi, dstlo, dsthi)` | linear in, exponential out, unclipped |
+| | `in_range(signal, lo, hi)`, `in_rect(x, y, left, top, right, bottom)` | 1 inside, 0 outside |
+| | `mod_dif(x, y, mod)`, `unwrap(signal, lo, hi)` | a distance on a circle; a wrap undone |
+| | `amp_comp(freq, root, exp)`, `amp_comp_a(freq, root, min_amp, root_amp)` | loudness compensation by a power, or along the A-weighting |
+| Rates | `k2a`, `a2k`, `t2a(signal, offset)`, `t2k`, `dc(signal)` | control to audio and back, for signals and triggers; a constant |
 | Measure | `meter(signal, decay=20.0, hold=0.0)` | a level with a **meter's ballistics**: instantaneous attack, a fall of `decay` decibels per second, a new peak held `hold` seconds before it starts falling. One number a block, which is what a control bus carries — pair it with `out_ctl` for a meter a host reads as a bus |
 | | `clip_count(signal, ceiling=1.0, run=3)` | **how many times the signal was flattened**, since the pass began: a run of `run` consecutive samples at or over `ceiling` is one over, however long it lasts. A lone sample at full scale is not clipping — the engine is floating point — so the run is what a red lamp is actually reporting; `run=1` is the pessimistic meter. It walks samples rather than blocks, which is what a block peak has already lost. Pair it with `out_ctl` and hand the bus to a `meter` widget's `clip` |
 | | `true_peak(signal, decay=20.0, hold=0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `out_ctl` and a `meter` widget at `rate="control"` with `peak="true"` |
@@ -520,6 +531,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Modulation | `lfSaw(freq = 440.0, iphase = 0.0)` / `lfTri(freq = 440.0, iphase = 0.0)` | saw and triangle in ±1, **not** band-limited — cheap shapes to modulate with rather than listen to; `iphase` in cycles |
 | | `lfPulse(freq = 440.0, iphase = 0.0, width = 0.5)` | square in `[0, 1]` — a gate, not a bipolar waveform like `pulse` |
 | | `varSaw(freq = 440.0, iphase = 0.0, width = 0.5)` | triangle whose peak sits at `width` of the cycle: falling ramp → triangle → rising ramp |
+| | `lfCub`, `lfPar(freq = 440.0, iphase = 0.0)` | sine- and cosine-like shapes of cubic and parabolic arcs; not band-limited |
+| | `syncSaw(syncFreq, sawFreq)` | a sawtooth hard-synced to a master |
+| | `vibrato(freq, rate = 6, depth = 0.02, delay = 0, onset = 0, ratevariation = 0.04, depthvariation = 0.1, iphase = 0, trig = 0)` | `freq` wobbled by a randomized parabolic sine |
 | | `phasor(trig = 0.0, rate = 1.0, start = 0.0, end = 1.0, resetPos = 0.0)` | a ramp in units **per sample**, wrapping at `end`; a rising `trig` jumps to `resetPos` — an index generator, deliberately not band-limited |
 | Filters | `lpf(signal, freq = 440.0)` / `hpf(signal, freq = 440.0)` | second-order Butterworth low / highpass: −3 dB at `freq`, −12 dB/octave |
 | | `rlpf(signal, freq = 440.0, { rq, q })` / `rhpf(signal, freq = 440.0, { rq, q })` | the resonant pair; give the resonance as `rq` (1/Q, 0 = infinite) **or** as `q` |
@@ -533,6 +547,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `allpassN/L/C(signal, delaytime = 0.2, decaytime = 1.0, maxDelay)` | an allpass: scatters phase and leaves the magnitude alone |
 | Envelopes | `envGen(env, { gate = 1.0, levelScale = 1.0, levelBias = 0.0, timeScale = 1.0, doneAction = DoneAction.NONE })` | plays an `Env` breakpoint envelope; the `doneAction` can free the node |
 | | `line(start = 0.0, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` / `xLine(start = 0.01, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
+| | `ienvGen(env, index, offset = 0.0)` | an `Env` read at a position rather than played in time |
+| | `linen(gate, attacktime, suslevel, releasetime, doneAction)` | the trapezoid of a gate, at control rate |
+| | `lfGauss(duration, width, iphase, loop, doneAction)` | a Gaussian bell, repeated or once |
 | Noise | `pinkNoise()` / `brownNoise()` | −3 dB/octave (quiet by construction, ~0.13 RMS) / −6, a reflecting random walk |
 | | `grayNoise()` / `clipNoise()` | one random bit flipped per sample, grainy and low-leaning / ±1 only |
 | | `lfNoise0(freq = 500.0)` / `lfNoise1(freq = 500.0)` / `lfNoise2(freq = 500.0)` | a new random value every `1/freq` s: held / ramped / curved (overshoots to ±1.7) |
@@ -608,6 +625,11 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `tduty(dur, reset = 0.0, level = 1.0, doneAction = 0, gapFirst = 0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
+| Maps | `linExp(signal, srclo, srchi, dstlo, dsthi)` | linear in, exponential out, unclipped |
+| | `inRange(signal, lo, hi)`, `inRect(x, y, left, top, right, bottom)` | 1 inside, 0 outside |
+| | `modDif(x, y, mod)`, `unwrap(signal, lo, hi)` | a distance on a circle; a wrap undone |
+| | `ampComp(freq, root, exp)`, `ampCompA(freq, root, minAmp, rootAmp)` | loudness compensation by a power, or along the A-weighting |
+| Rates | `k2a`, `a2k`, `t2a(signal, offset)`, `t2k`, `dc(signal)` | control to audio and back, for signals and triggers; a constant |
 | Measure | `meter(signal, decay = 20.0, hold = 0.0)` | a level with a **meter's ballistics**: instantaneous attack, a fall of `decay` decibels per second, a new peak held `hold` seconds before it starts falling. One number a block, which is what a control bus carries — pair it with `outCtl` for a meter a host reads as a bus |
 | | `clipCount(signal, ceiling = 1.0, run = 3)` | **how many times the signal was flattened**, since the pass began: a run of `run` consecutive samples at or over `ceiling` is one over, however long it lasts. A lone sample at full scale is not clipping — the engine is floating point — so the run is what a red lamp is actually reporting; `run=1` is the pessimistic meter. It walks samples rather than blocks, which is what a block peak has already lost. Pair it with `outCtl` and hand the bus to a `meter` widget's `clip` |
 | | `truePeak(signal, decay = 20.0, hold = 0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `outCtl` and a `meter` widget at `rate: "control"` with `peak: "true"` |

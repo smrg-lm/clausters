@@ -77,3 +77,110 @@ why = "built by the `fold(lo, hi)` method on a graph node"
 [[operator]]
 kind = "RandOpUGen"
 why = "built by every random-draw method on a graph node"
+
+[[ugen]]
+kind = "LinExp"
+builder = "lin_exp"
+required = ["signal"]
+doc = '''
+`signal` mapped from `srclo..srchi` to `dstlo..dsthi` exponentially,
+unclipped: equal steps in, equal ratios out. The ends of the destination
+share a sign and are not zero.
+'''
+
+[[ugen]]
+kind = "InRange"
+builder = "in_range"
+required = ["signal"]
+doc = '''
+1 where `lo <= signal <= hi`, else 0.
+'''
+
+[[ugen]]
+kind = "InRect"
+builder = "in_rect"
+required = ["x", "y"]
+doc = '''
+1 where the point `(x, y)` lies in the rectangle from `left`, `top` to
+`right`, `bottom`, its edges included, else 0.
+'''
+
+[[ugen]]
+kind = "ModDif"
+builder = "mod_dif"
+required = ["x"]
+doc = '''
+The distance from `x` to `y` on a circle of circumference `mod`, the
+shorter way round: in `[0, mod/2]`.
+'''
+
+[[ugen]]
+kind = "Unwrap"
+builder = "unwrap"
+required = ["signal"]
+doc = '''
+Undoes a wrap into `lo..hi`: each jump of more than half the range adds
+or takes away a whole range, so a wrapped phase comes out as one that
+keeps going. The range is read at the start, and the output starts
+inside it.
+'''
+
+[[ugen]]
+kind = "AmpComp"
+builder = "amp_comp"
+doc = '''
+`(root / freq)^exp`: the gain that keeps a higher partial from sounding
+louder than a lower one of the same amplitude. An exponent of a third
+approximates equal loudness.
+'''
+
+[[ugen]]
+kind = "AmpCompA"
+builder = "amp_comp_a"
+doc = '''
+A loudness compensation along the A-weighting curve: `root_amp` at
+`root`, `min_amp` where the weighting peaks (near 2.5 kHz), and more
+than `root_amp` below it.
+'''
+
+[[ugen]]
+kind = "K2A"
+builder = "k2a"
+required = ["signal"]
+doc = '''
+A control-rate signal at audio rate, a straight line across each block.
+'''
+
+[[ugen]]
+kind = "A2K"
+builder = "a2k"
+required = ["signal"]
+doc = '''
+An audio-rate signal at control rate: each block's first sample.
+'''
+
+[[ugen]]
+kind = "T2A"
+builder = "t2a"
+required = ["signal"]
+doc = '''
+A control-rate trigger at audio rate: one sample, `offset` samples into
+the block, takes the trigger's value at each rising edge; the rest are 0.
+'''
+
+[[ugen]]
+kind = "T2K"
+builder = "t2k"
+required = ["signal"]
+doc = '''
+An audio-rate trigger at control rate: each block's largest sample, so a
+trigger anywhere in the block is kept.
+'''
+
+[[ugen]]
+kind = "DC"
+builder = "dc"
+required = ["signal"]
+doc = '''
+The constant `signal`, taken at the synth's start and held.
+'''

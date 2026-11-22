@@ -1,6 +1,16 @@
 {
   "kinds": [
     {
+      "name": "A2K",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "APF",
       "arity": 3,
       "inputs": [
@@ -82,6 +92,46 @@
         },
         {
           "name": "decaytime",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "AmpComp",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 261.6255798339844
+        },
+        {
+          "name": "root",
+          "default": 261.6255798339844
+        },
+        {
+          "name": "exp",
+          "default": 0.33329999446868896
+        }
+      ]
+    },
+    {
+      "name": "AmpCompA",
+      "arity": 4,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 1000.0
+        },
+        {
+          "name": "root",
+          "default": 0.0
+        },
+        {
+          "name": "min_amp",
+          "default": 0.3199999928474426
+        },
+        {
+          "name": "root_amp",
           "default": 1.0
         }
       ]
@@ -815,6 +865,16 @@
       ]
     },
     {
+      "name": "DC",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Dbrown",
       "arity": 4,
       "inputs": [
@@ -1474,6 +1534,20 @@
       ]
     },
     {
+      "name": "IEnvGen",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "index",
+          "default": 0.0
+        },
+        {
+          "name": "offset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "IFFT",
       "arity": 1,
       "inputs": [
@@ -1532,6 +1606,54 @@
       ]
     },
     {
+      "name": "InRange",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "InRect",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "x",
+          "default": 0.0
+        },
+        {
+          "name": "y",
+          "default": 0.0
+        },
+        {
+          "name": "left",
+          "default": 0.0
+        },
+        {
+          "name": "top",
+          "default": 0.0
+        },
+        {
+          "name": "right",
+          "default": 1.0
+        },
+        {
+          "name": "bottom",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "Integrator",
       "arity": 2,
       "inputs": [
@@ -1546,12 +1668,62 @@
       ]
     },
     {
+      "name": "K2A",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "LFClipNoise",
       "arity": 1,
       "inputs": [
         {
           "name": "freq",
           "default": 500.0
+        }
+      ]
+    },
+    {
+      "name": "LFCub",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "iphase",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "LFGauss",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "duration",
+          "default": 1.0
+        },
+        {
+          "name": "width",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "iphase",
+          "default": 0.0
+        },
+        {
+          "name": "loop",
+          "default": 1.0
+        },
+        {
+          "name": "done_action",
+          "default": 0.0
         }
       ]
     },
@@ -1582,6 +1754,20 @@
         {
           "name": "freq",
           "default": 500.0
+        }
+      ]
+    },
+    {
+      "name": "LFPar",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "iphase",
+          "default": 0.0
         }
       ]
     },
@@ -1790,6 +1976,32 @@
       ]
     },
     {
+      "name": "LinExp",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "srclo",
+          "default": 0.0
+        },
+        {
+          "name": "srchi",
+          "default": 1.0
+        },
+        {
+          "name": "dstlo",
+          "default": 1.0
+        },
+        {
+          "name": "dsthi",
+          "default": 2.0
+        }
+      ]
+    },
+    {
       "name": "LinPan2",
       "arity": 4,
       "inputs": [
@@ -1865,6 +2077,32 @@
         },
         {
           "name": "dur",
+          "default": 1.0
+        },
+        {
+          "name": "done_action",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Linen",
+      "arity": 5,
+      "inputs": [
+        {
+          "name": "gate",
+          "default": 1.0
+        },
+        {
+          "name": "attacktime",
+          "default": 0.009999999776482582
+        },
+        {
+          "name": "suslevel",
+          "default": 1.0
+        },
+        {
+          "name": "releasetime",
           "default": 1.0
         },
         {
@@ -1952,6 +2190,24 @@
         {
           "name": "chan",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "ModDif",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "x",
+          "default": 0.0
+        },
+        {
+          "name": "y",
+          "default": 0.0
+        },
+        {
+          "name": "mod",
+          "default": 1.0
         }
       ]
     },
@@ -3092,6 +3348,44 @@
       ]
     },
     {
+      "name": "SyncSaw",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "sync_freq",
+          "default": 440.0
+        },
+        {
+          "name": "saw_freq",
+          "default": 440.0
+        }
+      ]
+    },
+    {
+      "name": "T2A",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "offset",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "T2K",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "TDelay",
       "arity": 2,
       "inputs": [
@@ -3369,6 +3663,24 @@
       ]
     },
     {
+      "name": "Unwrap",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "lo",
+          "default": 0.0
+        },
+        {
+          "name": "hi",
+          "default": 1.0
+        }
+      ]
+    },
+    {
       "name": "VOsc",
       "arity": 3,
       "inputs": [
@@ -3419,6 +3731,48 @@
         {
           "name": "width",
           "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "Vibrato",
+      "arity": 9,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        },
+        {
+          "name": "rate",
+          "default": 6.0
+        },
+        {
+          "name": "depth",
+          "default": 0.019999999552965164
+        },
+        {
+          "name": "delay",
+          "default": 0.0
+        },
+        {
+          "name": "onset",
+          "default": 0.0
+        },
+        {
+          "name": "ratevariation",
+          "default": 0.03999999910593033
+        },
+        {
+          "name": "depthvariation",
+          "default": 0.10000000149011612
+        },
+        {
+          "name": "iphase",
+          "default": 0.0
+        },
+        {
+          "name": "trig",
+          "default": 0.0
         }
       ]
     },

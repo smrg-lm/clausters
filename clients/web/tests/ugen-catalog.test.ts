@@ -89,6 +89,7 @@ const TRAILING: Record<string, string> = {
 /** Kinds whose parameter list cannot line up at all, and why. */
 const SIGNATURE_DIFFERS: Record<string, string> = {
     EnvGen: "the Env leads in TS, its flattened array trails on the wire",
+    IEnvGen: "the Env leads in TS, its flattened array trails on the wire",
     SendReply: "the value list leads; replyId and cmd are an options object",
     Dseq: "repeats leads on the wire; the value list leads here",
     Drand: "repeats leads on the wire; the value list leads here",

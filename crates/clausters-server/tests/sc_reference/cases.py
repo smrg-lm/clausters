@@ -91,6 +91,7 @@ def cases() -> list[dict]:
         _demand,
         _random,
         _sections,
+        _lfugens,
     ]:
         out.extend(f())
     return out
@@ -734,4 +735,117 @@ def _sections() -> list[dict]:
     # copy of the line above it, where the server's reads its own.
     for kind, params in [("Lag2", [0.001]), ("Lag3", [0.001]), ("Lag2UD", [0.0005, 0.002])]:
         out.append(through(f"{kind}.ar", kind, "ar", *params, blocks=6))
+    return out
+
+
+def _lfugens() -> list[dict]:
+    """`LFUGens.cpp`: the rest of the shapes, the modulators, the envelopes
+    read at a position, the maps and the rate converters."""
+    out = []
+    # The server's initial phase is in cycles; scsynth's LFCub runs two units
+    # a cycle and its LFPar four.
+    for kind, units in [("LFCub", 2), ("LFPar", 4)]:
+        for rate, blocks, f in [("ar", 4, 441.3), ("kr", 64, 7.7)]:
+            kw = {"tol": 1e-5, "why": "scsynth accumulates a control-rate phase in f32"} if rate == "kr" else {}
+            out.append(one(f"{kind}.{rate}", kind, rate, f, 0, blocks=blocks, **kw))
+            out.append(one(f"{kind}.{rate}.phase", kind, rate, f, 0.15, blocks=blocks, sc={"inputs": [f, 0.15 * units]}, **kw))
+        g = G()
+        f = g.add("LFSaw", "ar", 50, 0)
+        f = g.add("MulAdd", "ar", f, 2000, 2400)
+        g.add(kind, "ar", f, 0)
+        out.append(case(f"{kind}.fm", g, blocks=8))
+    out.append(one("SyncSaw.ar", "SyncSaw", "ar", 301.3, 977.1, blocks=6, shift=1, why=_PRIMED, tol=1e-5))
+    # Not a modulated SyncSaw: scsynth's priming steps the phases once with
+    # the first sample's rates, so against a moving rate no shift lines the
+    # two up.
+    # Vibrato: no delay and no onset, which scsynth's priming shortens by a
+    # sample. scsynth reads `freq` as a buffer of the block, so a constant
+    # there is read past its one value: its own documentation feeds it a
+    # `DC.ar`, and so do these.
+    for rate, blocks in [("ar", 8), ("kr", 64)]:
+        g = G()
+        f = g.add("DC", rate, 440)
+        g.add("Vibrato", rate, f, 230 if rate == "ar" else 23, 0.05, 0, 0, 0.2, 0.3, 0.1, 0)
+        out.append(case(f"Vibrato.{rate}", g, blocks, seed=31, tol=1e-5))
+    # A trigger that starts low, so scsynth's priming draws nothing. Without
+    # a delay or an onset: they are the start's too, which the priming
+    # shortens (`tests/offline/lfo.rs` holds them).
+    g = G()
+    f = g.add("DC", "ar", 440)
+    t = g.add("LFPulse", "kr", 60, 0.6, 0.5)
+    g.add("Vibrato", "ar", f, 170, 0.1, 0, 0, 0.3, 0.5, 0.6, t)
+    out.append(case("Vibrato.trig", g, blocks=24, seed=32, tol=1e-5))
+    for loop in [1, 0]:
+        out.append(one(f"LFGauss.loop{loop}", "LFGauss", "ar", 0.002, 0.3, 0, loop, 0, blocks=6))
+    out.append(one("LFGauss.phase", "LFGauss", "ar", 0.0031, 0.2, 0.4, 1, 0, blocks=6))
+    out.append(one("LFGauss.kr", "LFGauss", "kr", 0.11, 0.25, 0, 1, 0, blocks=64))
+    # IEnvGen: an index sweeping past both ends of the envelope. Integer
+    # curvatures: scsynth truncates a curvature to an integer.
+    shapes = {"step": 0, "lin": 1, "exp": 2, "sin": 3, "wel": 4, "curve": 5, "sqr": 6, "cub": 7}
+    for name, shape in shapes.items():
+        lo = 0.05 if name == "exp" else 0.0
+        segs = [(0.3, shape, -3, 1.0), (0.2, shape, 4, 0.25), (0.5, shape, 2, lo)]
+        env = [lo, len(segs), sum(d for d, *_ in segs)]
+        for seg in segs:
+            env += list(seg)
+        for rate, blocks, f in [("ar", 4, 211.3), ("kr", 48, 9.3)]:
+            g = G()
+            x = g.add("LFSaw", rate, f, 0)
+            x = g.add("MulAdd", rate, x, 0.7, 0.45)
+            g.add("IEnvGen", rate, x, -0.1, *env)
+            out.append(case(f"IEnvGen.{name}.{rate}", g, blocks))
+    # Linen: control rate, a gate that opens after the start (so scsynth's
+    # priming finds it closed) and stays open longer than the rise.
+    g = G()
+    gate = g.add("LFPulse", "kr", 3, 0.7, 0.6)
+    g.add("Linen", "kr", gate, 0.05, 0.7, 0.04, 0)
+    out.append(case("Linen.kr", g, blocks=600))
+    # The maps.
+    g = G()
+    x = sig(g)
+    g.add("LinExp", "ar", x, -1, 1, 30, 9000)
+    out.append(case("LinExp.ar", g))
+    for kind, params in [("InRange", [-0.2, 0.3]), ("Unwrap", [-1, 1])]:
+        out.append(through(f"{kind}.ar", kind, "ar", *params))
+    g = G()
+    x = g.add("LFSaw", "ar", 997, 0)
+    y = g.add("LFTri", "ar", 130.8, 0)
+    g.add("InRect", "ar", x, y, -0.5, -0.2, 0.4, 0.6)
+    out.append(case("InRect.ar", g))
+    for rate in ["ar", "kr"]:
+        g = G()
+        x = g.add("LFSaw", "ar", 997, 0)
+        y = g.add("LFTri", rate, 130.8 if rate == "ar" else 13.08, 0)
+        m = g.add("MulAdd", rate, y, 0.2, 0.9)
+        g.add("ModDif", "ar", x, y, m)
+        out.append(case(f"ModDif.{rate}", g))
+    # Unwrap of a wrapped ramp: a saw read back as the line it wraps.
+    g = G()
+    x = g.add("LFSaw", "ar", 1201.3, 0)
+    g.add("Unwrap", "ar", x, -1, 1)
+    out.append(case("Unwrap.saw", g))
+    for kind, params in [("AmpComp", [300, 0.3333]), ("AmpCompA", [50, 0.32, 1])]:
+        for rate in ["ar", "kr"]:
+            g = G()
+            f = g.add("LFSaw", rate, 230 if rate == "ar" else 13, 0)
+            f = g.add("MulAdd", rate, f, 7000, 7100)
+            g.add(kind, rate, f, *params)
+            out.append(case(f"{kind}.{rate}", g, 4 if rate == "ar" else 64))
+    # The rate converters.
+    g = G()
+    x = g.add("LFSaw", "kr", 31, 0)
+    g.add("K2A", "ar", x)
+    out.append(case("K2A.ar", g, 16))
+    for kind, src in [("A2K", ("LFSaw", 997, 0)), ("T2K", ("Impulse", 1700, 0))]:
+        g = G()
+        x = g.add(src[0], "ar", *src[1:])
+        g.add(kind, "kr", x)
+        out.append(case(f"{kind}.kr", g, 64))
+    g = G()
+    t = g.add("LFPulse", "kr", 300, 0, 0.5)
+    t = g.add("MulAdd", "kr", t, 0.75, 0)
+    g.add("T2A", "ar", t, 5)
+    out.append(case("T2A.ar", g, 32))
+    for rate in ["ar", "kr"]:
+        out.append(one(f"DC.{rate}", "DC", rate, 0.37))
     return out

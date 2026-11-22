@@ -1654,7 +1654,10 @@ holds what is open.
     sections: `Delay1`, `Delay2`, `LPZ1`, `HPZ1`, `LPZ2`, `HPZ2`, `BPZ2`,
     `BRZ2`, `Slope`, `Flip`, `TwoPole`, `TwoZero`, `APF`, `Ringz`,
     `Formlet`, `MidEQ`, `FOS`, `SOS`, `Ramp`, `Slew`, `Lag2`, `Lag3`,
-    `Lag2UD`, `Lag3UD` and the eight `B*` cookbook biquads.
+    `Lag2UD`, `Lag3UD` and the eight `B*` cookbook biquads; `LFUGens.cpp`'s
+    rest: `LFCub`, `LFPar`, `LFGauss`, `SyncSaw`, `Vibrato`, `Linen`,
+    `IEnvGen`, `LinExp`, `InRange`, `InRect`, `ModDif`, `Unwrap`, `AmpComp`,
+    `AmpCompA`, `K2A`, `A2K`, `T2A`, `T2K`, `DC`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1663,40 +1666,66 @@ holds what is open.
     plugin-authoring demo); `Control`, `AudioControl`, `TrigControl`,
     `LagControl` (a def's controls, with their `kr`/`tr`/`ir` rates and
     lags, replace them); `SinOsc` (it is `Sine`, decision "`SinOsc` is
-    renamed `Sine`").
-  - **Left:** the rest of `FilterUGens.cpp` (`Median`, `MoogFF`,
-    `Normalizer`, `Limiter`, `Compander`, `Amplitude`, `Hilbert`,
-    `FreqShift`); `LFUGens.cpp` (`LFCub`, `LFPar`, `LFGauss`, `SyncSaw`,
-    `Vibrato`, `Linen`, `IEnvGen`, `LinExp`, `InRange`, `InRect`,
-    `ModDif`, `Unwrap`, `AmpComp`, `AmpCompA`, `A2K`, `T2A`, `T2K`);
-    `OscUGens.cpp` (`FSinOsc`, `SinOscFB`, `Blip`, `Formant`, `COsc`,
-    `VOsc3`, `Klang`, `Klank`, `PSinGrain`, `Index`, `IndexL`, `WrapIndex`,
-    `FoldIndex`, `IndexInBetween`, `DetectIndex`, `DegreeToKey`,
-    `TWindex`); `NoiseUGens.cpp` (`Hasher`, `MantissaMask`, `Logistic`);
-    `DynNoiseUGens.cpp` (`LFDNoise0/1/3`, `LFDClipNoise`); `ChaosUGens.cpp`
-    (the 24 maps); `GendynUGens.cpp` (`Gendy1/2/3`); `TriggerUGens.cpp`
-    (`Free`, `Pause`, `PauseSelfWhenDone`, `Peak`, `PeakFollower`,
-    `RunningMax`, `RunningMin`, `LastValue`, `MostChange`, `LeastChange`,
-    `ZeroCrossing`, `SendPeakRMS`); `DelayUGens.cpp` (the info UGens
-    `BlockSize`, `ControlRate`, `ControlDur`, `SampleDur`,
-    `RadiansPerSample`, `SubsampleOffset`, `NumAudioBuses` and siblings,
-    `NodeID`, `NumRunningSynths`, `BufSamples`; `Pluck`, `PitchShift`,
-    `Pitch`, `TGrains`, `GrainTap`, `DelTapWr`/`DelTapRd`,
-    `SimpleLoopBuf`, `LocalBuf`/`MaxLocalBufs`/`SetBuf`/`ClearBuf`,
-    `ScopeOut`/`ScopeOut2`); `IOUGens.cpp` (`InFeedback`, `InTrig`,
-    `LagIn`, `OffsetOut`, `XOut`, `SharedIn`/`SharedOut`); `PanUGens.cpp`
-    (`Pan4`, `PanB`, `PanB2`, `BiPanB2`, `DecodeB2`); `ReverbUGens.cpp`
-    (`FreeVerb`, `FreeVerb2`, `GVerb`); `PhysicalModelingUGens.cpp`
-    (`Spring`, `Ball`, `TBall`); `GrainUGens.cpp` (`GrainBuf`, `GrainFM`,
-    `GrainIn`, `GrainSin`, `Warp1`); `DemandUGens.cpp` (`Dbufwr`,
-    `Dconst`, `Ddup`, `DemandEnvGen`, `Dpoll`, `Dreset`, `Dser`,
-    `Dswitch`, `Dwrand`); `TestUGens.cpp` (`CheckBadValues`, `Sanitize`);
-    `DiskIO_UGens.cpp` (`VDiskIn`); the FFT side (`FFTTrigger`,
-    `PackFFT`, `Unpack1FFT`, `PartConv`, `Convolution` and its variants,
-    the remaining `PV_*` -- each either a row of a parameterized
-    implementation or named, per "The PV set is curated" -- and the
-    analysis UGens `Onsets`, `BeatTrack`, `BeatTrack2`, `KeyTrack`,
-    `Loudness`, `MFCC`, `SpecCentroid`, `SpecFlatness`, `SpecPcile`).
+    renamed `Sine`"); `LinkTempo`, `LinkPhase`, `LinkJump` (an optional
+    plugin of scsynth's build that joins a network tempo session over a
+    protocol the server does not speak; the server's transport is its
+    clock).
+  - **Left, in batches** *(the user, 2026-11-21: by batches, each family
+    in its own file where possible, each algorithm checked against the
+    theory as well as against scsynth's code, which has known faults, and
+    the most faithful realization that is also efficient; a difference
+    from scsynth is recorded with its reason)*. The inventory is
+    `server/plugins/*.cpp` of the checkout against the registry: 207
+    names, 17 of them out of scope above, 190 to add. Each batch
+    is one commit with its reference cases, builders, docs and reset
+    coverage, and leaves this list when it lands.
+    - ⬜ **2. `OscUGens.cpp`, the oscillators:** `FSinOsc`, `SinOscFB`,
+      `Blip`, `Formant`, `COsc`, `VOsc3`, `Klang`, `Klank`, `PSinGrain`.
+    - ⬜ **3. Tables and the small noises:** `OscUGens.cpp`'s `Index`,
+      `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
+      `DegreeToKey`, `TWindex`; `NoiseUGens.cpp`'s `Hasher`,
+      `MantissaMask`, `Logistic`; `DynNoiseUGens.cpp`'s `LFDNoise0`,
+      `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`.
+    - ⬜ **4. `ChaosUGens.cpp` and `GendynUGens.cpp`:** the 24 maps
+      (`CuspN/L`, `FBSineN/L/C`, `GbmanN/L`, `HenonN/L/C`,
+      `LatoocarfianN/L/C`, `LinCongN/L/C`, `LorenzL`, `QuadN/L/C`,
+      `StandardN/L`) and `Gendy1`, `Gendy2`, `Gendy3`.
+    - ⬜ **5. `FilterUGens.cpp`'s dynamics and the analytic signal:**
+      `Median`, `MoogFF`, `Normalizer`, `Limiter`, `Compander`,
+      `Amplitude`, `Hilbert`, `FreqShift`.
+    - ⬜ **6. `TriggerUGens.cpp` and `RunningSum`:** `Free`, `Pause`,
+      `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`,
+      `RunningMin`, `RunningSum`, `LastValue`, `MostChange`,
+      `LeastChange`, `ZeroCrossing`, `SendPeakRMS`.
+    - ⬜ **7. Information and bus I/O:** `BlockSize`, `ControlRate`,
+      `ControlDur`, `SampleDur`, `RadiansPerSample`, `SubsampleOffset`,
+      `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`,
+      `NumOutputBuses`, `NumBuffers`, `NodeID`, `NumRunningSynths`,
+      `BufSamples`; `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`, `XOut`,
+      `SharedIn`, `SharedOut`.
+    - ⬜ **8. Delays and buffers:** `Pluck`, `PitchShift`, `DelTapWr`,
+      `DelTapRd`, `SimpleLoopBuf`, `LocalBuf`, `MaxLocalBufs`, `SetBuf`,
+      `ClearBuf`, `ScopeOut`, `ScopeOut2`, `VDiskIn`.
+    - ⬜ **9. Spatial, reverbs and physical models:** `Pan4`, `PanB`,
+      `PanB2`, `BiPanB2`, `DecodeB2`; `FreeVerb`, `FreeVerb2`, `GVerb`;
+      `Spring`, `Ball`, `TBall`.
+    - ⬜ **10. Grains:** `GrainBuf`, `GrainFM`, `GrainIn`, `GrainSin`,
+      `Warp1`, `TGrains`, `GrainTap`.
+    - ⬜ **11. Demand and test:** `Dbufwr`, `Dconst`, `Ddup`,
+      `DemandEnvGen`, `Dpoll`, `Dreset`, `Dser`, `Dswitch`, `Dwrand`;
+      `CheckBadValues`, `Sanitize`.
+    - ⬜ **12. The FFT chain and convolution:** `FFTTrigger`, `PackFFT`,
+      `Unpack1FFT`, the remaining `PV_*` (`PV_BinScramble`, `PV_BinWipe`,
+      `PV_ConformalMap`, `PV_Conj`, `PV_Copy`, `PV_Diffuser`, `PV_Div`,
+      `PV_LocalMax`, `PV_MagDiv`, `PV_MagNoise`, `PV_MagSquared`,
+      `PV_PhaseShift`, `PV_PhaseShift90`, `PV_PhaseShift270`,
+      `PV_RandComb`, `PV_RandWipe`, `PV_RectComb`, `PV_RectComb2`; each
+      a row of a parameterized implementation or named, per "The PV set
+      is curated"), `PartConv`, `Convolution`, `Convolution2`,
+      `Convolution2L`, `Convolution3`, `StereoConvolution2L`.
+    - ⬜ **13. Analysis:** `Pitch`, `Onsets`, `PV_HainsworthFoote`,
+      `PV_JensenAndersen`, `BeatTrack`, `BeatTrack2`, `KeyTrack`,
+      `Loudness`, `MFCC`, `SpecCentroid`, `SpecFlatness`, `SpecPcile`.
 
 - ⬜ **A UGen's builder never takes the name of a client function** *(asked
   by the user, 2026-11-21, beside the entry above)*. A UGen builder is its

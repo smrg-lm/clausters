@@ -631,6 +631,11 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `LFPulse` | freq (Hz), iphase, width | square in **[0, 1]** (a gate, unlike the bipolar `Pulse`) with `width` as its duty cycle, taken at the start of each cycle, so modulating it never cuts one short; the first sample of a cycle is always the polarity a narrow duty would otherwise lose, so a pulse narrower than a sample still pulses (both scsynth's rules); not band-limited |
 | `LFTri` | freq (Hz), iphase | triangle in ±1 starting at 0 and rising; not band-limited |
 | `VarSaw` | freq (Hz), iphase, width | triangle whose peak sits at `width` of the cycle — sweeps from a falling ramp through a triangle to a rising one. `width` is taken at the start of each cycle and kept within [0.001, 0.999]; not band-limited |
+| `LFCub` | freq (Hz), iphase | a sine-like shape of two cubic arcs, `z²(6 − 4z) − 1` over a triangle `z`: slope continuous, within 0.020 of a sine; starts at 0 rising; not band-limited |
+| `LFPar` | freq (Hz), iphase | a cosine-like shape of two parabolas, within 0.056 of a cosine; starts at its peak; not band-limited |
+| `SyncSaw` | sync_freq (Hz), saw_freq (Hz) | a sawtooth at `saw_freq` restarted at every cycle of a master at `sync_freq` (hard sync), the restart placed within the sample as scsynth places it; not band-limited |
+| `Vibrato` | freq, rate (Hz), depth, delay (s), onset (s), ratevariation, depthvariation, iphase, trig | `freq · (1 + depth · w)`, `w` a parabolic sine; each cycle draws its rate and the depth of each half from the synth's generator, scsynth's draws in its order. Starts after `delay`, fades in over `onset`; a rising `trig` restarts it from `iphase` (cycles). scsynth reads `freq` as a block buffer, so a constant there is read past its value; here any rate is itself |
+| `LFGauss` | duration (s), width, iphase, loop, done_action | the bell `exp(−x²/(2·width²))`, `x` from −1 to 1 over `duration`; `iphase` shifts it along `x` and is a running offset; without `loop` it plays once and takes `done_action` |
 | `LPF`, `HPF` | signal, freq (Hz) | second-order Butterworth low/highpass: −3 dB at `freq`, −12 dB/octave. Every named two-pole row is scsynth's own section — see the filter note below |
 | `RLPF`, `RHPF` | signal, freq (Hz), rq | resonant low/highpass, scsynth's: unity gain at DC / at Nyquist |
 | `BPF` | signal, freq (Hz), rq | bandpass with **unity gain at the centre**, `rq` its bandwidth ratio |
@@ -670,6 +675,18 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `UnaryOpUGen` | a | one of a table of unary operators, chosen by the `op` **name** — see the operator note below |
 | `Add`, `Sub`, `Mul`, `Div` | a, b | sample-wise arithmetic; thin aliases for the `add`/`sub`/`mul`/`div` operators (kept so existing defs are unchanged) |
 | `MulAdd` | a, b, c | `a·b + c` in one UGen (the multiply-accumulate the server fuses) |
+| `LinExp` | signal, srclo, srchi, dstlo, dsthi | linear in, exponential out, unclipped: `clausters_core::warp`'s `linexp`, the map `RangeMapUGen` and the clients compute |
+| `InRange` | signal, lo, hi | 1 where `lo ≤ signal ≤ hi`, else 0 |
+| `InRect` | x, y, left, top, right, bottom | 1 where `(x, y)` lies in the rectangle, edges included, else 0 |
+| `ModDif` | x, y, mod | the distance from `x` to `y` on a circle of circumference `mod`, the shorter way: in `[0, mod/2]` |
+| `Unwrap` | signal, lo, hi | undoes a wrap: a jump of more than half the range adds or takes away a whole range. The range is read at the start and the output starts inside it (scsynth's initial offset takes a start outside further out) |
+| `AmpComp` | freq, root, exp | `(root / freq)^exp`, sign-preserving: the gain that evens a higher partial's loudness with a lower one's |
+| `AmpCompA` | freq, root, min_amp, root_amp | loudness compensation along the A-weighting (IEC 61672): `root_amp` at `root`, `min_amp` at the weighting's peak, linear in `1 − A(freq)` |
+| `K2A` | signal | a control-rate signal at audio rate, a line across each block; an audio-rate input passes |
+| `A2K` | signal | an audio-rate signal at control rate: the block's first sample |
+| `T2A` | signal, offset | a control-rate trigger at audio rate: at a rising edge, the sample `offset` into the block takes its value |
+| `T2K` | signal | an audio-rate trigger at control rate: the block's largest sample, 0 when none is positive |
+| `DC` | signal | the constant `signal`, taken at the start and held |
 | `Sum3` | a, b, c | `a + b + c` |
 | `Sum4` | a, b, c, d | `a + b + c + d` |
 | `In` | bus | copies an audio bus (read once per block) |
@@ -699,6 +716,8 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `EnvGen` | gate, level_scale, level_bias, time_scale, done_action, *envelope array* | breakpoint envelope, at audio or control rate; gate-driven, with a `done_action` that can free the node — see the envelope note below |
 | `Line` | start, end, dur, done_action | ramps from `start` to `end` over `dur` seconds, then holds; the same `done_action` set as `EnvGen`, which it is built on |
 | `EnvShape` | phase, start, end, shape, curve | **one envelope segment read at a position**: `phase` (clamped to 0..1) through the segment from `start` to `end`, in an `EnvGen` segment's shape number and curvature, by the very function `EnvGen` plays. Where `EnvGen` runs on time from a gate, this follows whatever drives `phase` — a box's fade reads the transport's position through it, so a locate jumps the fade and a stop holds it |
+| `IEnvGen` | index, offset, *envelope array* | an envelope **read at a position**: `index − offset`, in the envelope's seconds. The array is scsynth's interpolation layout: level0, segment count, total duration, then per segment duration, shape, curve, level. Before the start the first level, past the end the last. scsynth truncates a curvature to an integer and makes `hold` depend on the index's history; here the curvature is the one given and a held segment is its start level |
+| `Linen` | gate, attacktime (s), suslevel, releasetime (s), done_action | control rate only: a straight rise to `suslevel` when `gate` opens, held, a straight fall when it closes, then `done_action`; a gate ≤ −1 releases over `−gate − 1` s. A gate closing during the rise releases from there, where scsynth finishes the rise first |
 | `XLine` | start, end, dur, done_action | `Line` in equal ratios instead of equal steps; `start`/`end` must be non-zero and share a sign |
 | `FreeSelf` | signal | passes `signal` through; frees the enclosing synth while it is greater than zero |
 | `PauseSelf` | signal | passes `signal` through; pauses the enclosing synth while it is greater than zero (resume with `/node_run 1`) |

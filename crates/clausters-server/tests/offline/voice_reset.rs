@@ -77,6 +77,17 @@ const STATELESS: &[(&str, &str)] = &[
     ("PV_MagClip", "per frame, no memory"),
     ("PV_BrickWall", "per frame, no memory"),
     ("Dswitch1", "its position is its inputs'"),
+    ("LinExp", "arithmetic"),
+    ("InRange", "arithmetic"),
+    ("InRect", "arithmetic"),
+    ("AmpComp", "arithmetic"),
+    ("AmpCompA", "arithmetic"),
+    ("A2K", "this block's first sample"),
+    ("T2K", "this block's largest sample"),
+    (
+        "IEnvGen",
+        "a curve read at its index input; the last read is a cache",
+    ),
 ];
 
 /// Random sources: their stream goes on across a reset, so a restarted voice
@@ -113,6 +124,7 @@ const STOCHASTIC: &[&str] = &[
     "Dust",
     "Dust2",
     "Crackle",
+    "Vibrato",
 ];
 
 /// Kinds whose state is not the voice's to reset.
@@ -309,6 +321,67 @@ fn cases() -> Vec<Case> {
             json!([input(), {"kind": "Lag", "inputs": [u(0), c(0.01)]}, out(1)]),
         )
         .source("noise"),
+        Case::new(
+            "lfcub",
+            json!([{"kind": "LFCub", "inputs": [c(431.0), c(0.1)]}, out(0)]),
+        ),
+        Case::new(
+            "lfpar",
+            json!([{"kind": "LFPar", "inputs": [c(431.0), c(0.1)]}, out(0)]),
+        ),
+        Case::new(
+            "syncsaw",
+            json!([{"kind": "SyncSaw", "inputs": [c(301.0), c(977.0)]}, out(0)]),
+        ),
+        Case::new(
+            "lfgauss",
+            json!([{"kind": "LFGauss", "inputs": [c(0.01), c(0.2), c(0.0), c(0.0), c(0.0)]}, out(0)]),
+        ),
+        gated(Case::new(
+            "linen",
+            json!([
+                {"kind": "Linen", "rate": "kr", "inputs": [{"control": 0}, c(0.005), c(0.8), c(0.01), c(0.0)]},
+                out(0)
+            ]),
+        )),
+        Case::new(
+            "moddif",
+            json!([
+                input(),
+                {"kind": "LFTri", "rate": "kr", "inputs": [c(7.0), c(0.0)]},
+                {"kind": "ModDif", "inputs": [u(0), u(1), c(0.7)]},
+                out(2)
+            ]),
+        )
+        .source("noise"),
+        Case::new(
+            "unwrap",
+            json!([
+                {"kind": "LFSaw", "inputs": [c(1201.0), c(0.0)]},
+                {"kind": "Unwrap", "inputs": [u(0), c(-1.0), c(1.0)]},
+                out(1)
+            ]),
+        ),
+        Case::new(
+            "k2a",
+            json!([
+                {"kind": "LFSaw", "rate": "kr", "inputs": [c(31.0), c(0.0)]},
+                {"kind": "K2A", "inputs": [u(0)]},
+                out(1)
+            ]),
+        ),
+        Case::new(
+            "t2a",
+            json!([
+                {"kind": "LFPulse", "rate": "kr", "inputs": [c(300.0), c(0.0), c(0.5)]},
+                {"kind": "T2A", "inputs": [u(0), c(3.0)]},
+                out(1)
+            ]),
+        ),
+        Case::new(
+            "dc",
+            json!([{"kind": "DC", "inputs": [c(0.3)]}, out(0)]),
+        ),
         Case::new(
             "delay1",
             json!([input(), {"kind": "Delay1", "inputs": [u(0), c(0.0)]}, out(1)]),

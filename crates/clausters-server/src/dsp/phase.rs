@@ -319,10 +319,17 @@ pub enum LfShape {
     /// input 2, so it sweeps from a falling ramp through a triangle to a rising
     /// one.
     VarSaw,
+    /// scsynth's `LFCub`: two cubic arcs, `z^2 (6 - 4z) - 1` up and down, a
+    /// sine-like shape in `[-1, 1]` whose slope is continuous. Starts at `0`
+    /// rising, as `LFTri` does.
+    Cub,
+    /// scsynth's `LFPar`: two parabolas, `1 - z^2` and `z^2 - 1`, a cosine-like
+    /// shape in `[-1, 1]` starting at its peak.
+    Par,
 }
 
 /// The non-band-limited modulation shapes: `LFSaw`, `LFPulse`, `LFTri`,
-/// `VarSaw`. Inputs: 0 frequency in Hz, 1 initial phase, and -- only for the
+/// `VarSaw`, `LFCub`, `LFPar`. Inputs: 0 frequency in Hz, 1 initial phase, and -- only for the
 /// shapes that have a duty cycle -- 2 width. A shape without one declares two
 /// inputs rather than three: a UGen that advertises an input it ignores lies to
 /// `/ugen_query`, and a client palette would draw an inlet that does nothing.
@@ -393,6 +400,28 @@ impl Lf {
                     0.0
                 }
             }
+            LfShape::Cub => {
+                // scsynth's phase runs over [0, 2) from half a unit in, a
+                // quarter cycle: the triangle `z` from there, then the cubic.
+                let u = t + 0.25;
+                let u = 2.0 * (u - u.floor());
+                let z = if u < 1.0 { u } else { 2.0 - u };
+                z * z * (6.0 - 4.0 * z) - 1.0
+            }
+            LfShape::Par => {
+                // A cycle is four of scsynth's units: down from the peak over
+                // the first, the trough's parabola over the next two, back up.
+                let u = 4.0 * t;
+                if u < 1.0 {
+                    1.0 - u * u
+                } else if u < 3.0 {
+                    let z = u - 2.0;
+                    z * z - 1.0
+                } else {
+                    let z = u - 4.0;
+                    1.0 - z * z
+                }
+            }
             LfShape::VarSaw => {
                 // Rises over the first `width` of the cycle, falls over the
                 // rest.
@@ -427,7 +456,7 @@ impl UGen for Lf {
         }
         let const_dt = block_dt(freq, sr);
         match self.shape {
-            LfShape::Saw | LfShape::Tri => {
+            LfShape::Saw | LfShape::Tri | LfShape::Cub | LfShape::Par => {
                 for (i, s) in output.iter_mut().enumerate() {
                     let dt = const_dt.unwrap_or_else(|| at(freq, i) as f64 / sr as f64);
                     let t = self.phase.advance(dt);
@@ -456,6 +485,61 @@ impl UGen for Lf {
                     *s = z as f32;
                     self.cycle += dt;
                 }
+            }
+        }
+    }
+}
+
+/// scsynth's `SyncSaw`: a sawtooth at `saw_freq` restarted at every cycle of
+/// a master at `sync_freq` -- hard sync, the classic sweep of a slave
+/// oscillator's harmonics. Inputs 0 `sync_freq`, 1 `saw_freq`. Output in
+/// `[-1, 1)`, starting at `0`.
+///
+/// scsynth's, including the restart's sub-sample placement: on the sample
+/// the master wraps, the slave starts again from where it would be had the
+/// restart fallen at the master's exact crossing, the part of the sample past
+/// it scaled to the slave's rate. Not band-limited, as scsynth's is not.
+pub struct SyncSaw {
+    master: f64,
+    slave: f64,
+}
+
+impl SyncSaw {
+    pub fn new() -> Self {
+        Self {
+            master: 0.0,
+            slave: 0.0,
+        }
+    }
+}
+
+impl Default for SyncSaw {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for SyncSaw {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        // scsynth's units: both phases run over [-1, 1), two per cycle.
+        let mul = 2.0 / ctx.sample_rate as f64;
+        let (sync, saw) = (inputs[0], inputs[1]);
+        for (i, s) in output.iter_mut().enumerate() {
+            let f1 = at(sync, i) as f64 * mul;
+            let f2 = at(saw, i) as f64 * mul;
+            *s = self.slave as f32;
+            self.slave += f2;
+            if self.slave >= 1.0 {
+                self.slave -= 2.0;
+            }
+            self.master += f1;
+            if self.master >= 1.0 {
+                self.master -= 2.0;
+                self.slave = (self.master + 1.0) * f2 / f1 - 1.0;
             }
         }
     }

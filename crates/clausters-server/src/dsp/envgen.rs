@@ -9,6 +9,10 @@
 //! remaining segments. When the last segment ends the UGen reports its
 //! `doneAction` through [`UGen::done`], which the engine turns into freeing the
 //! node (see `node::NodeTree` and `server::engine`).
+//!
+//! Beside it, the two other envelopes of scsynth's library: [`IEnvGen`], the
+//! same segments read at a position rather than played in time, and
+//! [`Linen`], the trapezoid of a gate.
 
 // The segment interpolation itself (the SC shape curves) lives once in the
 // shared core, so a client drawing an envelope evaluates exactly what this
@@ -306,5 +310,218 @@ impl UGen for EnvShape {
             let curve = at(inputs[4], i);
             *s = shape_value(shape, curve, from, to, phase);
         }
+    }
+}
+
+/// Leading inputs of an `IEnvGen` before its segments: `index`, `offset`,
+/// the initial level, the segment count and the total duration.
+const IENV_HEADER: usize = 5;
+
+/// scsynth's `IEnvGen(index, offset, level0, segments, total, ...)`: an
+/// envelope **read at a position** -- `index`, in the envelope's time units
+/// from `offset` -- rather than played in time, so anything can drive it
+/// (a phasor, a fader, another signal) and it can run backwards or jump.
+/// Each segment is `duration, shape, curve, level`, scsynth's layout for it
+/// (`Env.asArrayForInterpolation`), and its shape is computed by the function
+/// `EnvGen` plays and a view draws.
+///
+/// Before the start the output is the initial level, past `total` the last
+/// level. Two of scsynth's are not copied: it truncates a segment's
+/// curvature to an integer, and its `hold` shape answers the last value it
+/// computed, which depends on where the index was before; here the curvature
+/// is the one given and a held segment is its start level, a function of the
+/// position alone. The levels are read live, where scsynth reads them once.
+pub struct IEnvGen {
+    /// The last position read and the level it gave: an index standing still
+    /// costs nothing.
+    last: Option<(f32, f32)>,
+}
+
+impl IEnvGen {
+    pub fn new() -> Self {
+        Self { last: None }
+    }
+
+    fn level(inputs: &[&[f32]], point: f32, i: usize) -> f32 {
+        let value = |k: usize| inputs.get(k).map_or(0.0, |x| at(x, i));
+        let init = value(2);
+        let stages =
+            (value(3).max(0.0) as usize).min((inputs.len() - IENV_HEADER) / SEGMENT_INPUTS);
+        let total = value(4);
+        if point >= total {
+            return value(IENV_HEADER - 1 + stages * SEGMENT_INPUTS);
+        }
+        if point <= 0.0 {
+            return init;
+        }
+        let mut start = 0.0f32;
+        let mut begin = init;
+        for j in 0..stages {
+            let base = IENV_HEADER + j * SEGMENT_INPUTS;
+            let dur = value(base);
+            let end = value(base + 3);
+            if point < start + dur || j + 1 == stages {
+                let pos = if dur > 0.0 {
+                    (point - start) / dur
+                } else {
+                    1.0
+                };
+                let shape = value(base + 1) as i32;
+                return Segment::new(shape, value(base + 2), begin, end).at(pos.min(1.0));
+            }
+            start += dur;
+            begin = end;
+        }
+        init
+    }
+}
+
+impl Default for IEnvGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for IEnvGen {
+    fn reset(&mut self) {
+        self.last = None;
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let live = inputs[2..].iter().any(|x| x.len() > 1);
+        for (i, s) in output.iter_mut().enumerate() {
+            let index = at(inputs[0], i);
+            *s = match self.last {
+                Some((at_index, level)) if at_index == index && !live => level,
+                _ => {
+                    let point = (index - at(inputs[1], i)).max(0.0);
+                    let level = Self::level(inputs, point, i);
+                    self.last = Some((index, level));
+                    level
+                }
+            };
+        }
+    }
+}
+
+/// scsynth's `Linen(gate, attack, sustain, release, done_action)`: the
+/// trapezoid of a gate -- a straight rise to `sustain` over `attack` seconds
+/// when the gate opens, held while it stays open, a straight fall to 0 over
+/// `release` when it closes, and then `done_action`. A gate opening again
+/// rises from wherever the level is; a gate at or below -1 releases at once
+/// over `-gate - 1` seconds, scsynth's forced release. A gate closing during
+/// the rise releases from there, where scsynth's finishes the rise first.
+///
+/// A control-rate UGen, as scsynth's is: its times count control periods.
+pub struct Linen {
+    stage: u8,
+    level: f32,
+    slope: f32,
+    counter: i64,
+    prev_gate: f32,
+    started: bool,
+    done_action: DoneAction,
+    finished: bool,
+}
+
+impl Linen {
+    pub fn new() -> Self {
+        Self {
+            stage: 4,
+            level: 0.0,
+            slope: 0.0,
+            counter: 0,
+            prev_gate: 0.0,
+            started: false,
+            done_action: DoneAction::None,
+            finished: false,
+        }
+    }
+
+    fn segment(&mut self, to: f32, time: f32, sr: f32) {
+        // In double, as scsynth multiplies: a time that is a whole number of
+        // periods in decimal is a hair under it in binary, and truncates.
+        let counter = ((time as f64 * sr as f64) as i64).max(1);
+        self.slope = (to - self.level) / counter as f32;
+        self.counter = counter;
+    }
+}
+
+impl Default for Linen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UGen for Linen {
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let sr = ctx.sample_rate;
+        let gate = at(inputs[0], 0);
+        self.done_action = DoneAction::from_i32(at(inputs[4], 0) as i32);
+        if !self.started {
+            self.started = true;
+            if gate <= -1.0 {
+                // Released before it began: it sustains at 0, and the
+                // release below runs from there.
+                self.stage = 1;
+            }
+        }
+        if self.prev_gate <= 0.0 && gate > 0.0 {
+            self.finished = false;
+            self.stage = 0;
+            self.segment(at(inputs[2], 0), at(inputs[1], 0), sr);
+        }
+        if self.stage == 0 && gate <= 0.0 {
+            // A gate closing during the rise releases from where the level
+            // is, as an envelope's release node does; scsynth's finishes
+            // the rise first, holding a short gate open for the whole attack.
+            self.stage = 1;
+        }
+        let out = match self.stage {
+            0 | 2 => {
+                let out = self.level;
+                self.level += self.slope;
+                self.counter -= 1;
+                if self.counter == 0 {
+                    self.stage += 1;
+                }
+                out
+            }
+            1 => {
+                let out = self.level;
+                if gate <= -1.0 {
+                    self.stage = 2;
+                    self.segment(0.0, -gate - 1.0, sr);
+                } else if gate <= 0.0 {
+                    self.stage = 2;
+                    self.segment(0.0, at(inputs[3], 0), sr);
+                }
+                out
+            }
+            3 => {
+                self.finished = true;
+                self.stage = 4;
+                0.0
+            }
+            _ => 0.0,
+        };
+        output.fill(out);
+        self.prev_gate = gate;
+    }
+
+    fn done(&self) -> DoneAction {
+        if self.finished {
+            self.done_action
+        } else {
+            DoneAction::None
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.finished
     }
 }

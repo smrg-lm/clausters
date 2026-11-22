@@ -82,6 +82,18 @@ from .graph import (
     mix,
     sum3,
     sum4,
+    lin_exp,
+    in_range,
+    in_rect,
+    mod_dif,
+    unwrap,
+    amp_comp,
+    amp_comp_a,
+    k2a,
+    a2k,
+    t2a,
+    t2k,
+    dc,
 )
 from .osc import (
     brown_noise,
@@ -107,6 +119,10 @@ from .osc import (
     sine,
     var_saw,
     white_noise,
+    lf_cub,
+    lf_par,
+    sync_saw,
+    vibrato,
 )
 from .filter import (
     allpass_c,
@@ -310,6 +326,9 @@ from .env import (
     points_to_env,
     quads,
     x_line,
+    ienv_gen,
+    linen,
+    lf_gauss,
 )
 
 # ---- introspecting a UGen kind's input names (the client's own signature) ----
@@ -325,7 +344,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+    {"EnvGen", "IEnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -609,5 +628,24 @@ __all__ = [
     "points_to_env",
     "quads",
     "x_line",
+    "lf_cub",
+    "lf_par",
+    "sync_saw",
+    "vibrato",
+    "lin_exp",
+    "in_range",
+    "in_rect",
+    "mod_dif",
+    "unwrap",
+    "amp_comp",
+    "amp_comp_a",
+    "k2a",
+    "a2k",
+    "t2a",
+    "t2k",
+    "dc",
+    "ienv_gen",
+    "linen",
+    "lf_gauss",
     "ugen_input_names",
 ]

@@ -71,4 +71,35 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(EnvShape),
     ),
+    // An envelope read at a position: the head, then the envelope's array in
+    // scsynth's interpolation layout (level0, segments, total, and per
+    // segment duration, shape, curve, level).
+    desc(
+        "IEnvGen",
+        Variadic,
+        &[inp("index", 0.0), inp("offset", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(IEnvGen::new()),
+    ),
+    desc_done(desc(
+        "Linen",
+        Fixed(5),
+        &[
+            inp("gate", 1.0),
+            inp("attacktime", 0.01),
+            inp("suslevel", 1.0),
+            inp("releasetime", 1.0),
+            inp("done_action", 0.0),
+        ],
+        Kr,
+        R_KR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Linen::new()),
+    )),
 ];

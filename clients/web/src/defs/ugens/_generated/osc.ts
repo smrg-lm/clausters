@@ -220,3 +220,45 @@ export const transportPos = (offset: Channel = 0.0): Ugen =>
  * ```
  */
 export const transportFade = (): Ugen => new Ugen("TransportFade", []);
+
+/**
+ * A sine-like shape in +/-1 made of two cubic arcs, its slope continuous,
+ * **not** band-limited -- a modulation shape, within 0.02 of a sine.
+ * Starts at 0 rising. `iphase` as in `lfSaw`.
+ */
+export const lfCub = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
+    new Ugen("LFCub", [freq, iphase]);
+
+/**
+ * A cosine-like shape in +/-1 made of two parabolas, **not** band-limited:
+ * starts at its peak, within 0.056 of a cosine. `iphase` as in `lfSaw`.
+ */
+export const lfPar = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
+    new Ugen("LFPar", [freq, iphase]);
+
+/**
+ * A sawtooth at `sawFreq` restarted at every cycle of a master at
+ * `syncFreq` (hard sync): sweeping `sawFreq` sweeps its harmonics.
+ * Not band-limited.
+ */
+export const syncSaw = (syncFreq: Channel = 440.0, sawFreq: Channel = 440.0): Ugen =>
+    new Ugen("SyncSaw", [syncFreq, sawFreq]);
+
+/**
+ * `freq` wobbled by `depth` (a fraction of it) at `rate` Hz, a parabolic
+ * sine. Each cycle draws its own rate and the depth of each half, varied
+ * by `ratevariation` and `depthvariation`, from the synth's random
+ * generator. It starts after `delay` seconds and fades in over `onset`;
+ * a rising `trig` starts it again from `iphase` (in cycles).
+ */
+export const vibrato = (
+    freq: Channel = 440.0,
+    rate: Channel = 6.0,
+    depth: Channel = 0.02,
+    delay: Channel = 0.0,
+    onset: Channel = 0.0,
+    ratevariation: Channel = 0.04,
+    depthvariation: Channel = 0.1,
+    iphase: Channel = 0.0,
+    trig: Channel = 0.0,
+): Ugen => new Ugen("Vibrato", [freq, rate, depth, delay, onset, ratevariation, depthvariation, iphase, trig]);

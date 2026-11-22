@@ -277,6 +277,39 @@ def x_line(start=0.01, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
     return Ugen("XLine", [start, end, dur, float(done_action)])
 
 
+def ienv_gen(env: Env, index, offset=0.0) -> Ugen:
+    """An `Env` **read at a position**: `index`, in the envelope's seconds
+    from `offset`, gives the level the envelope has there -- the counterpart
+    of `env_gen`, driven from outside rather than in time, so a phasor, a
+    fader or any signal can move through it, backwards or by jumps.
+
+    Before the start it is the first level, past the end the last. The
+    envelope's release and loop nodes play no part: there is no gate."""
+    inputs = [index, offset, env.levels[0], float(len(env.times)), float(sum(env.times))]
+    for i, dur in enumerate(env.times):
+        shape, cval = _resolve_curve(env.curves[i])
+        inputs += [dur, float(shape), cval, env.levels[i + 1]]
+    return Ugen("IEnvGen", inputs)
+
+
+def linen(gate=1.0, attacktime=0.01, suslevel=1.0, releasetime=1.0,
+          done_action=DoneAction.NONE) -> Ugen:
+    """The trapezoid of a gate, at control rate: a straight rise to
+    `suslevel` over `attacktime` seconds when `gate` opens, held while it
+    stays open, a straight fall over `releasetime` when it closes, and then
+    `done_action`. A gate at or below -1 releases at once, over `-gate - 1`
+    seconds."""
+    return Ugen("Linen", [gate, attacktime, suslevel, releasetime, float(done_action)], rate="kr")
+
+
+def lf_gauss(duration=1.0, width=0.1, iphase=0.0, loop=1.0,
+             done_action=DoneAction.NONE) -> Ugen:
+    """A Gaussian bell, `exp(-x^2 / (2 width^2))` with `x` from -1 to 1 over
+    `duration` seconds: repeated while `loop` is on, otherwise played once,
+    `done_action` taken as it ends. `iphase` shifts the bell along `x`."""
+    return Ugen("LFGauss", [duration, width, iphase, loop, float(done_action)])
+
+
 # ---- break-point <-> Env mapping (the Env <-> Bpf seam, and the bpf widget) ----
 
 

@@ -149,4 +149,38 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(TransportFade),
     ),
+    // --- the rest of scsynth's low-frequency shapes and modulators ---
+    plain("LFCub", I_LF, |_, _| Box::new(Lf::new(LfShape::Cub))),
+    plain("LFPar", I_LF, |_, _| Box::new(Lf::new(LfShape::Par))),
+    plain(
+        "SyncSaw",
+        &[inp("sync_freq", 440.0), inp("saw_freq", 440.0)],
+        |_, _| Box::new(SyncSaw::new()),
+    ),
+    desc_draws(plain(
+        "Vibrato",
+        &[
+            inp("freq", 440.0),
+            inp("rate", 6.0),
+            inp("depth", 0.02),
+            inp("delay", 0.0),
+            inp("onset", 0.0),
+            inp("ratevariation", 0.04),
+            inp("depthvariation", 0.1),
+            inp("iphase", 0.0),
+            inp_opt("trig", 0.0),
+        ],
+        |_, ctx| Box::new(Vibrato::new(ctx.rand())),
+    )),
+    desc_done(plain(
+        "LFGauss",
+        &[
+            inp("duration", 1.0),
+            inp("width", 0.1),
+            inp("iphase", 0.0),
+            inp("loop", 1.0),
+            inp("done_action", 0.0),
+        ],
+        |_, _| Box::new(LfGauss::new()),
+    )),
 ];

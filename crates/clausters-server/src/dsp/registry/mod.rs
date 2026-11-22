@@ -23,14 +23,16 @@ use crate::dsp::demand::{
     RandKind,
 };
 use crate::dsp::disk::{DiskIn, DiskOut};
-use crate::dsp::envgen::{EnvGen, EnvShape};
+use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
+use crate::dsp::lfo::{LfGauss, Vibrato};
 use crate::dsp::line::{Line, LineShape};
 use crate::dsp::local::{LocalIn, LocalOut};
+use crate::dsp::maps::{AmpComp, AmpCompA, InRange, InRect, LinExp, ModDif, Unwrap};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
 use crate::dsp::noise::{
     BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
@@ -38,11 +40,12 @@ use crate::dsp::noise::{
 };
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
-use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, TransportFade, TransportPos};
+use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
 use crate::dsp::rand::SynthRand;
 use crate::dsp::random::{CoinGate, Once, OnceKind, RandId, RandSeed, Triggered, TriggeredKind};
 use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
+use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::SampleRate;
 use crate::dsp::sections::{Fir, FirKind, Flip, Fos, LineRamp, SampleDelay, Slew, Sos, TwoZero};

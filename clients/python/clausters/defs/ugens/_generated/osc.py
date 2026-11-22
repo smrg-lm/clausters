@@ -33,6 +33,10 @@ __all__ = [
     "phasor",
     "transport_pos",
     "transport_fade",
+    "lf_cub",
+    "lf_par",
+    "sync_saw",
+    "vibrato",
 ]
 
 
@@ -251,3 +255,49 @@ def transport_fade() -> Ugen:
     ```
     """
     return Ugen("TransportFade", [])
+
+
+def lf_cub(freq=440.0, iphase=0.0) -> Ugen:
+    """A sine-like shape in +/-1 made of two cubic arcs, its slope continuous,
+    **not** band-limited -- a modulation shape, within 0.02 of a sine.
+    Starts at 0 rising. `iphase` as in `lf_saw`.
+    """
+    return Ugen("LFCub", [freq, iphase])
+
+
+def lf_par(freq=440.0, iphase=0.0) -> Ugen:
+    """A cosine-like shape in +/-1 made of two parabolas, **not** band-limited:
+    starts at its peak, within 0.056 of a cosine. `iphase` as in `lf_saw`.
+    """
+    return Ugen("LFPar", [freq, iphase])
+
+
+def sync_saw(sync_freq=440.0, saw_freq=440.0) -> Ugen:
+    """A sawtooth at `saw_freq` restarted at every cycle of a master at
+    `sync_freq` (hard sync): sweeping `saw_freq` sweeps its harmonics.
+    Not band-limited.
+    """
+    return Ugen("SyncSaw", [sync_freq, saw_freq])
+
+
+def vibrato(
+    freq=440.0,
+    rate=6.0,
+    depth=0.02,
+    delay=0.0,
+    onset=0.0,
+    ratevariation=0.04,
+    depthvariation=0.1,
+    iphase=0.0,
+    trig=0.0,
+) -> Ugen:
+    """`freq` wobbled by `depth` (a fraction of it) at `rate` Hz, a parabolic
+    sine. Each cycle draws its own rate and the depth of each half, varied
+    by `ratevariation` and `depthvariation`, from the synth's random
+    generator. It starts after `delay` seconds and fades in over `onset`;
+    a rising `trig` starts it again from `iphase` (in cycles).
+    """
+    return Ugen(
+        "Vibrato",
+        [freq, rate, depth, delay, onset, ratevariation, depthvariation, iphase, trig],
+    )

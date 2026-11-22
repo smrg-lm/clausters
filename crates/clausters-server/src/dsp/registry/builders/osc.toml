@@ -258,3 +258,40 @@ out(0, in_(bus) * transport_fade())
 out(0, mul(in_(bus), transportFade()));
 ```
 '''
+
+[[ugen]]
+kind = "LFCub"
+builder = "lf_cub"
+doc = '''
+A sine-like shape in +/-1 made of two cubic arcs, its slope continuous,
+**not** band-limited -- a modulation shape, within 0.02 of a sine.
+Starts at 0 rising. `iphase` as in `lf_saw`.
+'''
+
+[[ugen]]
+kind = "LFPar"
+builder = "lf_par"
+doc = '''
+A cosine-like shape in +/-1 made of two parabolas, **not** band-limited:
+starts at its peak, within 0.056 of a cosine. `iphase` as in `lf_saw`.
+'''
+
+[[ugen]]
+kind = "SyncSaw"
+builder = "sync_saw"
+doc = '''
+A sawtooth at `saw_freq` restarted at every cycle of a master at
+`sync_freq` (hard sync): sweeping `saw_freq` sweeps its harmonics.
+Not band-limited.
+'''
+
+[[ugen]]
+kind = "Vibrato"
+builder = "vibrato"
+doc = '''
+`freq` wobbled by `depth` (a fraction of it) at `rate` Hz, a parabolic
+sine. Each cycle draws its own rate and the depth of each half, varied
+by `ratevariation` and `depthvariation`, from the synth's random
+generator. It starts after `delay` seconds and fades in over `onset`;
+a rising `trig` starts it again from `iphase` (in cycles).
+'''

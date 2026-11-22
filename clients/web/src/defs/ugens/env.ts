@@ -402,6 +402,55 @@ export const xLine = (
 ): Ugen => new Ugen("XLine", [start, end, dur, Number(doneAction)]);
 
 /**
+ * An `Env` **read at a position**: `index`, in the envelope's seconds from
+ * `offset`, gives the level the envelope has there -- the counterpart of
+ * `envGen`, driven from outside rather than in time, so a phasor, a fader or
+ * any signal can move through it, backwards or by jumps.
+ *
+ * Before the start it is the first level, past the end the last. The
+ * envelope's release and loop nodes play no part: there is no gate.
+ */
+export function ienvGen(env: Env, index: Channel, offset: Channel = 0.0): Ugen {
+    const total = env.times.reduce((a, b) => a + b, 0);
+    const inputs: Channel[] = [index, offset, env.levels[0]!, env.times.length, total];
+    env.times.forEach((dur, i) => {
+        const [shape, cval] = resolveCurve(env.curves[i]!);
+        inputs.push(dur, shape, cval, env.levels[i + 1]!);
+    });
+    return new Ugen("IEnvGen", inputs);
+}
+
+/**
+ * The trapezoid of a gate, at control rate: a straight rise to `suslevel`
+ * over `attacktime` seconds when `gate` opens, held while it stays open, a
+ * straight fall over `releasetime` when it closes, and then `doneAction`. A
+ * gate at or below -1 releases at once, over `-gate - 1` seconds.
+ */
+export const linen = (
+    gate: Channel = 1.0,
+    attacktime: Channel = 0.01,
+    suslevel: Channel = 1.0,
+    releasetime: Channel = 1.0,
+    doneAction: number = DoneAction.NONE,
+): Ugen =>
+    new Ugen("Linen", [gate, attacktime, suslevel, releasetime, Number(doneAction)], {
+        rate: "kr",
+    });
+
+/**
+ * A Gaussian bell, `exp(-x^2 / (2 width^2))` with `x` from -1 to 1 over
+ * `duration` seconds: repeated while `loop` is on, otherwise played once,
+ * `doneAction` taken as it ends. `iphase` shifts the bell along `x`.
+ */
+export const lfGauss = (
+    duration: Channel = 1.0,
+    width: Channel = 0.1,
+    iphase: Channel = 0.0,
+    loop: Channel = 1.0,
+    doneAction: number = DoneAction.NONE,
+): Ugen => new Ugen("LFGauss", [duration, width, iphase, loop, Number(doneAction)]);
+
+/**
  * A break point, in any of the spellings {@link quads} reads: `[at, value]`,
  * `[at, value, curve]` with a shape name or a numeric curvature, or the
  * resolved `[at, value, shape, curve]` the `bpf` widget sends.

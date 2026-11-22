@@ -41,6 +41,7 @@ mod filters;
 mod golden;
 mod graphdef;
 mod group_nset;
+mod lfugens;
 mod mapping;
 mod meters;
 mod midi;

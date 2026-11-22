@@ -70,9 +70,13 @@ pub(crate) mod io_thread;
 #[cfg(feature = "synth")]
 pub mod lag;
 #[cfg(feature = "synth")]
+pub mod lfo;
+#[cfg(feature = "synth")]
 pub mod line;
 #[cfg(feature = "synth")]
 pub mod local;
+#[cfg(feature = "synth")]
+pub mod maps;
 pub mod measure;
 #[cfg(feature = "synth")]
 pub mod nodectl;
@@ -90,6 +94,8 @@ pub mod random;
 #[cfg(feature = "synth")]
 pub mod randop;
 pub mod rangemap;
+#[cfg(feature = "synth")]
+pub mod rates;
 #[cfg(feature = "synth")]
 pub mod registry;
 #[cfg(feature = "synth")]

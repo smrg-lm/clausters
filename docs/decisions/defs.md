@@ -916,11 +916,9 @@ entropy, reported either way.
 - **Some of scsynth's quirks are not ported.** Its `Dxrand` never starts on
   the list's first item; its `rrand` operator scales a bipolar draw and reaches
   below `lo`. Here the first is uniform over the list and the second over the
-  range, as sclang's own `rrand` is. The same goes outside the random UGens:
-  scsynth's `APF` is the identity in exact arithmetic (only its unrolled
-  loop's misread state passes anything else) and is the allpass its
-  documentation describes here, and its `Lag3UD` chooses the third stage's
-  time by the second's comparison, where here each stage reads its own.
+  range, as sclang's own `rrand` is. The rows outside the random UGens that
+  depart from scsynth are listed in "A UGen is held against scsynth's own
+  code, not against its help file".
 
 ## The pan law is a polynomial, not a table, and it is evaluated per sample
 
@@ -1593,3 +1591,29 @@ What the comparison allows is part of the decision:
 - **A boundary is not compared.** A phase that lands exactly on a wrap is on
   one side of it or the other by the rounding of two accumulators of different
   widths, so the cases use frequencies that never land on one.
+- **Where scsynth's code contradicts what the UGen is, the UGen is what it
+  is.** scsynth's code is the reference for what a name computes, not for its
+  faults: each row is also checked against the theory it implements, and
+  where scsynth's departs from it the server keeps the theory, a case avoids
+  the input that shows the fault, a test of the server's own holds the
+  theory (`tests/offline/lfugens.rs` and its siblings), and the row says so
+  in `docs/schemas.md`. So far:
+  - `APF` is the identity in exact arithmetic in scsynth (only its unrolled
+    loop's misread state passes anything else); here it is the allpass its
+    documentation describes.
+  - `Lag3UD` chooses its third stage's time by the second's comparison; here
+    each stage reads its own.
+  - `IEnvGen` truncates a segment's curvature to an integer, and its `hold`
+    answers the last value it computed, so the level at a position depends on
+    where the index came from; here the curvature is the one given and a held
+    segment is its start level.
+  - `Unwrap`'s initial offset takes a start outside the range further out
+    (`floor((lo - in) / range)` for `-floor((in - lo) / range)`), and its
+    first sample compares against a previous input never set; here the start
+    is brought into the range.
+  - `Linen` finishes its rise when the gate closes during it, holding a short
+    gate open for the whole attack; here it releases from where the level
+    got to, as an envelope's release node does.
+  - `Vibrato` reads `freq` as a buffer of the block, so a constant there is
+    read past its one value (its own documentation feeds it a `DC.ar`); here
+    any rate is read as itself.
