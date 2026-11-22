@@ -1636,10 +1636,10 @@ holds what is open.
   The host's engine is what a session and an application get when neither
   names another.
 
-  To settle: which doors the engine grows to be a server (the shared-memory
-  segment and the IPC ring the embedded server already has, an OSC port or
-  none), whether it boots with the host or still with the first application
-  or session that asks, how the kernel learns of it (an environment the
+  **Decided** *(the user, 2026-11-22)*: the doors are the shared-memory
+  segment and the IPC ring the embedded server already has, with no OSC
+  port, and the engine boots with the host, so a session always finds it.
+  To settle: how the kernel learns of it (an environment the
   host sets, read by `Session.live()` the way the config file is), and how
   the default is overridden without the script and the host disagreeing
   about which server an application opened by that script plays on.
