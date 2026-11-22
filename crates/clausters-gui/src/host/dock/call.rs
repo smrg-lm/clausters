@@ -22,6 +22,9 @@ pub enum Call {
     Restore(Value),
     /// `{"verb": "select", "pane": id}`: show a pane in its group.
     Select(i32),
+    /// `{"verb": "fold", "pane": id, "folded": bool}`: fold the group
+    /// holding a pane to its bar, or open it (`folded` true by default).
+    Fold { pane: i32, folded: bool },
     /// `{"verb": "join", "pane": id, "of": id, "at": index?}`: put a pane
     /// among the tabs of another's group.
     Join {
@@ -111,6 +114,10 @@ impl Call {
                     .ok_or_else(|| bad("`restore` takes a `layout`"))?,
             ),
             "select" => Self::Select(id(&call, "pane")?),
+            "fold" => Self::Fold {
+                pane: id(&call, "pane")?,
+                folded: call.get("folded").and_then(Value::as_bool).unwrap_or(true),
+            },
             "join" => Self::Join {
                 pane: id(&call, "pane")?,
                 of: id(&call, "of")?,
@@ -178,6 +185,7 @@ impl Dock {
             Call::Layout => {}
             Call::Restore(layout) => self.restore(layout).map_err(bad)?,
             Call::Select(pane) => self.select(*pane).map_err(refused)?,
+            Call::Fold { pane, folded } => self.fold(*pane, *folded).map_err(refused)?,
             Call::Join { pane, of, at } => self
                 .land(*pane, Landing::Join { of: *of, at: *at })
                 .map_err(refused)?,
@@ -240,6 +248,8 @@ impl Dock {
                 "panes": group.panes,
                 "bar": rect(group.strip),
                 "grip": part(super::BarPart::Grip),
+                "fold": part(super::BarPart::Fold),
+                "folded": group.folded,
                 "menu": part(super::BarPart::Menu),
                 "close": part(super::BarPart::Close),
             }));

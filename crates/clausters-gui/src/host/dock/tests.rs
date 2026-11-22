@@ -1332,3 +1332,66 @@ fn a_textured_view_in_a_panes_dialog_is_drawn_over_it() {
     assert_eq!(without, 0, "under the dialog, the view is not seen");
     assert!(with * 10 >= area * 9, "{with} red pixels of {area}");
 }
+
+/// **A panel folds to its bar where it has someone to give its room to**:
+/// in a column, the open part beside it takes what it gave up, its pane is
+/// not shown and its edge is not dragged; a panel side by side with others,
+/// or the last open part of its column, does not fold. The fold mark folds
+/// and opens it, a tab pressed opens it, and the layout keeps it.
+#[test]
+fn a_panel_folds_to_its_bar_in_a_column() {
+    let mut ws = dock((400, 300), 4.0, &[1, 2, 3]);
+    ws.apply(&Call::Split {
+        pane: 2,
+        side: Side::Bottom,
+        of: 1,
+    })
+    .unwrap();
+    let bar = ws.groups()[0].strip.h as u32;
+    assert!(
+        ws.groups()
+            .iter()
+            .all(|g| g.panes != [3] || !ws.bar_parts(g).iter().any(|(p, _)| *p == BarPart::Fold)),
+        "a column side by side with others has no fold mark"
+    );
+    assert!(ws.fold(3, true).is_err(), "nothing to give its room to");
+    let dividers = ws.dividers().len();
+    ws.fold(1, true).unwrap();
+    assert!(!ws.shown(1), "a folded panel's pane is not shown");
+    let one = ws.groups().iter().find(|g| g.panes == [1]).unwrap().clone();
+    assert!(one.folded);
+    assert_eq!(one.strip.h as u32, bar, "it is its bar tall");
+    let two = ws.rect(2).unwrap();
+    assert_eq!(two.y, bar + 4 + bar, "the next starts under it");
+    assert_eq!(two.y + two.h, 300, "and takes the rest of the column");
+    assert_eq!(ws.dividers().len(), dividers - 1, "its edge is not dragged");
+    assert!(ws.fold(2, true).is_err(), "the last open part stays open");
+    let at = ws.groups().iter().position(|g| g.panes == [2]).unwrap();
+    let quiet = part(&ws, at, BarPart::Fold);
+    ws.moved(f64::from(quiet.x + 2.0), f64::from(quiet.y + 2.0));
+    ws.pressed();
+    ws.released();
+    assert!(
+        ws.shown(2),
+        "its quiet mark keeps its place and folds nothing"
+    );
+    let layout = ws.state()["layout"].clone();
+    assert!(layout.to_string().contains("\"folded\":true"));
+    // the fold mark opens it again
+    let at = ws.groups().iter().position(|g| g.panes == [1]).unwrap();
+    let mark = part(&ws, at, BarPart::Fold);
+    ws.moved(f64::from(mark.x + 2.0), f64::from(mark.y + 2.0));
+    ws.pressed();
+    ws.released();
+    assert!(ws.shown(1), "the fold mark opens it");
+    // and selecting its pane does too
+    ws.fold(1, true).unwrap();
+    ws.select(1).unwrap();
+    assert!(ws.shown(1), "a pane shown opens its panel");
+    // the layout read back keeps a fold
+    ws.fold(1, true).unwrap();
+    let saved = ws.state()["layout"].clone();
+    let mut other = dock((400, 300), 4.0, &[1, 2, 3]);
+    other.restore(&saved).unwrap();
+    assert!(!other.shown(1), "the fold comes back with the layout");
+}

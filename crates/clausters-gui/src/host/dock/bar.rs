@@ -32,6 +32,9 @@ use crate::host::popup::{self, Anchor, Owner, Stack};
 pub enum BarPart {
     /// The handle the panel is dragged by.
     Grip,
+    /// The mark that folds the panel to its bar and opens it again, on a
+    /// panel that may fold ([`super::tree::Node::foldable`]).
+    Fold,
     /// What a panel showing no tabs shows: its window's title. Dragged as
     /// the grip is.
     Title,
@@ -84,6 +87,15 @@ impl Dock {
         if !self.floating {
             out.push((BarPart::Grip, Rect::new(r.x, r.y, grip_w, h)));
         }
+        // the fold mark after the grip, on a panel in a column
+        let fold_w = if !self.floating && self.tree.in_column(&group.path) {
+            out.push((BarPart::Fold, Rect::new(r.x + grip_w, r.y, h, h)));
+            h
+        } else {
+            0.0
+        };
+        // what the start of the bar holds before its title or its tabs
+        let grip_w = grip_w + fold_w;
         // a floating panel is a window of its own: its title, no tabs
         let single = self.floating || !self.shows_tabs(&group.panes);
         // a pane that fills the header has the middle: no title over it
@@ -172,7 +184,7 @@ impl Dock {
             .fold(group.strip.x + group.strip.w, f32::min);
         let from = parts
             .iter()
-            .filter(|(p, _)| matches!(p, BarPart::Grip | BarPart::Tab(_)))
+            .filter(|(p, _)| matches!(p, BarPart::Grip | BarPart::Fold | BarPart::Tab(_)))
             .map(|(_, r)| r.x + r.w)
             .fold(group.strip.x, f32::max);
         (from, to.max(from))
@@ -188,8 +200,9 @@ impl Dock {
     }
 
     /// **A press on a panel's bar**: the grip or the title takes the panel
-    /// in hand, a tab shows its window and takes it in hand, a close mark
-    /// closes its window, the menu button opens the panel's menu.
+    /// in hand, the fold mark folds it to its bar or opens it, a tab shows
+    /// its window (opening a folded panel) and takes it in hand, a close
+    /// mark closes its window, the menu button opens the panel's menu.
     pub(super) fn press_bar(&mut self, group: usize, part: BarPart, at: (f64, f64)) {
         let g = &self.groups[group];
         let shown = g.panes[g.active];
@@ -218,6 +231,12 @@ impl Dock {
                     dragging: false,
                     landing: None,
                 });
+            }
+            BarPart::Fold => {
+                let (path, folded) = (g.path.clone(), g.folded);
+                if self.tree.fold(&path, !folded) {
+                    self.arrange();
+                }
             }
             BarPart::TabClose(i) => self.dirty.close.push(g.panes[i]),
             BarPart::Close => self.dirty.close.push(shown),

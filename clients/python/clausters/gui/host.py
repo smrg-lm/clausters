@@ -1001,6 +1001,8 @@ class GuiHost:
         ``{"verb": "pointer", "kind": "press" | "move" | "release", "x": ...,
         "y": ...}`` plays a hand on the dock's surface, on its tabs and
         dividers or, through them, on a pane, in the surface's device pixels;
+        ``{"verb": "fold", "pane": id, "folded": True}`` folds the panel
+        holding a pane to its bar, in a column, and ``False`` opens it;
         ``{"verb": "capture", "path": ...}`` writes the dock's picture;
         ``{"verb": "undock", "pane": id}`` takes a pane out into a window of
         its own, and ``{"verb": "dock", "pane": id}`` puts it back.

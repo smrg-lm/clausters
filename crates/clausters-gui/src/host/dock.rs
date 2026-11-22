@@ -164,6 +164,8 @@ pub struct GroupPlace {
     pub whole: PaneRect,
     pub panes: Vec<i32>,
     pub active: usize,
+    /// Whether it is folded to its bar: its panes are not shown.
+    pub folded: bool,
 }
 
 /// **What a dock shows of a window on its panel**: its title, whether it is
@@ -411,7 +413,7 @@ impl Dock {
             || self
                 .groups
                 .iter()
-                .any(|g| g.panes.get(g.active) == Some(&def_id))
+                .any(|g| !g.folded && g.panes.get(g.active) == Some(&def_id))
     }
 
     /// The surface's size.
@@ -728,7 +730,9 @@ impl Dock {
     fn tree_shows(&self, pane: i32) -> bool {
         self.tree
             .group_of(pane)
-            .and_then(|path| self.tree.group(&path).and_then(Group::shown))
+            .and_then(|path| self.tree.group(&path))
+            .filter(|g| !g.folded)
+            .and_then(Group::shown)
             == Some(pane)
     }
 
@@ -777,6 +781,7 @@ impl Dock {
     pub fn placed(&self) -> impl Iterator<Item = (i32, PaneRect)> + '_ {
         self.groups
             .iter()
+            .filter(|g| !g.folded)
             .filter_map(|g| g.panes.get(g.active).map(|&p| (p, self.pane_rect(g, p))))
             .chain(self.edge_places.iter().copied())
     }
@@ -1130,6 +1135,24 @@ impl Dock {
         self.pointer.take()
     }
 
+    /// **Folds the group holding pane `def_id` to its bar, or opens it.**
+    /// Refused for a pane the layout does not hold, and for folding a group
+    /// with nobody to give its room to (alone, side by side with others, or
+    /// the last open part of its column).
+    pub fn fold(&mut self, def_id: i32, folded: bool) -> Result<(), String> {
+        let path = self
+            .tree
+            .group_of(def_id)
+            .ok_or_else(|| format!("no pane {def_id} on the page shown"))?;
+        if folded && !self.tree.foldable(&path) {
+            return Err("this panel has nothing to give its room to".into());
+        }
+        if self.tree.fold(&path, folded) {
+            self.arrange();
+        }
+        Ok(())
+    }
+
     /// **Shows pane `def_id`** in its group, and gives it the keyboard.
     pub fn select(&mut self, def_id: i32) -> Result<(), String> {
         if !self.holds(def_id) {
@@ -1247,11 +1270,14 @@ impl Dock {
         let (a, b) = (place.lengths[i], place.lengths[i + 1]);
         let least = 2.0 * self.strip_h() as f32;
         let (a, b) = crate::host::chrome::split(a, b, travel as f32, least);
-        let mut lengths = place.lengths.clone();
-        lengths[i] = a;
-        lengths[i + 1] = b;
-        if self.tree.shares(&place.split).is_some() {
-            self.tree.set_shares(&place.split, &lengths);
+        // the two parts trade their shares and no other's moves, so a
+        // folded part beside them keeps the share it opens to
+        if let Some(mut shares) = self.tree.shares(&place.split) {
+            let pair = shares[i] + shares[i + 1];
+            let sum = (a + b).max(f32::EPSILON);
+            shares[i] = pair * a / sum;
+            shares[i + 1] = pair * b / sum;
+            self.tree.set_shares(&place.split, &shares);
             self.arrange();
         }
     }
@@ -1407,7 +1433,12 @@ fn measure(
         // an empty dock (or page) has no panel, and so no bar to draw
         Node::Tabs(g) if g.panes.is_empty() => {}
         Node::Tabs(g) => {
-            let strip = strip_h.min(rect.h.saturating_sub(1));
+            // a folded group is its bar and nothing under it
+            let strip = if g.folded {
+                strip_h.min(rect.h)
+            } else {
+                strip_h.min(rect.h.saturating_sub(1))
+            };
             groups.push(GroupPlace {
                 path: path.clone(),
                 strip: Rect::new(rect.x as f32, rect.y as f32, rect.w as f32, strip as f32),
@@ -1425,20 +1456,41 @@ fn measure(
                 },
                 panes: g.panes.clone(),
                 active: g.active,
+                folded: g.folded,
             });
         }
         Node::Split { row, parts } => {
             let n = parts.len() as u32;
             let along = if *row { rect.w } else { rect.h };
             let room = along.saturating_sub(divider * n.saturating_sub(1));
-            let mut sum = 0.0f32;
+            // a folded group is its bar tall, and the open parts share the
+            // rest by their shares
+            let folded = |p: &Node| !*row && p.folded();
+            let bars = parts.iter().filter(|(_, p)| folded(p)).count() as u32;
+            let open: f32 = parts
+                .iter()
+                .filter(|(_, p)| !folded(p))
+                .map(|(s, _)| *s)
+                .sum();
+            let free = room.saturating_sub(bars * strip_h);
+            // each part starts after the bars folded before it and its
+            // open neighbours' shares of the rest, rounded where it starts,
+            // so the rounding spreads as it always did
             let mut starts = Vec::with_capacity(parts.len() + 1);
-            for (share, _) in parts {
-                starts.push((room as f32 * sum).round() as u32);
-                sum += share;
+            let (mut bars_before, mut open_before) = (0u32, 0.0f32);
+            for (share, p) in parts {
+                let at = bars_before * strip_h
+                    + (free as f32 * open_before / open.max(f32::EPSILON)).round() as u32;
+                starts.push(at.min(room));
+                if folded(p) {
+                    bars_before += 1;
+                } else {
+                    open_before += share;
+                }
             }
             starts.push(room);
-            let lengths: Vec<f32> = starts.windows(2).map(|s| (s[1] - s[0]) as f32).collect();
+            let lengths: Vec<u32> = starts.windows(2).map(|s| s[1] - s[0]).collect();
+            let lengths: Vec<f32> = lengths.iter().map(|&l| l as f32).collect();
             for (i, (_, part)) in parts.iter().enumerate() {
                 let offset = starts[i] + divider * i as u32;
                 let len = (starts[i + 1] - starts[i]).max(1);
@@ -1460,7 +1512,9 @@ fn measure(
                 path.push(i);
                 measure(part, inner, divider, strip_h, path, groups, dividers);
                 path.pop();
-                if i + 1 < parts.len() {
+                // a folded part's edges are not dragged: it is its bar tall
+                let fixed = folded(part) || parts.get(i + 1).is_some_and(|(_, p)| folded(p));
+                if i + 1 < parts.len() && !fixed {
                     let end = offset + (starts[i + 1] - starts[i]);
                     let gap = if *row {
                         Rect::new(

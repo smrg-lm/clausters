@@ -47,18 +47,25 @@ impl Side {
     }
 }
 
-/// A group of tabs: its panes in the order of their tabs, and the one shown.
-#[derive(Clone, Debug, PartialEq)]
+/// A group of tabs: its panes in the order of their tabs, the one shown,
+/// and whether it is **folded** to its bar.
+///
+/// A group folds only where it has someone to give its room to: in a column
+/// with a part that stays open. Folded, it is its bar tall, the open parts
+/// of its column share what it gave up, and its panes are not shown, as a
+/// pane behind another's tab is not.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Group {
     pub panes: Vec<i32>,
     pub active: usize,
+    pub folded: bool,
 }
 
 impl Group {
     fn of(pane: i32) -> Self {
         Self {
             panes: vec![pane],
-            active: 0,
+            ..Self::default()
         }
     }
 
@@ -83,10 +90,7 @@ pub type Path = Vec<usize>;
 
 impl Default for Node {
     fn default() -> Self {
-        Node::Tabs(Group {
-            panes: Vec::new(),
-            active: 0,
-        })
+        Node::Tabs(Group::default())
     }
 }
 
@@ -210,9 +214,60 @@ impl Node {
             return false;
         };
         let at = g.panes.iter().position(|&p| p == pane).unwrap_or(0);
-        let changed = g.active != at;
+        // a pane shown is seen: its group unfolds
+        let changed = g.active != at || g.folded;
         g.active = at;
+        g.folded = false;
         changed
+    }
+
+    /// **Folds the group at `path` to its bar, or unfolds it.** Answers
+    /// whether that changed anything: a group that may not fold
+    /// ([`foldable`](Self::foldable)) stays open.
+    pub fn fold(&mut self, path: &[usize], folded: bool) -> bool {
+        if folded && !self.foldable(path) {
+            return false;
+        }
+        let Some(g) = self.group_mut(path) else {
+            return false;
+        };
+        let changed = g.folded != folded;
+        g.folded = folded;
+        changed
+    }
+
+    /// **Whether the group at `path` may fold, or is folded**: a group in a
+    /// column, beside a part that is not a folded group, which takes the
+    /// room it gives up.
+    pub fn foldable(&self, path: &[usize]) -> bool {
+        let Some((&own, parent)) = path.split_last() else {
+            return false;
+        };
+        if self.group(path).is_some_and(|g| g.folded) {
+            return true;
+        }
+        match self.at(parent) {
+            Some(Node::Split { row: false, parts }) => parts
+                .iter()
+                .enumerate()
+                .any(|(i, (_, p))| i != own && !p.folded()),
+            _ => false,
+        }
+    }
+
+    /// **Whether the group at `path` stands in a column**, where a panel
+    /// shows the fold mark: enabled while it may fold or is folded
+    /// ([`foldable`](Self::foldable)), and quiet on the last open part, so
+    /// a title never moves as its neighbours fold.
+    pub fn in_column(&self, path: &[usize]) -> bool {
+        path.split_last().is_some_and(|(_, parent)| {
+            matches!(self.at(parent), Some(Node::Split { row: false, .. }))
+        })
+    }
+
+    /// Whether this node is a folded group.
+    pub fn folded(&self) -> bool {
+        matches!(self, Node::Tabs(g) if g.folded)
     }
 
     /// **Puts `pane` among the tabs of the group holding `of`**, before the
@@ -242,6 +297,7 @@ impl Node {
         let at = index.unwrap_or(g.panes.len()).min(g.panes.len());
         g.panes.insert(at, pane);
         g.active = at;
+        g.folded = false;
         Ok(())
     }
 
@@ -312,9 +368,16 @@ impl Node {
     /// replaced by it, a split inside one of its axis joined into it, the
     /// shares summing to one.
     pub fn normalize(&mut self) {
+        self.flatten();
+        self.settle_folds(false);
+    }
+
+    /// [`normalize`](Self::normalize)'s shape half: empty groups gone, a
+    /// split of one part replaced by it, a split of its own axis joined in.
+    fn flatten(&mut self) {
         if let Node::Split { row, parts } = self {
             for (_, part) in parts.iter_mut() {
-                part.normalize();
+                part.flatten();
             }
             parts.retain(|(_, p)| !matches!(p, Node::Tabs(g) if g.panes.is_empty()));
             let row = *row;
@@ -343,9 +406,32 @@ impl Node {
         }
     }
 
+    /// **A fold only where it gives room to someone**: a group outside a
+    /// column (alone, or side by side with others) unfolds, and so does the
+    /// last of a column whose every part is a folded group. Called from the
+    /// root, after [`normalize`](Self::normalize).
+    fn settle_folds(&mut self, in_column: bool) {
+        match self {
+            Node::Tabs(g) if !in_column => g.folded = false,
+            Node::Tabs(_) => {}
+            Node::Split { row, parts } => {
+                let column = !*row;
+                for (_, part) in parts.iter_mut() {
+                    part.settle_folds(column);
+                }
+                if column
+                    && parts.iter().all(|(_, p)| p.folded())
+                    && let Some((_, Node::Tabs(g))) = parts.last_mut()
+                {
+                    g.folded = false;
+                }
+            }
+        }
+    }
+
     /// **The layout as data**: a split is `{"split": "row" | "col",
     /// "shares": [...], "parts": [...]}`, a group `{"tabs": [ids...],
-    /// "active": id}`.
+    /// "active": id}`, with `"folded": true` while it is folded.
     pub fn to_json(&self) -> Value {
         match self {
             Node::Split { row, parts } => json!({
@@ -353,10 +439,17 @@ impl Node {
                 "shares": parts.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
                 "parts": parts.iter().map(|(_, p)| p.to_json()).collect::<Vec<_>>(),
             }),
-            Node::Tabs(g) => json!({
-                "tabs": g.panes,
-                "active": g.shown(),
-            }),
+            Node::Tabs(g) => {
+                let mut group = json!({
+                    "tabs": g.panes,
+                    "active": g.shown(),
+                });
+                // an open group says nothing of folding, as before there was any
+                if g.folded {
+                    group["folded"] = json!(true);
+                }
+                group
+            }
         }
     }
 
@@ -400,8 +493,8 @@ fn read(value: &Value, panes: &[i32], seen: &mut Vec<i32>) -> Result<Node, Strin
     if let Some(tabs) = object.get("tabs") {
         let ids = tabs.as_array().ok_or("`tabs` is a list of panes")?;
         let mut group = Group {
-            panes: Vec::new(),
-            active: 0,
+            folded: object.get("folded").and_then(Value::as_bool) == Some(true),
+            ..Group::default()
         };
         for id in ids {
             let id = id

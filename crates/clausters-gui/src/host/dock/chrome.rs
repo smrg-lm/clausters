@@ -181,6 +181,11 @@ impl Dock {
                     if hot { theme.text } else { theme.text_dim },
                     m.divider_w,
                 ),
+                // quiet on the last open part of a column, which may not fold
+                BarPart::Fold if self.tree().foldable(&group.path) => {
+                    bar::fold(mesh, r, group.folded, hot, size, theme);
+                }
+                BarPart::Fold => bar::fold(mesh, r, false, false, size, &theme.disabled()),
                 BarPart::Title => {
                     let title = self.title(group.panes[group.active]);
                     bar::title(mesh, r, &title, size, m, theme);

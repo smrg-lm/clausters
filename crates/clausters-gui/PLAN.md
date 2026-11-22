@@ -1571,8 +1571,13 @@ holds what is open.
   the grip, the fold mark), the dock's chrome calls it, and a titled
   group's strip is that bar, a line of control of the bar's text tall, a
   section's beginning with the fold mark (a chevron, lit while the pointer
-  is over the bar). **Still open**: the fold mark on a dock's bar and what
-  a folded pane gives up, resizing a section and turning it off, and the
+  is over the bar). A dock's panel in a column folds too: the fold mark
+  after its grip folds it to its bar, the open parts of its column share
+  the room it gave up, its pane is not shown, the layout keeps the fold
+  (`"folded": true`) and the dock's door has the verb (`fold`); a panel
+  folds only where something takes its room, so the last open part of a
+  column shows its mark quiet and a panel side by side with others has
+  none. **Still open**: resizing a section and turning it off, and the
   spacing option.
   **Related:** "The spectrogram's settings read as two panels" in
   `crates/clausters-apps/PLAN.md`, Found by use, which wants a panel with

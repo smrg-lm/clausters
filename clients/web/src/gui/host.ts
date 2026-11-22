@@ -1252,7 +1252,9 @@ export class GuiHost {
      * beside another's group; `{ verb: "pointer", kind, x, y }` (`kind` one
      * of `"press"`, `"move"`, `"release"`) plays a hand on the dock's
      * surface, on its tabs and dividers or, through them, on a pane, in the
-     * surface's device pixels; `{ verb: "capture", path }` writes the dock's
+     * surface's device pixels; `{ verb: "fold", pane, folded }` folds the
+     * panel holding a pane to its bar, in a column, and `folded: false`
+     * opens it; `{ verb: "capture", path }` writes the dock's
      * picture; `{ verb: "undock", pane }` takes a pane out into a canvas of
      * its own, and `{ verb: "dock", pane }` puts it back.
      *
