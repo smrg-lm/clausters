@@ -1708,6 +1708,13 @@ What the comparison allows is part of the decision:
     prime, and a change of room never moves that line; here every line
     follows the room. Its levels rise from 0 across the first block; here
     they start at theirs.
+  - The grain UGens hold one grain fewer than `maxGrains`. `Warp1`, once
+    its grains reach its limit or a window buffer is missing, never starts
+    another, its next-grain count running past 0, and keeps a grain's
+    first block's position in `f32`. `GrainTap` plays a grain started in a
+    block to the block's end, past its parabola. Here each holds its limit,
+    `Warp1` schedules the next grain, positions are `f64` and a tap grain
+    ends where it lasts.
   - `PanB`, `PanB2`, `BiPanB2` and `Pan4` read their angle from a sine
     table at a truncated index; here the angle is computed. (`PanB`'s help
     gives its angles in radians; its code, kept, takes half and quarter

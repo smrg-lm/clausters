@@ -92,6 +92,13 @@ export type {
     Channel, ChannelFan, ControlDisplay, ControlOptions, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
 
 export {
+    grainSin,
+    grainFm,
+    grainBuf,
+    grainIn,
+    tGrains,
+    warp1,
+    grainTap,
     brownNoise,
     clipNoise,
     crackle,

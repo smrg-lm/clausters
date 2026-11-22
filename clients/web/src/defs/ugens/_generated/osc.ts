@@ -639,3 +639,19 @@ export const gendy3 = (
     initCps: Channel = 12.0,
     knum: Channel = 12.0,
 ): Ugen => new Ugen("Gendy3", [ampdist, durdist, adparam, ddparam, freq, ampscale, durscale, initCps, knum]);
+
+/**
+ * Grains of a delay line in a buffer whose length is a power of two, which
+ * a delay writes as this reads (a `bufDelayN` from the same block on):
+ * `overlap` grains of `grainDur` at once, each read at `pchRatio` (moved
+ * at random by up to `pchDispersion`) from up to `timeDispersion`
+ * seconds back.
+ */
+export const grainTap = (
+    bufnum: Channel,
+    grainDur: Channel = 0.2,
+    pchRatio: Channel = 1.0,
+    pchDispersion: Channel = 0.0,
+    timeDispersion: Channel = 0.0,
+    overlap: Channel = 2.0,
+): Ugen => new Ugen("GrainTap", [bufnum, grainDur, pchRatio, pchDispersion, timeDispersion, overlap]);

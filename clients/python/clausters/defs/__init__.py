@@ -53,6 +53,13 @@ from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
 from .ugens import (
+    grain_sin,
+    grain_fm,
+    grain_buf,
+    grain_in,
+    t_grains,
+    warp1,
+    grain_tap,
     free_verb,
     free_verb2,
     gverb,
@@ -326,7 +333,7 @@ from .ugens import (
     white_noise,
 )
 
-__all__ = ["free_verb", "free_verb2", "gverb", "spring", "ball", "tball", "pan4", "pan_b", "pan_b2", "bipan_b2", "decode_b2", "pluck", "pitch_shift", "del_tap_wr", "del_tap_rd", "scope_out", "local_buf", "max_local_bufs", "set_buf", "clear_buf", "vdisk_in", "IdSpaces", "Window", 
+__all__ = ["grain_sin", "grain_fm", "grain_buf", "grain_in", "t_grains", "warp1", "grain_tap", "free_verb", "free_verb2", "gverb", "spring", "ball", "tball", "pan4", "pan_b", "pan_b2", "bipan_b2", "decode_b2", "pluck", "pitch_shift", "del_tap_wr", "del_tap_rd", "scope_out", "local_buf", "max_local_bufs", "set_buf", "clear_buf", "vdisk_in", "IdSpaces", "Window", 
     "boxes",
     "signals",
     "ugens",

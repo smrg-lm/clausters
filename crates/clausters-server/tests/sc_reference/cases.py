@@ -105,6 +105,7 @@ def cases() -> list[dict]:
         _delay_lines,
         _local_buffers,
         _spaces,
+        _grains,
     ]:
         out.extend(f())
     return out
@@ -1305,5 +1306,72 @@ def _spaces() -> list[dict]:
         f = g.add("MulAdd", "ar", f, 0.3, 0)
         g.add(kind, "ar", f, 10, 0.1, 0.01)
         out.append(case(f"{kind}.ar", g, 64, seed=3))
+    return out
+
+
+_FIXED_SINE = "scsynth's grains read their sines from a table in 16.16 fixed point"
+
+
+def _grains() -> list[dict]:
+    """`GrainUGens.cpp`'s grains, `TGrains` and `GrainTap`. Each trigger
+    after the first sample: scsynth's constructor runs a sample of its
+    triggers."""
+    out = []
+
+    def multi(name, kind, n, ins, sc_ins=None, blocks=16, **extra):
+        for chan in range(n):
+            g = G()
+            trig = g.add("Impulse", "ar", 310.7, 0.5)
+            # Round the whole ring within the case where there is one.
+            pan = g.add("LFSaw", "kr", 47, 0) if n > 2 else g.add("LFTri", "kr", 3, 0)
+            args = [a(g, trig, pan) if callable(a) else a for a in ins]
+            sc = [a(g, trig, pan) if callable(a) else a for a in (sc_ins or ins)]
+            g.add(kind, "ar", *args, n, chan, sc={"inputs": sc, "outputs": n, "output": chan})
+            out.append(case(f"{name}.{n}.{chan}", g, blocks, **extra))
+
+    t = lambda g, trig, pan: trig
+    p = lambda g, trig, pan: pan
+    for n in [1, 2, 4]:
+        multi("GrainSin", "GrainSin", n, [t, 0.007, 731.3, p, -1, 512], tol=2e-4, why=_FIXED_SINE)
+    multi("GrainFM", "GrainFM", 2, [t, 0.006, 531.3, 207.7, 2.3, p, -1, 512], tol=2e-3, why=_FIXED_SINE)
+    sig_in = lambda g, trig, pan: sig(g)
+    multi("GrainIn", "GrainIn", 2, [t, 0.005, sig_in, p, -1, 512])
+    buf = [{"num": 0, "channels": 1, "frames": 500, "data": _table(500)}]
+    win = [{"num": 1, "channels": 1, "frames": 64, "data": [__import__("math").sin(__import__("math").pi * i / 63) ** 3 for i in range(64)]}]
+    for interp in [1, 2, 4]:
+        multi(f"GrainBuf.{interp}", "GrainBuf", 2, [t, 0.004, 0, 1.37, 0.21, interp, p, -1, 512], buffers=buf)
+    multi("GrainBuf.window", "GrainBuf", 2, [t, 0.004, 0, 0.73, 0.9, 4, p, 1, 512], buffers=buf + win)
+    multi("TGrains", "TGrains", 2, [t, 0, 1.19, 0.004, 0.003, p, 0.6, 4], buffers=buf)
+    multi("TGrains", "TGrains", 4, [t, 0, -0.83, 0.007, 0.002, p, 0.6, 2], buffers=buf)
+    stereo = [{"num": 0, "channels": 2, "frames": 500, "data": _table(500, 2)}]
+    # Both rows, in order, as a builder makes them: scsynth's channels draw
+    # from the one generator in turn, a block each. The row not probed is
+    # nothing on scsynth's side.
+    _f32_phase = "scsynth keeps a grain's position through its first block in f32"
+    for ratio, seed in [(0.0, 0), (0.3, 7)]:
+        for chan in [0, 1]:
+            g = G()
+            ptr = g.add("LFSaw", "kr", 2, 0)
+            ptr = g.add("MulAdd", "kr", ptr, 0.4, 0.5)
+            rows = []
+            for c in [0, 1]:
+                args = [0, ptr, 1.21, 0.0031, -1, 4, ratio, 4]
+                if c == chan:
+                    sc = {"inputs": args, "outputs": 2, "output": chan}
+                else:
+                    sc = {"kind": "DC", "inputs": [0.0]}
+                rows.append(g.add("Warp1", "ar", *args, c, sc=sc))
+            probe = len(g.ugens) - 2 + chan
+            out.append(case(f"Warp1.{ratio}.{chan}", g, 16, buffers=stereo, seed=seed, probe=probe, tol=4e-5, why=_f32_phase))
+    # A delay line a `BufDelayN` writes as the tap reads it. Buffer 1:
+    # scsynth's constructor leaves the buffer it last resolved unset, which
+    # on the harness's zeroed memory reads as buffer 0 resolved to nothing.
+    line = [{"num": 1, "channels": 1, "frames": 4096, "data": [0.0] * 4096}]
+    for ratio, pdisp, tdisp, seed in [(1.0, 0.0, 0.0, 0), (1.6, 0.0, 0.0, 0), (0.7, 0.2, 0.01, 11)]:
+        g = G()
+        x = sig(g)
+        g.add("BufDelayN", "ar", 1, 0, x, 0.01, sc={"inputs": [1, x, 0.01]})
+        g.add("GrainTap", "ar", 1, 0.0071, ratio, pdisp, tdisp, 2.0)
+        out.append(case(f"GrainTap.{ratio}.{pdisp}", g, 24, buffers=line, seed=seed))
     return out
 

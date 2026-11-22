@@ -98,6 +98,13 @@ from .graph import (
     dc,
 )
 from .osc import (
+    grain_sin,
+    grain_fm,
+    grain_buf,
+    grain_in,
+    t_grains,
+    warp1,
+    grain_tap,
     brown_noise,
     clip_noise,
     crackle,
@@ -510,6 +517,13 @@ def ugen_input_names(kind: str) -> "list[str] | None":
 
 
 __all__ = [
+    "grain_sin",
+    "grain_fm",
+    "grain_buf",
+    "grain_in",
+    "t_grains",
+    "warp1",
+    "grain_tap",
     "free_verb",
     "free_verb2",
     "gverb",

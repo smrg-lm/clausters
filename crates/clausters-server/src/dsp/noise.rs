@@ -549,7 +549,7 @@ pub enum LfdShape {
 
 /// scsynth's `float` `sc_wrap` into `[lo, hi)`.
 #[inline]
-fn sc_wrap(x: f32, lo: f32, hi: f32) -> f32 {
+pub(crate) fn sc_wrap(x: f32, lo: f32, hi: f32) -> f32 {
     let range = hi - lo;
     let y = if x >= hi {
         x - range

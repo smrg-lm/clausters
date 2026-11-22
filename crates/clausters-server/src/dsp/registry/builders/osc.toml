@@ -563,3 +563,39 @@ doc = '''
 `gendy1`'s walks at a fixed pitch `freq`: the durations are proportions of
 the cycle, drawn together each cycle, and every cycle starts at 0.
 '''
+
+[[hand]]
+kind = "GrainIn"
+why = "one node a channel: the builder returns the ring, its size leading"
+
+[[hand]]
+kind = "GrainSin"
+why = "one node a channel: the builder returns the ring, its size leading"
+
+[[hand]]
+kind = "GrainFM"
+why = "one node a channel: the builder returns the ring, its size leading"
+
+[[hand]]
+kind = "GrainBuf"
+why = "one node a channel: the builder returns the ring, its size leading"
+
+[[hand]]
+kind = "TGrains"
+why = "one node a channel: the builder returns the ring, its size leading"
+
+[[hand]]
+kind = "Warp1"
+why = "one node a channel of the buffer: the builder returns them, their count leading"
+
+[[ugen]]
+kind = "GrainTap"
+builder = "grain_tap"
+required = ["bufnum"]
+doc = '''
+Grains of a delay line in a buffer whose length is a power of two, which
+a delay writes as this reads (a `buf_delay_n` from the same block on):
+`overlap` grains of `grain_dur` at once, each read at `pch_ratio` (moved
+at random by up to `pch_dispersion`) from up to `time_dispersion`
+seconds back.
+'''

@@ -384,6 +384,12 @@ _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "DecodeB2": "built numchans times; numchans leads in Python, trails on the wire",
     "FreeVerb2": "built twice, one row per output channel",
     "GVerb": "built twice, one row per output channel",
+    "GrainIn": "built numchans times; numchans leads in Python, trails on the wire",
+    "GrainSin": "built numchans times; numchans leads in Python, trails on the wire",
+    "GrainFM": "built numchans times; numchans leads in Python, trails on the wire",
+    "GrainBuf": "built numchans times; numchans leads in Python, trails on the wire",
+    "TGrains": "built numchans times; numchans leads in Python, trails on the wire",
+    "Warp1": "built once a channel of the buffer; their count leads in Python",
 }
 
 _WIRE_ORDER_DIFFERS = {

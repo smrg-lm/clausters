@@ -41,6 +41,7 @@ mod envgen;
 mod feedback;
 mod filters;
 mod golden;
+mod granular;
 mod graphdef;
 mod group_nset;
 mod info;

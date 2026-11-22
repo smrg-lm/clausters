@@ -962,6 +962,40 @@ fn cases() -> Vec<Case> {
         )
         .source("noise"),
         Case::new(
+            "grain_sin",
+            json!([{"kind": "Impulse", "inputs": [c(300.0), c(0.5)]},
+                   {"kind": "GrainSin", "inputs": [u(0), c(0.007), c(700.0), c(0.3), c(-1.0), c(64.0), c(2.0), c(1.0)]}, out(1)]),
+        ),
+        Case::new(
+            "grain_fm",
+            json!([{"kind": "Impulse", "inputs": [c(300.0), c(0.5)]},
+                   {"kind": "GrainFM", "inputs": [u(0), c(0.007), c(700.0), c(210.0), c(2.0), c(-0.3), c(-1.0), c(64.0), c(2.0), c(0.0)]}, out(1)]),
+        ),
+        Case::new(
+            "grain_in",
+            json!([input(), {"kind": "Impulse", "inputs": [c(300.0), c(0.5)]},
+                   {"kind": "GrainIn", "inputs": [u(1), c(0.005), u(0), c(0.0), c(-1.0), c(64.0), c(1.0), c(0.0)]}, out(2)]),
+        )
+        .source("sine"),
+        Case::new(
+            "grain_buf",
+            json!([{"kind": "Impulse", "inputs": [c(300.0), c(0.5)]},
+                   {"kind": "GrainBuf", "inputs": [u(0), c(0.006), c(2.0), c(1.3), c(0.2), c(4.0), c(0.0), c(-1.0), c(64.0), c(1.0), c(0.0)]}, out(1)]),
+        ),
+        Case::new(
+            "tgrains",
+            json!([{"kind": "Impulse", "inputs": [c(300.0), c(0.5)]},
+                   {"kind": "TGrains", "inputs": [u(0), c(2.0), c(0.9), c(0.03), c(0.004), c(0.2), c(0.5), c(4.0), c(2.0), c(0.0)]}, out(1)]),
+        ),
+        Case::new(
+            "warp1",
+            json!([{"kind": "Warp1", "inputs": [c(2.0), c(0.4), c(1.3), c(0.01), c(-1.0), c(4.0), c(0.0), c(4.0), c(0.0)]}, out(0)]),
+        ),
+        Case::new(
+            "grain_tap",
+            json!([{"kind": "GrainTap", "inputs": [c(2.0), c(0.007), c(1.3), c(0.0), c(0.0), c(2.0)]}, out(0)]),
+        ),
+        Case::new(
             "conv",
             json!([input(), {"kind": "Conv", "inputs": [u(0), c(3.0)], "fft_size": 256}, out(1)]),
         )

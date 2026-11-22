@@ -34,6 +34,7 @@ use crate::dsp::envgen::{EnvGen, EnvShape, IEnvGen, Linen};
 use crate::dsp::filter::{Formlet, OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::gendy::{Gendy, Gendy3, GendyKind};
+use crate::dsp::grains::{GrainKind, GrainTap, Granular, TGrains, Warp1};
 use crate::dsp::harmonic::{Blip, Formant};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, InFeedback, InTrig, LagIn, Out, OutCtl, ReplaceOut, XOut};
@@ -880,6 +881,7 @@ mod disk;
 mod dynamics;
 mod env;
 mod filter;
+mod grains;
 mod io;
 mod lag;
 mod models;
@@ -906,6 +908,7 @@ static FAMILIES: &[&[UGenDescriptor]] = &[
     dynamics::UGENS,
     delay::UGENS,
     models::UGENS,
+    grains::UGENS,
     arith::UGENS,
     io::UGENS,
     buf::UGENS,

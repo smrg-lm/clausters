@@ -425,6 +425,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Reverbs | `free_verb(signal, mix=0.33, room=0.5, damp=0.5)` / `free_verb2(signal, signal2, ...)` | Freeverb, mono and stereo |
 | | `gverb(signal, roomsize=10.0, revtime=3.0, ...)` | a room of a size and a decay: a feedback delay network, stereo |
 | Physical models | `spring(signal, spring=1.0, damp=0.0)` / `ball(signal, g=1.0, damp=0.0, friction=0.01)` / `tball(...)` | a damped spring; a bouncing ball's height, and its impacts |
+| Grains | `grain_sin(numchans, trigger, dur, freq, pan, ...)`, `grain_fm(...)`, `grain_in(numchans, trigger, dur, signal, ...)`, `grain_buf(numchans, trigger, dur, sndbuf, rate, pos, ...)` | a grain at each trigger, panned round `numchans` channels |
+| | `t_grains(numchans, trigger, bufnum, rate, center_pos, dur, pan, amp)`, `warp1(numchans, bufnum, pointer, freq_scale, window_size, ...)`, `grain_tap(bufnum, ...)` | grains centred on a position; a buffer stretched in time; grains of a delay line |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienv_gen(env, index, offset=0.0)` | an `Env` read at a position rather than played in time |
@@ -588,6 +590,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Reverbs | `freeVerb(signal, mix = 0.33, room = 0.5, damp = 0.5)` / `freeVerb2(signal, signal2, ...)` | Freeverb, mono and stereo |
 | | `gverb(signal, roomsize = 10.0, revtime = 3.0, ...)` | a room of a size and a decay: a feedback delay network, stereo |
 | Physical models | `spring(signal, spring = 1.0, damp = 0.0)` / `ball(signal, g = 1.0, damp = 0.0, friction = 0.01)` / `tball(...)` | a damped spring; a bouncing ball's height, and its impacts |
+| Grains | `grainSin(numchans, trigger, dur, freq, pan, ...)`, `grainFm(...)`, `grainIn(numchans, trigger, dur, signal, ...)`, `grainBuf(numchans, trigger, dur, sndbuf, rate, pos, ...)` | a grain at each trigger, panned round `numchans` channels |
+| | `tGrains(numchans, trigger, bufnum, rate, centerPos, dur, pan, amp)`, `warp1(numchans, bufnum, pointer, freqScale, windowSize, ...)`, `grainTap(bufnum, ...)` | grains centred on a position; a buffer stretched in time; grains of a delay line |
 | Envelopes | `envGen(env, { gate = 1.0, levelScale = 1.0, levelBias = 0.0, timeScale = 1.0, doneAction = DoneAction.NONE })` | plays an `Env` breakpoint envelope; the `doneAction` can free the node |
 | | `line(start = 0.0, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` / `xLine(start = 0.01, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienvGen(env, index, offset = 0.0)` | an `Env` read at a position rather than played in time |

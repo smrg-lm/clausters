@@ -71,6 +71,8 @@ pub mod fused;
 #[cfg(feature = "synth")]
 pub mod gendy;
 #[cfg(feature = "synth")]
+pub mod grains;
+#[cfg(feature = "synth")]
 pub mod harmonic;
 #[cfg(feature = "synth")]
 pub mod impulse;

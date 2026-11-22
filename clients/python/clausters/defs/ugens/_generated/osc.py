@@ -72,6 +72,7 @@ __all__ = [
     "gendy1",
     "gendy2",
     "gendy3",
+    "grain_tap",
 ]
 
 
@@ -661,4 +662,24 @@ def gendy3(
     return Ugen(
         "Gendy3",
         [ampdist, durdist, adparam, ddparam, freq, ampscale, durscale, init_cps, knum],
+    )
+
+
+def grain_tap(
+    bufnum,
+    grain_dur=0.2,
+    pch_ratio=1.0,
+    pch_dispersion=0.0,
+    time_dispersion=0.0,
+    overlap=2.0,
+) -> Ugen:
+    """Grains of a delay line in a buffer whose length is a power of two, which
+    a delay writes as this reads (a `buf_delay_n` from the same block on):
+    `overlap` grains of `grain_dur` at once, each read at `pch_ratio` (moved
+    at random by up to `pch_dispersion`) from up to `time_dispersion`
+    seconds back.
+    """
+    return Ugen(
+        "GrainTap",
+        [bufnum, grain_dur, pch_ratio, pch_dispersion, time_dispersion, overlap],
     )
