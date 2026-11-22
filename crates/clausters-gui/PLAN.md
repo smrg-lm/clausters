@@ -1620,7 +1620,28 @@ holds what is open.
      script that names another server gets that one.
   5. ⬜ **The page is one engine too.** A page's applications play on the
      engine its session reaches, so the page holds one engine, as the native
-     host does.
+     host does. A page's main thread may not wait and the engine is another
+     module's memory, so a client of the page reaches the applications'
+     engine through the application's thread, which may:
+     1. ⬜ **The application's thread serves a client's packets**: the host
+        hands it a client's packets (`ToApp::Packet`), its engine serves
+        them as a client in its process (`serve_local`), and the replies come
+        back on the host's turn; the same for samples a page decoded
+        (`bufferLoad`) and the engine's clock.
+     2. ⬜ **The page's bridge has the doors, and the web client an engine
+        over them**: `GuiBridge` sends a client's packets, hands back its
+        replies and reads the clock; the web client's engine surface
+        (`ClaustersServer`: send, replies by tag, ports for a worker, the
+        clock and its anchor, decoded samples, resume and suspend) is made
+        over a host's applications' engine.
+     3. ⬜ **An applications' page has one engine**: in a page that runs the
+        applications (cross-origin isolated), the page's engine
+        (`server()`) is its host's applications' engine and the host is its
+        own engine's client, so the editor's page, its session worker and
+        its applications play on one engine.
+     4. ⬜ **Checked in the browser**: an acceptance page of the web suite
+        plays a session on a host's applications' engine and opens an
+        application there.
 
 - ⬜ **Subpixel (LCD) antialiasing of text, where the desktop asks for
   it** *(found 2026-11-17, in `ST2`)*. The webview editor's text is drawn
