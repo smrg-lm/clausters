@@ -34,6 +34,7 @@ fn render_with(synths: &mut [UGenSynth], blocks: usize, setup: impl Fn(&ControlB
             full_sample_rate: SR,
             buses: &mut buses,
             buffers: &[],
+            local_buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),

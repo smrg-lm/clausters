@@ -283,6 +283,10 @@ pub struct SynthDef {
     /// allocates a [`SpectralChain`](crate::dsp::spectral::SpectralChain) of
     /// each size. Empty for defs with no `FFT`.
     pub spectral_sizes: Vec<usize>,
+    /// One entry per `LocalBuf`, its channels and frames; the instance
+    /// allocates a buffer of each shape, numbered after the pool in this
+    /// order. Empty for defs with none.
+    pub local_buffers: Vec<(usize, usize)>,
 }
 
 impl SynthDef {
@@ -293,6 +297,10 @@ impl SynthDef {
             .map(|i| i as u32)
     }
 }
+
+/// The most samples one `LocalBuf` may hold, all channels: 2^27, half a
+/// gigabyte, which a def's typo must not allocate by accident.
+const MAX_LOCAL_SAMPLES: usize = 1 << 27;
 
 /// Validates a spec and resolves it into its compiled form. Errors are meant
 /// to travel back to the client in `/fail`, so they name the offending node.
@@ -321,6 +329,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // Spectral chains: each `FFT` opens one; its window size, hop and window
     // are recorded here and its slot index is `chains.len()` at that point.
     let mut chains: Vec<ChainShape> = Vec::new();
+    // The synth's own buffers, one per `LocalBuf`: channels and frames.
+    let mut local_buffers: Vec<(usize, usize)> = Vec::new();
 
     let (control_types, lagged) = parse_controls(&spec)?;
 
@@ -357,6 +367,28 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         }
 
         let mut config = ugen_config(i, u, desc)?;
+
+        // LocalBuf: its shape (inputs 0 and 1, scsynth's order) sizes memory
+        // the instance allocates, so both must be constants.
+        if desc.name == "LocalBuf" {
+            let shape = |k: usize| match u.inputs.get(k) {
+                Some(InputSpec::Const(x)) if x.is_finite() && *x >= 1.0 => Ok(*x as usize),
+                None => Ok(1),
+                _ => Err(format!(
+                    "ugens[{i}] (LocalBuf): input {k} (its channels, then its frames) must be a \
+                     constant of at least 1"
+                )),
+            };
+            let (channels, frames) = (shape(0)?, shape(1)?);
+            if channels.saturating_mul(frames) > MAX_LOCAL_SAMPLES {
+                return Err(format!(
+                    "ugens[{i}] (LocalBuf): {channels} x {frames} samples is past the limit of \
+                     {MAX_LOCAL_SAMPLES}"
+                ));
+            }
+            config.local_buffer = Some(local_buffers.len());
+            local_buffers.push((channels, frames));
+        }
 
         let mut inputs = Vec::with_capacity(u.inputs.len());
         for (k, inp) in u.inputs.iter().enumerate() {
@@ -524,6 +556,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         ugens,
         num_locals,
         spectral_sizes: chains.iter().map(|c| c.winsize).collect(),
+        local_buffers,
     })
 }
 
@@ -857,6 +890,7 @@ fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConf
                 _ => None,
             })
             .collect(),
+        local_buffer: None,
     };
     // Any kind that takes an `fft_size` (the spectral chain's FFT, the
     // partitioned convolver) must name a supported transform size.

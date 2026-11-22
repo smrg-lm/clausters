@@ -559,6 +559,7 @@ fn a_reset_instance_sounds_as_a_fresh_one() {
                 full_sample_rate: SR,
                 buses: &buses,
                 buffers: &[],
+                local_buffers: &[],
                 offset: 0,
                 frames: BLOCK_SIZE,
                 transport: Default::default(),

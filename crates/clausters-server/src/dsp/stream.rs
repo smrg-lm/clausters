@@ -769,6 +769,8 @@ impl TransportDiskIn {
     fn play(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         self.collect();
         let index = inputs[0][0].max(0.0) as usize;
+        // The pool's own buffer, the `Arc` whose address says whether the
+        // list moved; a synth's `LocalBuf` holds no segment list.
         let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_ref()) else {
             self.standing = None;
             output.fill(0.0);

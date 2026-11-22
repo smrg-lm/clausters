@@ -419,6 +419,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Delays | `delay_n/l/c(signal, delaytime, *, max_delay=None)` | pure delay — no interpolation, linear, cubic |
 | | `comb_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | a comb: `decaytime` is −60 dB counted from the first echo |
 | | `allpass_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | an allpass: scatters phase and leaves the magnitude alone |
+| | `pluck(signal, trig=1.0, maxdelaytime=0.2, delaytime=0.2, decaytime=1.0, coef=0.5)` | a plucked string: a period of `signal` let into a lowpassed feedback line |
+| | `pitch_shift(signal, window_size=0.2, pitch_ratio=1.0, pitch_dispersion=0.0, time_dispersion=0.0)` | the pitch moved by four overlapping grains |
+| | `del_tap_wr(bufnum, signal)` / `del_tap_rd(bufnum, phase, deltime, interp=1.0)` | a line round a buffer: one writer, any number of taps |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienv_gen(env, index, offset=0.0)` | an `Env` read at a position rather than played in time |
@@ -478,7 +481,11 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `index`, `index_l`, `wrap_index`, `fold_index(bufnum, signal)` | a buffer as a table, read at an index |
 | | `index_in_between`, `detect_index(bufnum, signal)`, `degree_to_key(bufnum, signal, octave=12)` | a table searched for a value; a scale degree to a key |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
+| Synth buffers | `local_buf(frames=1, channels=1)` | a buffer of the synth's own, numbered after the pool, freed with the synth |
+| | `set_buf(bufnum, values, offset=0.0)` / `clear_buf(bufnum)` / `max_local_bufs(count)` | fill or zero a buffer at the synth's start; scsynth's count, which does nothing |
+| | `scope_out(signal, bufnum=0.0)` | writes `signal` round a buffer, a channel each |
 | Disk | `disk_in(chan=0.0, *, path, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
+| | `vdisk_in(chan=0.0, rate=1.0, *, path, loop=False)` | `disk_in` at a variable rate, cubic interpolation |
 | | `disk_out(signal, *, path, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
 | Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
@@ -570,6 +577,9 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | Delays | `delayN/L/C(signal, delaytime = 0.2, maxDelay)` | pure delay — no interpolation, linear, cubic |
 | | `combN/L/C(signal, delaytime = 0.2, decaytime = 1.0, maxDelay)` | a comb: `decaytime` is −60 dB counted from the first echo |
 | | `allpassN/L/C(signal, delaytime = 0.2, decaytime = 1.0, maxDelay)` | an allpass: scatters phase and leaves the magnitude alone |
+| | `pluck(signal, trig = 1.0, maxdelaytime = 0.2, delaytime = 0.2, decaytime = 1.0, coef = 0.5)` | a plucked string: a period of `signal` let into a lowpassed feedback line |
+| | `pitchShift(signal, windowSize = 0.2, pitchRatio = 1.0, pitchDispersion = 0.0, timeDispersion = 0.0)` | the pitch moved by four overlapping grains |
+| | `delTapWr(bufnum, signal)` / `delTapRd(bufnum, phase, deltime, interp = 1.0)` | a line round a buffer: one writer, any number of taps |
 | Envelopes | `envGen(env, { gate = 1.0, levelScale = 1.0, levelBias = 0.0, timeScale = 1.0, doneAction = DoneAction.NONE })` | plays an `Env` breakpoint envelope; the `doneAction` can free the node |
 | | `line(start = 0.0, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` / `xLine(start = 0.01, end = 1.0, dur = 1.0, doneAction = DoneAction.NONE)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
 | | `ienvGen(env, index, offset = 0.0)` | an `Env` read at a position rather than played in time |
@@ -629,7 +639,11 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `index`, `indexL`, `wrapIndex`, `foldIndex(bufnum, signal)` | a buffer as a table, read at an index |
 | | `indexInBetween`, `detectIndex(bufnum, signal)`, `degreeToKey(bufnum, signal, octave = 12)` | a table searched for a value; a scale degree to a key |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
+| Synth buffers | `localBuf(frames = 1, channels = 1)` | a buffer of the synth's own, numbered after the pool, freed with the synth |
+| | `setBuf(bufnum, values, offset = 0.0)` / `clearBuf(bufnum)` / `maxLocalBufs(count)` | fill or zero a buffer at the synth's start; scsynth's count, which does nothing |
+| | `scopeOut(signal, bufnum = 0.0)` | writes `signal` round a buffer, a channel each |
 | Disk | `diskIn(chan = 0.0, { path, loop = false, start = 0 })` | streams a file from disk, one channel per UGen, no resampling |
+| | `vdiskIn(chan = 0.0, rate = 1.0, { path, loop = false, start = 0 })` | `diskIn` at a variable rate, cubic interpolation |
 | | `diskOut(signal, { path, format = "int16" })` | streams `signal` to a mono WAV on disk; passes `signal` through |
 | Feedback | `localIn(channel = 0.0)` | reads a synth-private feedback channel |
 | | `localOut(channel, signal)` | writes a feedback channel, and passes `signal` through |

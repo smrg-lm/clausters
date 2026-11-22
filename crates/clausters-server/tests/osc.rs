@@ -149,7 +149,7 @@ impl TestServer {
     /// `/ugen_query`) until the batch's `/done` terminator arrives.
     fn recv_batch(&self, addr: &str, cmd: &str) -> Vec<OscMessage> {
         let mut out = Vec::new();
-        for _ in 0..500 {
+        for _ in 0..2000 {
             let msg = self.recv();
             if msg.addr == "/done" && msg.args.first() == Some(&OscType::String(cmd.into())) {
                 return out;

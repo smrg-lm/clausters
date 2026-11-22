@@ -118,6 +118,14 @@ const STATELESS: &[(&str, &str)] = &[
         "IEnvGen",
         "a curve read at its index input; the last read is a cache",
     ),
+    (
+        "MaxLocalBufs",
+        "does nothing: the compiler counts the buffers",
+    ),
+    (
+        "ClearBuf",
+        "acts at the start of each note, from its inputs",
+    ),
 ];
 
 /// Random sources: their stream goes on across a reset, so a restarted voice
@@ -185,6 +193,10 @@ const NOT_RESET: &[(&str, &str)] = &[
     ),
     (
         "TransportDiskIn",
+        "a stream is its I/O thread's; a Voices node refuses the def",
+    ),
+    (
+        "VDiskIn",
         "a stream is its I/O thread's; a Voices node refuses the def",
     ),
     ("BufDelayN", "the line is a pool buffer, the client's"),
@@ -864,6 +876,39 @@ fn cases() -> Vec<Case> {
         )
         .source("sine"),
         Case::new(
+            "pluck",
+            json!([input(), {"kind": "Pluck", "inputs": [u(0), c(1.0), c(0.01), c(0.005), c(0.5), c(0.3)]}, out(1)]),
+        )
+        .source("noise"),
+        Case::new(
+            "pitch_shift",
+            json!([input(), {"kind": "PitchShift", "inputs": [u(0), c(0.03), c(1.5), c(0.0), c(0.0)]}, out(1)]),
+        )
+        .source("sine"),
+        Case::new(
+            "del_tap",
+            json!([input(), {"kind": "DelTapWr", "inputs": [c(4.0), u(0)]},
+                   {"kind": "DelTapRd", "inputs": [c(4.0), u(1), c(0.0031), c(4.0)]}, out(2)]),
+        )
+        .source("noise"),
+        Case::new(
+            "local_buf",
+            json!([input(),
+                   {"kind": "LocalBuf", "rate": "ir", "inputs": [c(1.0), c(256.0)]},
+                   {"kind": "SetBuf", "rate": "ir", "inputs": [u(1), c(10.0), c(2.0), c(0.5), c(-0.5)]},
+                   {"kind": "Phasor", "inputs": [c(0.0), c(0.7), c(0.0), c(256.0), c(0.0)]},
+                   {"kind": "BufRd", "inputs": [u(1), c(0.0), u(3), c(1.0), c(2.0)]},
+                   {"kind": "BufWr", "inputs": [u(1), c(0.0), u(3), c(1.0), u(0)]},
+                   out(4)]),
+        )
+        .source("sine"),
+        Case::new(
+            "scope_out",
+            json!([input(), {"kind": "ScopeOut", "inputs": [c(4.0), u(0)]},
+                   {"kind": "Index", "inputs": [c(4.0), c(10.0)]}, out(2)]),
+        )
+        .source("sine"),
+        Case::new(
             "conv",
             json!([input(), {"kind": "Conv", "inputs": [u(0), c(3.0)], "fft_size": 256}, out(1)]),
         )
@@ -957,6 +1002,7 @@ fn a_reply_kind_fires_again_after_a_reset() {
                 full_sample_rate: SR,
                 buses: &buses,
                 buffers: &[],
+                local_buffers: &[],
                 offset: 0,
                 frames: BLOCK_SIZE,
                 transport: Default::default(),
@@ -986,6 +1032,7 @@ fn what_a_kind_asks_restarts_after_a_reset() {
             full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
+            local_buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),

@@ -100,6 +100,8 @@ def cases() -> list[dict]:
         _dynamics,
         _running,
         _info,
+        _delay_lines,
+        _local_buffers,
     ]:
         out.extend(f())
     return out
@@ -1144,3 +1146,77 @@ def _info() -> list[dict]:
     buf = [{"num": 0, "channels": 2, "frames": 37, "data": [0.0] * 74}]
     out.append(one("BufSamples.kr", "BufSamples", "kr", 0, blocks=2, buffers=buf))
     return out
+
+
+def _delay_lines() -> list[dict]:
+    """`DelayUGens.cpp`'s lines beyond the nine: `Pluck`, `PitchShift`, the
+    tap pair."""
+    out = []
+    for name, delay, decay, coef in [("a", 0.0123, 1.5, 0.3), ("b", 0.00517, -0.4, -0.6), ("c", 0.002, 3.0, 0.9)]:
+        g = G()
+        x = sig(g)
+        g.add("Pluck", "ar", x, 1, 0.02, delay, decay, coef)
+        out.append(case(f"Pluck.{name}", g, 32))
+    # A plucked string retriggered, its delay and coefficient moving.
+    g = G()
+    x = sig(g)
+    t = g.add("Impulse", "ar", 90, 0.5)
+    d = g.add("LFTri", "kr", 7, 0)
+    d = g.add("MulAdd", "kr", d, 0.002, 0.006)
+    k = g.add("LFTri", "kr", 3, 0)
+    k = g.add("MulAdd", "kr", k, 0.4, 0.1)
+    g.add("Pluck", "ar", x, t, 0.01, d, 0.8, k)
+    out.append(case("Pluck.moving", g, 64))
+    for ratio in [0.5, 1.0, 1.5, 2.0, 3.7]:
+        g = G()
+        x = sig(g)
+        g.add("PitchShift", "ar", x, 0.031, ratio, 0, 0)
+        out.append(case(f"PitchShift.{ratio}", g, 24, tol=2e-5, why="scsynth steps its heads' windows in f32"))
+    buf = [{"num": 0, "channels": 1, "frames": 1000, "data": [0.0] * 1000}]
+    for interp in [1, 2, 4]:
+        for rate in ["dc", "kr"] if interp == 1 else ["dc", "ar", "kr"]:
+            g = G()
+            x = sig(g)
+            w = g.add("DelTapWr", "ar", 0, x)
+            extra = {}
+            if rate == "dc":
+                # A position that crosses no whole sample: one bit of the
+                # time either side of one moves a truncating read a sample.
+                t = g.add("DC", "ar", 0.0031234)
+            elif rate == "ar":
+                t = g.add("LFTri", "ar", 50, 0)
+                t = g.add("MulAdd", "ar", t, 0.0011, 0.0031)
+                extra = {"tol": 3e-5, "why": "the time signal's last bit, which a saw's jump between the samples read magnifies"}
+            else:
+                t = g.add("LFTri", "kr", 9, 0)
+                t = g.add("MulAdd", "kr", t, 0.0011, 0.0031)
+                extra = {"tol": 6e-4, "why": "scsynth steps a control-rate delay across the block in f32, whose drift a saw's jump magnifies"}
+            g.add("DelTapRd", "ar", 0, w, t, interp)
+            out.append(case(f"DelTapRd.{interp}.{rate}", g, 8, buffers=buf, **extra))
+    return out
+
+
+def _local_buffers() -> list[dict]:
+    """A synth's own buffers, filled by `SetBuf` and read as a table."""
+    out = []
+    values = [0.5, -1.0, 2.0, 3.0, 7.0, 1.5]
+    for channels in [1, 2]:
+        g = G()
+        g.add("MaxLocalBufs", "ir", 1)
+        b = g.add("LocalBuf", "ir", channels, len(values) // channels)
+        g.add("SetBuf", "ir", b, 0, len(values), *values)
+        x = g.add("LFSaw", "ar", 331.7, 0)
+        x = g.add("MulAdd", "ar", x, 4, 2.5)
+        g.add("Index", "ar", b, x)
+        out.append(case(f"LocalBuf.{channels}", g))
+    # An offset, and values past the buffer's end left out.
+    g = G()
+    g.add("MaxLocalBufs", "ir", 1)
+    b = g.add("LocalBuf", "ir", 1, 4)
+    g.add("SetBuf", "ir", b, 2, 4, 9.0, 8.0, 7.0, 6.0)
+    x = g.add("LFSaw", "ar", 331.7, 0)
+    x = g.add("MulAdd", "ar", x, 3, 2)
+    g.add("Index", "ar", b, x)
+    out.append(case("SetBuf.offset", g))
+    return out
+

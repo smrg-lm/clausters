@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::dsp::buffer::Buffer;
 use crate::dsp::rand::{Generators, SynthRand};
 use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
@@ -32,6 +33,10 @@ pub struct UGenSynth {
     /// Persistent across blocks and allocated once here (network thread), never
     /// on the audio thread. Empty for defs with no `FFT`.
     chains: Vec<SpectralChain>,
+    /// The synth's own buffers (`LocalBuf`), allocated here and numbered
+    /// after the pool: what [`ProcessCtx::buffer`] resolves past it. Empty
+    /// for defs with none.
+    local_buffers: Vec<Option<Arc<Buffer>>>,
     /// False until the first `process` runs. The `ir` init pass runs each
     /// `ir` UGen exactly once, on that first block; its wire then holds the
     /// value (wires persist across blocks) and the UGen is skipped thereafter.
@@ -214,6 +219,19 @@ impl UGenSynth {
             .iter()
             .map(|&sz| SpectralChain::new(sz))
             .collect();
+        // Zeroed, which scsynth's are not: a `LocalBuf` it allocates holds
+        // whatever the memory held until a `ClearBuf` or a write.
+        let local_buffers = def
+            .local_buffers
+            .iter()
+            .map(|&(channels, frames)| {
+                Some(Arc::new(Buffer::zeroed(
+                    frames,
+                    channels,
+                    sample_rate as f64,
+                )))
+            })
+            .collect();
         let has_reply_ugens = ugens.iter().any(|u| u.is_reply());
         let has_node_requests = ugens.iter().any(|u| u.requests_nodes());
         let streams = ugens.iter().any(|u| u.cued().is_some());
@@ -225,6 +243,7 @@ impl UGenSynth {
             wires,
             locals,
             chains,
+            local_buffers,
             initialized: false,
             has_reply_ugens,
             has_node_requests,
@@ -280,6 +299,13 @@ impl SynthNode for UGenSynth {
         for chain in &mut self.chains {
             chain.reset();
         }
+        // A new note starts from empty buffers, its `SetBuf`s writing them
+        // again in the `ir` pass.
+        for buf in self.local_buffers.iter().flatten() {
+            for i in 0..buf.len() {
+                buf.set_at(i, 0.0);
+            }
+        }
         // The `ir` pass runs again on the next block, so a scalar reads the
         // controls the new note set.
         self.initialized = false;
@@ -292,6 +318,12 @@ impl SynthNode for UGenSynth {
     }
 
     fn process(&mut self, ctx: &mut ProcessCtx) {
+        // The synth's own buffers join the pool for its UGens.
+        let mut synth_ctx = ProcessCtx {
+            local_buffers: &self.local_buffers,
+            ..*ctx
+        };
+        let ctx = &mut synth_ctx;
         // Pull any bus-mapped controls before running UGens: a control bus
         // value, or one frame of an audio bus (control-rate, `/node_mapAudio`).
         // Written straight to `controls`, never through `set_control` (which
@@ -318,7 +350,19 @@ impl SynthNode for UGenSynth {
                 1
             }
         };
-        for i in 0..self.ugens.len() {
+        // **On the first block every `ir` UGen runs before the rest**, as
+        // scsynth's constructors all run before its first block: an `ir`
+        // UGen reads only `ir` inputs, so it can, and what one does to the
+        // synth's state at its start (a `SetBuf` filling a `LocalBuf`) is
+        // then there for every reader, wherever the def placed it.
+        let first = !self.initialized;
+        let def: &SynthDef = &self.def;
+        let n = self.ugens.len();
+        let is_ir = move |i: &usize| def.ugens[*i].rate == Rate::Ir;
+        let order = (0..n)
+            .filter(move |i| first && is_ir(i))
+            .chain((0..n).filter(move |i| !is_ir(i)));
+        for i in order {
             let rate = self.def.ugens[i].rate;
             // Demand-rate UGens produce nothing in block order -- their driver
             // pulls them (see the Demand arm below).

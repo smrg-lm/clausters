@@ -66,6 +66,10 @@ __all__ = [
     "normalizer",
     "limiter",
     "freq_shift",
+    "pluck",
+    "pitch_shift",
+    "del_tap_wr",
+    "del_tap_rd",
 ]
 
 
@@ -401,3 +405,55 @@ def freq_shift(signal, freq=0.0, phase=0.0) -> Ugen:
     cycles.
     """
     return Ugen("FreqShift", [signal, freq, phase])
+
+
+def pluck(
+    signal,
+    trig=1.0,
+    maxdelaytime=0.2,
+    delaytime=0.2,
+    decaytime=1.0,
+    coef=0.5,
+) -> Ugen:
+    """A plucked string (Karplus-Strong): a rising `trig` lets one period of
+    `signal` into a line `delaytime` seconds long that feeds back through a
+    one-pole lowpass of coefficient `coef`, decaying by 60 dB in
+    `decaytime`. `maxdelaytime` is a constant and sizes the line.
+    """
+    return Ugen(
+        "Pluck",
+        [signal, trig, maxdelaytime, delaytime, decaytime, coef],
+    )
+
+
+def pitch_shift(
+    signal,
+    window_size=0.2,
+    pitch_ratio=1.0,
+    pitch_dispersion=0.0,
+    time_dispersion=0.0,
+) -> Ugen:
+    """`signal` at `pitch_ratio` times its pitch (0 to 4), by four overlapping
+    grains of `window_size` seconds read at that speed. `pitch_dispersion`
+    moves each grain's ratio and `time_dispersion` its start, at random, by
+    up to that much. `window_size` is read at the start.
+    """
+    return Ugen(
+        "PitchShift",
+        [signal, window_size, pitch_ratio, pitch_dispersion, time_dispersion],
+    )
+
+
+def del_tap_wr(bufnum, signal) -> Ugen:
+    """Writes `signal` round a mono buffer, cleared at its start, and outputs
+    the frame each sample went to: the phase `del_tap_rd` reads behind.
+    """
+    return Ugen("DelTapWr", [bufnum, signal])
+
+
+def del_tap_rd(bufnum, phase, deltime, interp=1.0) -> Ugen:
+    """Reads the buffer a `del_tap_wr` writes, `deltime` seconds behind the
+    `phase` it outputs, with no interpolation (`interp` 1), linear (2) or
+    cubic (4). Any number of taps read one writer.
+    """
+    return Ugen("DelTapRd", [bufnum, phase, deltime, interp])

@@ -192,7 +192,7 @@ impl UGen for PlayBuf {
             self.phase = at(inputs[5], 0) as f64;
             self.started = true;
         }
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };
@@ -264,7 +264,7 @@ impl UGen for BufRd {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
         let looping = inputs[3][0] != 0.0;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };
@@ -320,7 +320,7 @@ impl UGen for TransportBufRd {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
         let looping = inputs[5][0] != 0.0;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };
@@ -374,7 +374,7 @@ impl UGen for BufWr {
         let index = inputs[0][0].max(0.0) as usize;
         let channel = inputs[1][0].max(0.0) as usize;
         let looping = inputs[3][0] != 0.0;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             // Nowhere to write, but the signal still passes: a missing buffer
             // silences the recording, not the chain.
             for (i, s) in output.iter_mut().enumerate() {
@@ -474,7 +474,7 @@ impl UGen for RecordBuf {
             self.pos = offset;
             self.started = true;
         }
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             for (i, s) in output.iter_mut().enumerate() {
                 *s = at(inputs[2], i);
             }
@@ -562,7 +562,7 @@ impl UGen for BufInfo {
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
-        let value = match ctx.buffers.get(index).and_then(|b| b.as_deref()) {
+        let value = match ctx.buffer(index) {
             Some(buf) => {
                 let file_sr = buf.sample_rate() as f32;
                 match self.0 {
@@ -595,5 +595,53 @@ impl UGen for BufInfo {
             None => 0.0,
         };
         output.fill(value);
+    }
+}
+
+/// `ScopeOut(bufnum, signals...)`: writes the signals round the buffer, one
+/// a channel and a frame a sample, wrapping at its end, so a client reading
+/// it sees the latest frames. Its output is silence.
+///
+/// scsynth's waits for its GUI scope to read each full buffer before
+/// writing the next; a buffer here is readable at any moment, and a reader
+/// takes what is there. It also reads as many signals as the buffer has
+/// channels, past its inputs; here each signal fills its channel and a
+/// channel with no signal is left as it is.
+#[derive(Default)]
+pub struct ScopeOut {
+    frame: usize,
+    written: usize,
+}
+
+impl UGen for ScopeOut {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+        let Some(buf) = ctx.buffer(inputs[0][0].max(0.0) as usize) else {
+            self.frame = 0;
+            return;
+        };
+        let frames = buf.frames();
+        if frames == 0 {
+            return;
+        }
+        let signals = &inputs[1..];
+        let channels = signals.len().min(buf.channels());
+        let mut frame = self.frame % frames;
+        for i in 0..output.len() {
+            for (c, sig) in signals[..channels].iter().enumerate() {
+                buf.set_sample(frame, c, at(sig, i));
+            }
+            frame += 1;
+            if frame == frames {
+                frame = 0;
+            }
+        }
+        self.frame = frame;
+        self.written = (self.written + output.len()).min(frames);
+        buf.raise_frontier(self.written);
     }
 }

@@ -498,3 +498,31 @@ required = ["bufnum"]
 doc = '''
 The number of samples in a buffer, every channel's: frames times channels.
 '''
+
+[[hand]]
+kind = "ScopeOut"
+why = "a channel list fills the buffer's channels, and the buffer trails as an option"
+
+[[hand]]
+kind = "LocalBuf"
+why = "the frames lead, as in every other buffer's shape, where the channels lead on the wire"
+
+[[ugen]]
+kind = "MaxLocalBufs"
+builder = "max_local_bufs"
+doc = '''
+How many `local_buf`s a def holds, which the server counts itself: it is
+accepted for a def written for scsynth, and does nothing.
+'''
+
+[[hand]]
+kind = "SetBuf"
+why = "the values are a list, and their count is the list's"
+
+[[ugen]]
+kind = "ClearBuf"
+builder = "clear_buf"
+required = ["bufnum"]
+doc = '''
+Zeroes a buffer at the synth's start.
+'''

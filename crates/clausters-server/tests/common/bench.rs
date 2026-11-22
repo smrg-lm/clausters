@@ -302,6 +302,7 @@ pub fn render_def_with_done(def_json: &str, run: &Run) -> (Vec<Vec<f32>>, Vec<u8
                 full_sample_rate: run.sample_rate,
                 buses: &buses,
                 buffers: run.buffers,
+                local_buffers: &[],
                 offset,
                 frames,
                 transport: Default::default(),

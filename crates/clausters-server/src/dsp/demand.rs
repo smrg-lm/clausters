@@ -678,7 +678,7 @@ impl UGen for Dbufrd {
         let looping = inputs.at(2) != 0.0;
         let channel = inputs.at(3).max(0.0) as usize;
         let index = bufnum.max(0.0) as usize;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             return 0.0;
         };
         let frames = buf.frames();

@@ -15,7 +15,6 @@
 //! All are mono, single-output, and read the immutable buffer pool through the
 //! context -- no allocation, like every other UGen.
 
-use crate::dsp::buffer::Buffer;
 use crate::dsp::wavetable::wt_interp;
 use crate::dsp::{ProcessCtx, Ramp, UGen, at};
 
@@ -68,7 +67,7 @@ impl UGen for Osc {
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };
@@ -113,7 +112,7 @@ impl UGen for OscN {
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };
@@ -160,8 +159,8 @@ impl Default for VOsc {
 
 /// One wavetable's contribution at `pos`, 0 if the slot is empty.
 #[inline]
-fn read_slot(buffers: &[Option<std::sync::Arc<Buffer>>], index: usize, pos: f64) -> f32 {
-    match buffers.get(index).and_then(|b| b.as_deref()) {
+fn read_slot(ctx: &ProcessCtx, index: usize, pos: f64) -> f32 {
+    match ctx.buffer(index) {
         Some(buf) => buf.cells().map_or(0.0, |t| read_wavetable(t, pos)),
         None => 0.0,
     }
@@ -182,11 +181,11 @@ fn bufpos_at(bufpos: &[f32], line: (f64, f64), i: usize) -> f32 {
 /// The two tables either side of `bufpos` at `pos`, crossfaded by its
 /// fraction.
 #[inline]
-fn morph(buffers: &[Option<std::sync::Arc<Buffer>>], bufpos: f32, pos: f64) -> f32 {
+fn morph(ctx: &ProcessCtx, bufpos: f32, pos: f64) -> f32 {
     let b0 = bufpos as usize;
     let frac = bufpos - b0 as f32;
-    let v0 = read_slot(buffers, b0, pos);
-    let v1 = read_slot(buffers, b0 + 1, pos);
+    let v0 = read_slot(ctx, b0, pos);
+    let v1 = read_slot(ctx, b0 + 1, pos);
     v0 + frac * (v1 - v0)
 }
 
@@ -200,11 +199,7 @@ impl UGen for VOsc {
         let line = self.bufpos.toward(inputs[0][0] as f64, output.len());
         for (i, s) in output.iter_mut().enumerate() {
             let phase_off = at(inputs[2], i) as f64 / std::f64::consts::TAU;
-            *s = morph(
-                ctx.buffers,
-                bufpos_at(inputs[0], line, i),
-                self.phase + phase_off,
-            );
+            *s = morph(ctx, bufpos_at(inputs[0], line, i), self.phase + phase_off);
             advance(&mut self.phase, at(inputs[1], i), sr);
         }
     }
@@ -245,7 +240,7 @@ impl UGen for VOsc3 {
             let pos = bufpos_at(inputs[0], line, i);
             let mut sum = 0.0;
             for (k, phase) in self.phases.iter_mut().enumerate() {
-                sum += morph(ctx.buffers, pos, *phase);
+                sum += morph(ctx, pos, *phase);
                 advance(phase, at(inputs[1 + k], i), sr);
             }
             *s = sum;
@@ -312,7 +307,7 @@ impl UGen for Shaper {
 
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let index = inputs[0][0].max(0.0) as usize;
-        let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+        let Some(buf) = ctx.buffer(index) else {
             output.fill(0.0);
             return;
         };

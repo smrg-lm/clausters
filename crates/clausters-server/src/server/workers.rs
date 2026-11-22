@@ -313,6 +313,7 @@ fn worker_main(shared: &Shared, meters: &Meters, me: usize) {
             full_sample_rate: job.sample_rate,
             buses: unsafe { &*job.buses },
             buffers,
+            local_buffers: &[],
             offset: job.offset,
             frames: job.frames,
             transport: job.transport,

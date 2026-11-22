@@ -397,3 +397,51 @@ export const freqShift = (
     freq: Channel = 0.0,
     phase: Channel = 0.0,
 ): Ugen => new Ugen("FreqShift", [signal, freq, phase]);
+
+/**
+ * A plucked string (Karplus-Strong): a rising `trig` lets one period of
+ * `signal` into a line `delaytime` seconds long that feeds back through a
+ * one-pole lowpass of coefficient `coef`, decaying by 60 dB in
+ * `decaytime`. `maxdelaytime` is a constant and sizes the line.
+ */
+export const pluck = (
+    signal: Channel,
+    trig: Channel = 1.0,
+    maxdelaytime: Channel = 0.2,
+    delaytime: Channel = 0.2,
+    decaytime: Channel = 1.0,
+    coef: Channel = 0.5,
+): Ugen => new Ugen("Pluck", [signal, trig, maxdelaytime, delaytime, decaytime, coef]);
+
+/**
+ * `signal` at `pitchRatio` times its pitch (0 to 4), by four overlapping
+ * grains of `windowSize` seconds read at that speed. `pitchDispersion`
+ * moves each grain's ratio and `timeDispersion` its start, at random, by
+ * up to that much. `windowSize` is read at the start.
+ */
+export const pitchShift = (
+    signal: Channel,
+    windowSize: Channel = 0.2,
+    pitchRatio: Channel = 1.0,
+    pitchDispersion: Channel = 0.0,
+    timeDispersion: Channel = 0.0,
+): Ugen => new Ugen("PitchShift", [signal, windowSize, pitchRatio, pitchDispersion, timeDispersion]);
+
+/**
+ * Writes `signal` round a mono buffer, cleared at its start, and outputs
+ * the frame each sample went to: the phase `delTapRd` reads behind.
+ */
+export const delTapWr = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("DelTapWr", [bufnum, signal]);
+
+/**
+ * Reads the buffer a `delTapWr` writes, `deltime` seconds behind the
+ * `phase` it outputs, with no interpolation (`interp` 1), linear (2) or
+ * cubic (4). Any number of taps read one writer.
+ */
+export const delTapRd = (
+    bufnum: Channel,
+    phase: Channel,
+    deltime: Channel,
+    interp: Channel = 1.0,
+): Ugen => new Ugen("DelTapRd", [bufnum, phase, deltime, interp]);

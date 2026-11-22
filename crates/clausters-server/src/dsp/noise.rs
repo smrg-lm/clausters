@@ -654,7 +654,7 @@ impl UGen for LfdNoise {
 
 /// scsynth's `cubicinterp`, in `f32` as its is: the four-point Hermite.
 #[inline]
-fn cubic32(x: f32, y0: f32, y1: f32, y2: f32, y3: f32) -> f32 {
+pub(crate) fn cubic32(x: f32, y0: f32, y1: f32, y2: f32, y3: f32) -> f32 {
     let c0 = y1;
     let c1 = 0.5 * (y2 - y0);
     let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;

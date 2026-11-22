@@ -31,6 +31,7 @@ fn step(synth: &mut UGenSynth, buses: &mut Buses) -> Vec<f32> {
         full_sample_rate: SR,
         buses,
         buffers: &[],
+        local_buffers: &[],
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),

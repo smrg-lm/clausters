@@ -114,6 +114,7 @@ fn capacity_and_process_death_latch_a_single_node_fault() {
                 full_sample_rate: 48000.0,
                 buses: &buses,
                 buffers: &[],
+                local_buffers: &[],
                 offset: 0,
                 frames: 64,
                 transport: TransportCtx::default(),

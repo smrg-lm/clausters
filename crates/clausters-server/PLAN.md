@@ -1674,7 +1674,9 @@ holds what is open.
     `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`, `NumOutputBuses`,
     `NumBuffers`, `NodeID`, `NumRunningSynths`, `BufSamples`) and the bus
     readers and writers `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`,
-    `XOut`, `SharedIn`, `SharedOut`.
+    `XOut`, `SharedIn`, `SharedOut`; the delay lines and buffers: `Pluck`,
+    `PitchShift`, `DelTapWr`, `DelTapRd`, `LocalBuf`, `MaxLocalBufs`,
+    `SetBuf`, `ClearBuf`, `ScopeOut`, `VDiskIn`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1686,19 +1688,22 @@ holds what is open.
     renamed `Sine`"); `LinkTempo`, `LinkPhase`, `LinkJump` (an optional
     plugin of scsynth's build that joins a network tempo session over a
     protocol the server does not speak; the server's transport is its
-    clock).
+    clock); `SimpleLoopBuf` (scsynth's code has it but never registers it,
+    under `#if NOTYET`, and sclang's class is commented out: there is no
+    UGen to port, and `play_buf` loops a stretch); `ScopeOut2` (it writes
+    scsynth's scope buffers in shared memory, which here are the sample
+    rings the server assigns to a bus a client asks to see, its own
+    bookkeeping (`docs/schemas.md`, the shared segment's sample rings): a
+    def writes the signal to a bus).
   - **Left, in batches** *(the user, 2026-11-21: by batches, each family
     in its own file where possible, each algorithm checked against the
     theory as well as against scsynth's code, which has known faults, and
     the most faithful realization that is also efficient; a difference
     from scsynth is recorded with its reason)*. The inventory is
     `server/plugins/*.cpp` of the checkout against the registry: 207
-    names, 17 of them out of scope above, 190 to add. Each batch
+    names, 19 of them out of scope above, 188 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **8. Delays and buffers:** `Pluck`, `PitchShift`, `DelTapWr`,
-      `DelTapRd`, `SimpleLoopBuf`, `LocalBuf`, `MaxLocalBufs`, `SetBuf`,
-      `ClearBuf`, `ScopeOut`, `ScopeOut2`, `VDiskIn`.
     - ⬜ **9. Spatial, reverbs and physical models:** `Pan4`, `PanB`,
       `PanB2`, `BiPanB2`, `DecodeB2`; `FreeVerb`, `FreeVerb2`, `GVerb`;
       `Spring`, `Ball`, `TBall`.

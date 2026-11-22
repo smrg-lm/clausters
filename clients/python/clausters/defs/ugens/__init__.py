@@ -163,6 +163,10 @@ from .osc import (
     gendy3,
 )
 from .filter import (
+    pluck,
+    pitch_shift,
+    del_tap_wr,
+    del_tap_rd,
     allpass_c,
     allpass_l,
     allpass_n,
@@ -254,6 +258,7 @@ from .pan import (
     xfade2,
 )
 from .io import (
+    vdisk_in,
     clip_count,
     disk_in,
     disk_out,
@@ -279,6 +284,11 @@ from .io import (
     x_out,
 )
 from .buf import (
+    scope_out,
+    local_buf,
+    max_local_bufs,
+    set_buf,
+    clear_buf,
     buf_channels,
     buf_dur,
     buf_frames,
@@ -435,7 +445,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "SendPeakRMS", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "SendPeakRMS", "Dseq", "Poll", "DiskIn", "VDiskIn", "DiskOut", "PV_Kernel", "ScopeOut", "LocalBuf", "SetBuf"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -489,6 +499,16 @@ def ugen_input_names(kind: str) -> "list[str] | None":
 
 
 __all__ = [
+    "pluck",
+    "pitch_shift",
+    "del_tap_wr",
+    "del_tap_rd",
+    "scope_out",
+    "local_buf",
+    "max_local_bufs",
+    "set_buf",
+    "clear_buf",
+    "vdisk_in",
     # graph
     "ChannelList",
     "Control",

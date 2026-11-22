@@ -17,7 +17,9 @@ use crate::dsp::analytic::{FreqShift, Hilbert};
 use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
-use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, TransportBufRd};
+use crate::dsp::buf::{
+    BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, ScopeOut, TransportBufRd,
+};
 use crate::dsp::chaos::{Chaos, ChaosInterp, ChaosMap, Logistic};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
@@ -38,7 +40,9 @@ use crate::dsp::ladder::MoogFf;
 use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
 use crate::dsp::lfo::{LfGauss, Vibrato};
 use crate::dsp::line::{Line, LineShape};
+use crate::dsp::lines::{DelTapRd, DelTapWr, PitchShift, Pluck};
 use crate::dsp::local::{LocalIn, LocalOut};
+use crate::dsp::localbuf::{ClearBuf, LocalBuf, MaxLocalBufs, SetBuf};
 use crate::dsp::maps::{
     AmpComp, AmpCompA, Hasher, InRange, InRect, LinExp, MantissaMask, ModDif, Unwrap,
 };
@@ -76,6 +80,7 @@ use crate::dsp::trig::{
     FlipFlopMode, Hold, HoldMode, Schmidt, Stepper, TrigMode, TrigPulse,
 };
 use crate::dsp::unop::UnaryOp;
+use crate::dsp::vdisk::VDiskIn;
 use crate::dsp::{DoneAction, Rate, UGen};
 use crate::server::meters::Meters;
 
@@ -150,6 +155,9 @@ pub struct UGenConfig {
     /// input reads at build time (`Gendy1`'s control points), as scsynth's
     /// constructor reads it. Set by the compiler for every kind.
     pub constants: Vec<Option<f32>>,
+    /// `LocalBuf`: which of the synth's own buffers this one is, assigned by
+    /// the compiler in def order. Ignored by every other kind.
+    pub local_buffer: Option<usize>,
 }
 
 impl UGenConfig {

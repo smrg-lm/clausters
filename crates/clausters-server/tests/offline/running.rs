@@ -114,6 +114,7 @@ fn send_peak_rms_reports_peak_and_rms() {
             full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
+            local_buffers: &[],
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),

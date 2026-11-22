@@ -95,7 +95,7 @@ impl OscScore {
     }
 
     /// **Every file the score reads**, once each, in the order they are
-    /// first named: the paths of its synth defs' `DiskIn`s.
+    /// first named: the paths of its synth defs' `DiskIn`s and `VDiskIn`s.
     ///
     /// What it is for is a page, whose render opens a file only before it
     /// starts: an offline render's host opens each of these first, and the
@@ -104,7 +104,7 @@ impl OscScore {
     pub fn files(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for msg in self.events.iter().flat_map(|ev| &ev.messages) {
-            for path in def_paths(msg, &["DiskIn"]) {
+            for path in def_paths(msg, &["DiskIn", "VDiskIn"]) {
                 add_once(&mut out, &path);
             }
         }

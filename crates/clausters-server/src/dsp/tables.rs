@@ -15,7 +15,7 @@ fn table<'a>(ctx: &'a ProcessCtx, inputs: &[&[f32]]) -> Option<&'a Buffer> {
     if index < 0.0 {
         return None;
     }
-    let buf = ctx.buffers.get(index as usize)?.as_deref()?;
+    let buf = ctx.buffer(index as usize)?;
     (buf.frames() * buf.channels() > 0).then_some(buf)
 }
 

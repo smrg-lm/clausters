@@ -273,4 +273,57 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Delay::over_buffer(Interp::Cubic, Feedback::Allpass)),
     ),
+    // --- the delay lines beyond the nine (`dsp::lines`): a plucked string,
+    //     a granular pitch shifter, and a tap pair over a buffer. Each
+    //     private line is sized at build from a constant input. ---
+    plain(
+        "Pluck",
+        &[
+            inp("signal", 0.0),
+            inp("trig", 1.0),
+            inp("maxdelaytime", 0.2),
+            inp("delaytime", 0.2),
+            inp("decaytime", 1.0),
+            inp("coef", 0.5),
+        ],
+        |c, ctx| Box::new(Pluck::new(c.constant(2, 0.2), ctx.sample_rate)),
+    ),
+    desc_draws(desc(
+        "PitchShift",
+        Fixed(5),
+        &[
+            inp("signal", 0.0),
+            inp("window_size", 0.2),
+            inp("pitch_ratio", 1.0),
+            inp("pitch_dispersion", 0.0),
+            inp("time_dispersion", 0.0),
+        ],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, ctx| {
+            Box::new(PitchShift::new(
+                ctx.rand(),
+                c.constant(1, 0.2),
+                ctx.sample_rate,
+            ))
+        },
+    )),
+    plain(
+        "DelTapWr",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(DelTapWr::default()),
+    ),
+    plain(
+        "DelTapRd",
+        &[
+            inp("bufnum", 0.0),
+            inp("phase", 0.0),
+            inp("deltime", 0.0),
+            inp_opt("interp", 1.0),
+        ],
+        |_, _| Box::new(DelTapRd::default()),
+    ),
 ];

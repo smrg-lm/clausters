@@ -158,6 +158,10 @@ export {
 } from "./osc.ts";
 
 export {
+    pluck,
+    pitchShift,
+    delTapWr,
+    delTapRd,
     allpassC,
     allpassL,
     allpassN,
@@ -252,6 +256,7 @@ export {
 } from "./pan.ts";
 
 export {
+    vdiskIn,
     clipCount,
     diskIn,
     diskOut,
@@ -279,6 +284,11 @@ export {
 export type { DiskInOptions, DiskOutOptions, PollOptions, SendPeakRmsOptions } from "./io.ts";
 
 export {
+    scopeOut,
+    localBuf,
+    maxLocalBufs,
+    setBuf,
+    clearBuf,
     bufChannels,
     bufDur,
     bufFrames,
@@ -449,8 +459,12 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "Dseq",
     "Poll",
     "DiskIn",
+    "VDiskIn",
     "DiskOut",
     "PV_Kernel",
+    "ScopeOut",
+    "LocalBuf",
+    "SetBuf",
 ]);
 
 /** Lazily built `kind -> [parameter name, ...]` -- see {@link ugenInputNames}. */

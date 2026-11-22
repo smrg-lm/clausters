@@ -5,7 +5,7 @@ read a `/buffer_gen` table, and the init-rate queries that report a buffer's
 shape into the graph.
 """
 
-from .graph import Ugen
+from .graph import ChannelList, Ugen
 from ._generated.buf import *  # noqa: F403 -- the builders that mirror the wire
 
 def record_buf(bufnum, chan, signal, offset=0.0, rec_level=1.0, pre_level=0.0,
@@ -37,3 +37,31 @@ def t_windex(trig, weights, normalize=0.0) -> Ugen:
     the weighted choice a `select` then reads a list by. A draw is made at the
     start too. What unnormalized weights leave over goes to the last index."""
     return Ugen("TWindex", [trig, normalize, *weights])
+
+
+def scope_out(signal, bufnum=0.0) -> Ugen:
+    """Writes ``signal`` round a buffer, a frame a sample, wrapping at its end,
+    so a client reading the buffer sees the latest frames: a channel list
+    fills one channel of the buffer each. Output is silence; pass it as a
+    `SynthDef` root."""
+    items = (ChannelList(signal).items
+             if isinstance(signal, (ChannelList, list, tuple)) else [signal])
+    return Ugen("ScopeOut", [bufnum, *items])
+
+
+def local_buf(frames=1, channels=1) -> Ugen:
+    """The number of a buffer of the synth's own, ``frames`` long and
+    ``channels`` wide, allocated with the synth and freed with it: every
+    buffer UGen reads and writes it as it does one of the pool. Both are
+    constants, which size it; it is zeroed at the start of each note, and
+    `set_buf` fills it."""
+    return Ugen("LocalBuf", [channels, frames])
+
+
+def set_buf(bufnum, values, offset=0.0) -> Ugen:
+    """Writes ``values`` into a buffer at the synth's start, from sample
+    ``offset`` on (a multichannel buffer's samples interleaved), as many as
+    fit."""
+    values = list(values)
+    return Ugen("SetBuf", [bufnum, offset, float(len(values)), *values])
+

@@ -59,6 +59,8 @@ __all__ = [
     "node_id",
     "num_running_synths",
     "buf_samples",
+    "max_local_bufs",
+    "clear_buf",
 ]
 
 
@@ -437,3 +439,15 @@ def buf_samples(bufnum) -> Ugen:
     """The number of samples in a buffer, every channel's: frames times channels.
     """
     return Ugen("BufSamples", [bufnum], rate="kr")
+
+
+def max_local_bufs(count=0.0) -> Ugen:
+    """How many `local_buf`s a def holds, which the server counts itself: it is
+    accepted for a def written for scsynth, and does nothing.
+    """
+    return Ugen("MaxLocalBufs", [count])
+
+
+def clear_buf(bufnum) -> Ugen:
+    """Zeroes a buffer at the synth's start."""
+    return Ugen("ClearBuf", [bufnum])

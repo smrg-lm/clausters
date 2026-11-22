@@ -142,6 +142,10 @@ kind = "DiskIn"
 why = "the path and its options are static fields"
 
 [[hand]]
+kind = "VDiskIn"
+why = "the path and its options are static fields"
+
+[[hand]]
 kind = "DiskOut"
 why = "the path and its format are static fields"
 

@@ -5,7 +5,7 @@
 // read a `/buffer_gen` table, and the init-rate queries that report a buffer's
 // shape -- or the engine's own rate -- into the graph.
 
-import { Ugen } from "./graph.ts";
+import { ChannelList, Ugen, isList } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 export * from "./_generated/buf.ts";
 
@@ -64,3 +64,36 @@ export const tWindex = (
     weights: readonly Channel[],
     normalize: Channel = 0.0,
 ): Ugen => new Ugen("TWindex", [trig, normalize, ...weights]);
+
+/**
+ * Writes `signal` round a buffer, a frame a sample, wrapping at its end, so a
+ * client reading the buffer sees the latest frames: a channel list fills one
+ * channel of the buffer each. Output is silence; pass it as a `SynthDef` root.
+ */
+export const scopeOut = (
+    signal: Channel | ChannelList | readonly Channel[],
+    bufnum: Channel = 0.0,
+): Ugen => {
+    const items = isList(signal) ? new ChannelList(signal).items : [signal];
+    return new Ugen("ScopeOut", [bufnum, ...items]);
+};
+
+/**
+ * The number of a buffer of the synth's own, `frames` long and `channels`
+ * wide, allocated with the synth and freed with it: every buffer UGen reads and
+ * writes it as it does one of the pool. Both are constants, which size it; it
+ * is zeroed at the start of each note, and `setBuf` fills it.
+ */
+export const localBuf = (frames: number = 1, channels: number = 1): Ugen =>
+    new Ugen("LocalBuf", [channels, frames]);
+
+/**
+ * Writes `values` into a buffer at the synth's start, from sample `offset` on
+ * (a multichannel buffer's samples interleaved), as many as fit.
+ */
+export const setBuf = (
+    bufnum: Channel,
+    values: readonly Channel[],
+    offset: Channel = 0.0,
+): Ugen => new Ugen("SetBuf", [bufnum, offset, values.length, ...values]);
+

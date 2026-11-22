@@ -384,3 +384,13 @@ export const numRunningSynths = (): Ugen =>
 /** The number of samples in a buffer, every channel's: frames times channels. */
 export const bufSamples = (bufnum: Channel): Ugen =>
     new Ugen("BufSamples", [bufnum], { rate: "kr" });
+
+/**
+ * How many `localBuf`s a def holds, which the server counts itself: it is
+ * accepted for a def written for scsynth, and does nothing.
+ */
+export const maxLocalBufs = (count: Channel = 0.0): Ugen =>
+    new Ugen("MaxLocalBufs", [count]);
+
+/** Zeroes a buffer at the synth's start. */
+export const clearBuf = (bufnum: Channel): Ugen => new Ugen("ClearBuf", [bufnum]);

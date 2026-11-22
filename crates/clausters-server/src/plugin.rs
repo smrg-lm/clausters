@@ -1384,6 +1384,7 @@ mod offline_tests {
             full_sample_rate: 48000.0,
             buses,
             buffers: &[],
+            local_buffers: &[],
             offset,
             frames,
             transport: TransportCtx::default(),
@@ -1512,6 +1513,7 @@ mod offline_tests {
                     full_sample_rate: 48000.0,
                     buses: &buses,
                     buffers: &[],
+                    local_buffers: &[],
                     offset,
                     frames,
                     transport: TransportCtx {

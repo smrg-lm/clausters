@@ -45,6 +45,7 @@ mod graphdef;
 mod group_nset;
 mod info;
 mod lfugens;
+mod lines;
 mod mapping;
 mod meters;
 mod midi;

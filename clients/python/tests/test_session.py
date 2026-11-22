@@ -350,6 +350,9 @@ _WIRE_ORDER_FORCED = {
     "Drand": "repeats leads on the wire; the value list is the leading argument here",
     "Dxrand": "repeats leads on the wire; the value list is the leading argument here",
     "Dshuf": "repeats leads on the wire; the value list is the leading argument here",
+    "ScopeOut": "the signals lead in Python; the buffer leads on the wire",
+    "LocalBuf": "the frames lead in Python, as in every buffer's shape; the channels lead on the wire",
+    "SetBuf": "the value list comes before offset in Python, after offset and its count on the wire",
 }
 
 # Once four kinds took their **static** (non-signal) fields as ordinary

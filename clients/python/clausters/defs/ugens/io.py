@@ -136,6 +136,16 @@ def disk_in(chan=0.0, *, path, loop=False, start=0) -> Ugen:
     return Ugen("DiskIn", [chan], static=static)
 
 
+def vdisk_in(chan=0.0, rate=1.0, *, path, loop=False, start=0) -> Ugen:
+    """`disk_in` at a variable ``rate``: ``rate`` frames of the file a sample
+    (0 holds it; none backwards), read with cubic interpolation. ``path``,
+    ``loop`` and ``start`` are `disk_in`'s **static** fields, keyword-only."""
+    static = {"path": str(path), "loop": bool(loop)}
+    if start:
+        static["start"] = int(start)
+    return Ugen("VDiskIn", [chan, rate], static=static)
+
+
 def disk_out(signal, *, path, format="int16") -> Ugen:
     """Streams ``signal`` to a mono sound file at ``path`` (``format`` is
     ``"int16"``, ``"int24"`` or ``"float"``) and passes ``signal`` through as

@@ -294,7 +294,7 @@ impl UGen for Delay {
             Storage::Pool => {
                 let index = inputs[0][0].max(0.0) as usize;
                 let channel = inputs[1][0].max(0.0) as usize;
-                let Some(buf) = ctx.buffers.get(index).and_then(|b| b.as_deref()) else {
+                let Some(buf) = ctx.buffer(index) else {
                     output.fill(0.0);
                     return;
                 };

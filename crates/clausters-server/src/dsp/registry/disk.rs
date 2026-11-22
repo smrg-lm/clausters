@@ -19,6 +19,17 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         |c, ctx| Box::new(DiskIn::open(c, ctx)),
     ),
     desc(
+        "VDiskIn",
+        Fixed(2),
+        &[inp("chan", 0.0), inp_opt("rate", 1.0)],
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        true,
+        |c, ctx| Box::new(VDiskIn::open(c, ctx)),
+    ),
+    desc(
         "DiskOut",
         Fixed(1),
         &[inp("signal", 0.0)],

@@ -235,6 +235,21 @@ export const diskIn = (chan: Channel = 0.0, { path, loop = false, start = 0 }: D
 };
 
 /**
+ * `diskIn` at a variable `rate`: `rate` frames of the file a sample (0 holds
+ * it; none backwards), read with cubic interpolation. `path`, `loop` and
+ * `start` are `diskIn`'s **static** fields, in the same options object.
+ */
+export const vdiskIn = (
+    chan: Channel = 0.0,
+    rate: Channel = 1.0,
+    { path, loop = false, start = 0 }: DiskInOptions,
+): Ugen => {
+    const fields: Record<string, unknown> = { path: String(path), loop: Boolean(loop) };
+    if (start) fields.start = Math.trunc(start);
+    return new Ugen("VDiskIn", [chan, rate], { static: fields });
+};
+
+/**
  * Streams `signal` to a mono sound file at `path` (`format` is `"int16"`,
  * `"int24"` or `"float"`) and passes `signal` through as its output: a WAV,
  * closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the

@@ -24,6 +24,7 @@ fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'
         full_sample_rate: 48_000.0,
         buses,
         buffers,
+        local_buffers: &[],
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),

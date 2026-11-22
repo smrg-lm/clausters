@@ -88,7 +88,11 @@ pub mod lfo;
 #[cfg(feature = "synth")]
 pub mod line;
 #[cfg(feature = "synth")]
+pub mod lines;
+#[cfg(feature = "synth")]
 pub mod local;
+#[cfg(feature = "synth")]
+pub mod localbuf;
 #[cfg(feature = "synth")]
 pub mod maps;
 pub mod measure;
@@ -216,6 +220,8 @@ impl ListWrap {
 pub mod trig;
 #[cfg(feature = "synth")]
 pub mod unop;
+#[cfg(feature = "synth")]
+pub mod vdisk;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
@@ -880,6 +886,10 @@ pub struct ProcessCtx<'a> {
     /// The engine's buffer pool; read-only on the audio thread (see
     /// [`buffer`] for the immutability contract).
     pub buffers: &'a [Option<Arc<buffer::Buffer>>],
+    /// The buffers of the synth running, `LocalBuf`'s: numbered after the
+    /// pool, so a buffer index past it names the synth's own. Empty outside
+    /// a synth that has any. Read through [`ProcessCtx::buffer`].
+    pub local_buffers: &'a [Option<Arc<buffer::Buffer>>],
     /// First frame of this slice within the block.
     pub offset: usize,
     /// Slice length in frames.
@@ -891,6 +901,22 @@ pub struct ProcessCtx<'a> {
     /// `NumOutputBuses`, ...). A context built outside an engine has the
     /// default, a node 0 in an engine of none.
     pub server: ServerFacts,
+}
+
+impl<'a> ProcessCtx<'a> {
+    /// The buffer an index names: one of the pool's, or past the pool one
+    /// of the synth's own (`LocalBuf`), scsynth's numbering. `None` for an
+    /// index that names nothing, or an empty slot.
+    #[inline]
+    pub fn buffer(&self, index: usize) -> Option<&'a buffer::Buffer> {
+        match self.buffers.get(index) {
+            Some(slot) => slot.as_deref(),
+            None => self
+                .local_buffers
+                .get(index - self.buffers.len())
+                .and_then(|b| b.as_deref()),
+        }
+    }
 }
 
 /// The facts of the server a UGen runs in that no signal carries: the node

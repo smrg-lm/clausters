@@ -515,6 +515,7 @@ impl Engine {
                         full_sample_rate: self.sample_rate,
                         buses: &self.buses,
                         buffers: &self.buffers,
+                        local_buffers: &[],
                         offset: 0,
                         frames: BLOCK_SIZE,
                         transport: self.tree.transport_view(k),

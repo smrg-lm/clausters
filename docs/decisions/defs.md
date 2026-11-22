@@ -1676,3 +1676,26 @@ What the comparison allows is part of the decision:
     `OffsetOut` is `Out`. `SubsampleOffset` reports what is left of the
     sample, scsynth's value, a timed bundle starting at the sample nearest
     its time as scsynth rounds it.
+  - `Pluck` holds its delay only to its line rounded up to a power of two,
+    past which its interpolation reads newer samples, and with an
+    audio-rate trigger moves a control-rate coefficient only in a block
+    where the delay or the decay moves too; here the delay is held to
+    `maxdelaytime` and the coefficient moves in every block.
+  - `PitchShift` sizes its line for the pitch ratio alone, so a head that
+    starts late at a high ratio reads past it onto new samples; here the
+    line holds the longest time dispersion too.
+  - `DelTapWr` carries its phase as the integer's bits in the float, which
+    nothing else can read; here the phase is the frame as a number, exact
+    to 2^24 frames. `DelTapRd`'s linear read at a steady control-rate delay
+    wraps the wrong variable at the buffer's end and reads past it, and its
+    truncating read rounds a fractional position the other way across the
+    buffer's start; here every read wraps and truncates alike.
+  - `ScopeOut` waits for its GUI scope to read each full buffer and reads
+    as many signals as the buffer has channels, past its inputs; here a
+    reader takes what is in the buffer and a channel with no signal is left
+    as it is.
+  - `VDiskIn` caps its rate by its cue buffer and plays its file's first
+    frame twice; this one reads through no cue buffer, so any rate reads,
+    and frame `k` plays at sample `k / rate`.
+  - `LocalBuf` leaves its memory as it found it until something writes it;
+    here a local buffer is zeroed at each note's start.

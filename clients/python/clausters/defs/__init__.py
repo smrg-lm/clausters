@@ -53,6 +53,16 @@ from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
 from .ugens import (
+    pluck,
+    pitch_shift,
+    del_tap_wr,
+    del_tap_rd,
+    scope_out,
+    local_buf,
+    max_local_bufs,
+    set_buf,
+    clear_buf,
+    vdisk_in,
     Bpf,
     ChannelList,
     Control,
@@ -305,7 +315,7 @@ from .ugens import (
     white_noise,
 )
 
-__all__ = ["IdSpaces", "Window", 
+__all__ = ["pluck", "pitch_shift", "del_tap_wr", "del_tap_rd", "scope_out", "local_buf", "max_local_bufs", "set_buf", "clear_buf", "vdisk_in", "IdSpaces", "Window", 
     "boxes",
     "signals",
     "ugens",
