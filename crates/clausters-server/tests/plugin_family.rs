@@ -64,6 +64,7 @@ fn exact_due_audio_slices_native_controls_maps_and_latency_without_allocations()
                 full_sample_rate: 48000.0,
                 buses: &buses,
                 buffers: &[],
+                local_buffers: &[],
                 offset,
                 frames,
                 transport: TransportCtx {
