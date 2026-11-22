@@ -1566,6 +1566,14 @@ holds what is open.
   a narrow one, not a panel class. Folding a pane in the dock also
   asks what its group gives up and to whom, which the dock's layout
   decides, as it does for a divider moved.
+  **Built so far** *(2026-11-22)*: the bar is drawn once
+  (`host/graphics/bar.rs`: the ground and its line, the title, a button,
+  the grip, the fold mark), the dock's chrome calls it, and a titled
+  group's strip is that bar, a line of control of the bar's text tall, a
+  section's beginning with the fold mark (a chevron, lit while the pointer
+  is over the bar). **Still open**: the fold mark on a dock's bar and what
+  a folded pane gives up, resizing a section and turning it off, and the
+  spacing option.
   **Related:** "The spectrogram's settings read as two panels" in
   `crates/clausters-apps/PLAN.md`, Found by use, which wants a panel with
   sections inside it, a level this design has to leave room for.

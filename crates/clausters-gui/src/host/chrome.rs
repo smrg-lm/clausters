@@ -26,6 +26,12 @@ pub fn title_strip(p: &Placed) -> Option<Rect> {
     (h > 0.0).then(|| Rect::new(p.rect.x, p.rect.y, p.rect.w, h))
 }
 
+/// **The fold mark of a section's strip** `strip`: the square at the strip's
+/// start, where a dock's bar has its grip.
+pub fn fold_mark(strip: Rect) -> Rect {
+    Rect::new(strip.x, strip.y, strip.h, strip.h)
+}
+
 /// The **close mark** of a dialog: its close button at the top right corner
 /// of its card, or the square ending a titled group's strip. `None` for
 /// anything that is not a dialog, and for an alert dialog, which is answered

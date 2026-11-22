@@ -23,6 +23,7 @@
 //! and may serve no element at all (a `track` is a container, and its lane is
 //! still drawn here).
 
+pub mod bar;
 pub mod bpf;
 pub mod choice;
 pub mod code;

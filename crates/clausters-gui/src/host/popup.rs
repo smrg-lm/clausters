@@ -1011,6 +1011,9 @@ pub struct Popups {
     /// The dialog whose close button the pointer is over, which draws it
     /// lit.
     pub close_hover: Option<i32>,
+    /// The section whose bar the pointer is over, which draws its fold mark
+    /// lit: a press anywhere on the bar folds it.
+    pub fold_hover: Option<i32>,
 }
 
 /// **The rectangle a stack hangs off, as it stands now**: its owner's
@@ -1564,6 +1567,17 @@ impl super::Host {
             return false;
         }
         popups.close_hover = dialog;
+        true
+    }
+
+    /// The section of window `def_id` whose bar the pointer is over,
+    /// written by pointer motion. Answers whether it changed.
+    pub(crate) fn set_fold_hover(&mut self, def_id: i32, section: Option<i32>) -> bool {
+        let popups = self.popups.entry(def_id).or_default();
+        if popups.fold_hover == section {
+            return false;
+        }
+        popups.fold_hover = section;
         true
     }
 

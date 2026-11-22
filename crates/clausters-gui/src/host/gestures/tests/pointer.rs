@@ -200,3 +200,31 @@ fn a_multitrack_box_says_which_part_a_press_takes() {
     assert_eq!(g.pointer(), Pointer::Grabbing, "carried");
     g.release(&mut host, &ctx, on_box, y);
 }
+
+/// **A section's fold mark lights while the pointer is over its bar**, as a
+/// dock bar's button does, and goes out off the bar and off the window.
+#[test]
+fn a_sections_fold_mark_lights_over_its_bar() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","children":[
+            {"id":5,"type":"layout","title":"Display","collapsed":false,
+             "children":[{"id":6,"type":"label","text":"inside"}]}]}"#,
+    );
+    let ctx = GestureCtx::new(1, 400, 200);
+    let mut g = Gestures::default();
+    let lit = |host: &Host| host.popups(1).and_then(|p| p.fold_hover);
+    let section = placed_rect(&host, &ctx, 5);
+    let bar = (
+        (section.x + section.w * 0.5) as f64,
+        (section.y + 4.0) as f64,
+    );
+    g.hover(&mut host, &ctx, Some(bar));
+    assert_eq!(lit(&host), Some(5), "over the bar");
+    let inside = placed_rect(&host, &ctx, 6);
+    let below = ((inside.x + 4.0) as f64, (inside.y + inside.h * 0.5) as f64);
+    g.hover(&mut host, &ctx, Some(below));
+    assert_eq!(lit(&host), None, "under the bar");
+    g.hover(&mut host, &ctx, Some(bar));
+    g.hover(&mut host, &ctx, None);
+    assert_eq!(lit(&host), None, "off the window");
+}

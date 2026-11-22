@@ -19,6 +19,7 @@ use clausters_gui_draw::theme::{Color, Theme};
 
 use super::{BarPart, Dock, GroupPlace, Landing, PagePart, Side};
 use crate::host::frame::{draw_stack, draw_tip};
+use crate::host::graphics::bar::{self, button, grip};
 use crate::host::graphics::choice;
 use crate::host::graphics::controls::icon;
 use crate::host::popup::Tip;
@@ -151,19 +152,21 @@ impl Dock {
         };
         let parts = self.bar_parts(group);
         let (mesh, m, theme) = d.parts();
-        let bar = group.strip;
-        mesh.set_clip(Some(bar));
+        let strip = group.strip;
+        mesh.set_clip(Some(strip));
         // the ground at the bar's ends, and under a middle that is not a pane's
         if headed {
-            mesh.rect(Rect::new(bar.x, bar.y, from - bar.x, bar.h), theme.header);
             mesh.rect(
-                Rect::new(to, bar.y, bar.x + bar.w - to, bar.h),
+                Rect::new(strip.x, strip.y, from - strip.x, strip.h),
+                theme.header,
+            );
+            mesh.rect(
+                Rect::new(to, strip.y, strip.x + strip.w - to, strip.h),
                 theme.header,
             );
         } else {
-            mesh.rect(bar, theme.header);
+            mesh.rect(strip, theme.header);
         }
-        let glyph = font::height(size);
         // the close marks last, over the tabs they stand on
         let (marks, parts): (Vec<_>, Vec<_>) = parts
             .into_iter()
@@ -180,15 +183,7 @@ impl Dock {
                 ),
                 BarPart::Title => {
                     let title = self.title(group.panes[group.active]);
-                    font::text_ellipsis(
-                        mesh,
-                        &title,
-                        r.x + m.pad,
-                        r.y + (r.h - glyph) * 0.5,
-                        (r.w - 2.0 * m.pad).max(0.0),
-                        size,
-                        theme.text,
-                    );
+                    bar::title(mesh, r, &title, size, m, theme);
                 }
                 BarPart::Tab(i) => {
                     let shown = i == group.active;
@@ -233,10 +228,7 @@ impl Dock {
         }
         mesh.set_clip(None);
         // the line under the bar, as under every panel's
-        mesh.rect(
-            Rect::new(bar.x, bar.y + bar.h - m.divider_w, bar.w, m.divider_w),
-            theme.separator,
-        );
+        bar::line(mesh, strip, m, theme);
     }
 }
 
@@ -339,36 +331,6 @@ fn tab(
 /// 16.
 fn tab_cross(mesh: &mut Mesh, r: Rect, hot: bool, size: f32, theme: &Theme) {
     button(mesh, r, icon("x", symbol::CLOSE), hot, size * 0.75, theme);
-}
-
-/// A button of a bar: its glyph, on the hover ground under the hand.
-fn button(mesh: &mut Mesh, r: Rect, glyph: char, hot: bool, size: f32, theme: &Theme) {
-    if hot {
-        mesh.rect(r, theme.hover);
-    }
-    font::text_centered(
-        mesh,
-        &glyph.to_string(),
-        r,
-        size,
-        if hot { theme.text } else { theme.text_dim },
-    );
-}
-
-/// The grip: two columns of three dots, what a handle to drag by looks like
-/// -- the icon, or the dots drawn where the host carries no icons.
-fn grip(mesh: &mut Mesh, r: Rect, size: f32, color: Color, unit: f32) {
-    if let Some(icon) = font::outline::icon("grip-vertical") {
-        return font::text_centered(mesh, &icon.to_string(), r, size, color);
-    }
-    let dot = (1.5 * unit).max(1.0);
-    let step = 4.0 * unit.max(1.0);
-    let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.5);
-    for col in [-0.5, 0.5] {
-        for row in [-1.0, 0.0, 1.0] {
-            mesh.disc(cx + col * step, cy + row * step, dot, color);
-        }
-    }
 }
 
 /// `r` with `by` taken off every side.

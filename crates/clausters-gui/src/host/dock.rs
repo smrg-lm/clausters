@@ -898,10 +898,7 @@ impl Dock {
     /// The text size of the bars and the tabs: the interface's size of the
     /// type scale.
     pub fn text_size(&self) -> f32 {
-        clausters_gui_draw::font::em_scale(
-            clausters_gui_draw::font::Family::Ui,
-            self.metrics.type_sm,
-        )
+        crate::host::graphics::bar::text_size(&self.metrics)
     }
 
     /// **The pointer moved to `(x, y)`**: the pane a press holds, if one

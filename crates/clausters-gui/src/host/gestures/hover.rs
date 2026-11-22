@@ -78,12 +78,19 @@ impl Gestures {
         let at_tree = at.filter(|&(x, y)| !card::on_card(host, ctx, x, y));
         let over = at_tree.and_then(|(x, y)| hovered(host, ctx, x, y));
         let mut changed = host.set_hover(def_id, over);
-        // a dialog's close button lights under the hand, as a ghost button
-        let close = at_tree.and_then(|(x, y)| {
-            let placed = host.layout_window(def_id, ctx.fb_w, ctx.fb_h)?;
-            crate::host::chrome::close_at(&placed, x, y)
-        });
+        // a dialog's close button lights under the hand, as a ghost button,
+        // and so does a section's fold mark, as a bar's button
+        let (close, fold) = at_tree
+            .and_then(|(x, y)| {
+                let placed = host.layout_window(def_id, ctx.fb_w, ctx.fb_h)?;
+                Some((
+                    crate::host::chrome::close_at(&placed, x, y),
+                    crate::host::chrome::fold_at(&placed, x, y).map(|(id, _)| id),
+                ))
+            })
+            .unwrap_or_default();
         changed |= host.set_close_hover(def_id, close);
+        changed |= host.set_fold_hover(def_id, fold);
         self.rest_moved(host, ctx, at, &mut out);
         if at.is_none() {
             changed |= host.set_bar_hover(def_id, None);

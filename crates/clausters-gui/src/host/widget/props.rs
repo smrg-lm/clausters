@@ -938,12 +938,13 @@ impl Group {
         }
     }
 
-    /// The height of the title strip -- one line of control -- or zero for a
+    /// The height of the title strip -- a panel's bar, one line of control
+    /// of the bar's text ([`crate::host::graphics::bar`]) -- or zero for a
     /// group with no title. A dialog has none: its title is part of its
     /// header, inside its card ([`crate::host::chrome::Head`]).
     pub fn strip_h(&self, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
         if self.title.is_some() && !self.modal {
-            m.control_h
+            crate::host::widget::size::control_box(crate::host::graphics::bar::text_size(m), m)
         } else {
             0.0
         }

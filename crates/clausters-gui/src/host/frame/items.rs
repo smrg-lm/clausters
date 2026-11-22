@@ -11,6 +11,7 @@
 
 use super::super::widget::element::{Samples, SlotKey, TextureLook};
 use super::*;
+use crate::host::graphics::bar;
 
 /// A placed `track` lane and its clips, copied out of the host tree so the
 /// graphic-unit overlay is drawn after the tree borrow is released. The clips'
@@ -156,8 +157,13 @@ pub(super) fn collect_widgets(
         let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
             WidgetKind::Panel { group, .. } => {
-                let lit = p.widget.id.is_some()
-                    && p.widget.id == inputs.popups.and_then(|o| o.close_hover);
+                let lit = |of: fn(&crate::host::popup::Popups) -> Option<i32>| {
+                    p.widget.id.is_some() && p.widget.id == inputs.popups.and_then(of)
+                };
+                let lit = Lit {
+                    close: lit(|o| o.close_hover),
+                    fold: lit(|o| o.fold_hover),
+                };
                 draw_group(mesh, p, group, in_card, lit, m, th)
             }
             WidgetKind::Scroll { .. } | WidgetKind::Stack { .. } => mesh.rect(p.rect, th.panel),
@@ -390,6 +396,14 @@ pub(crate) fn focus_ring(mesh: &mut Mesh, widget: &Widget, rect: Rect, m: &Metri
     mesh.round_border(around, w, radius + w, with_alpha(th.focus, 0.5));
 }
 
+/// What of a group's own chrome is under the hand: a dialog's close button,
+/// a section's fold mark.
+#[derive(Clone, Copy)]
+struct Lit {
+    close: bool,
+    fold: bool,
+}
+
 /// Draws a `layout`'s own picture: its ground, and what it shows of itself --
 /// a title strip with the mark that says whether it is folded, and a frame.
 ///
@@ -401,12 +415,12 @@ fn draw_group(
     p: &layout::Placed<'_>,
     group: &crate::host::widget::Group,
     in_card: bool,
-    close_lit: bool,
+    lit: Lit,
     m: &Metrics,
     th: &Theme,
 ) {
     if group.modal {
-        return draw_card(mesh, p, group, close_lit, m, th);
+        return draw_card(mesh, p, group, lit.close, m, th);
     }
     if in_card {
         if group.frame {
@@ -419,33 +433,24 @@ fn draw_group(
         mesh.rect(p.rect, th.panel);
     }
     if let (Some(title), Some(strip)) = (&group.title, chrome::title_strip(p)) {
-        let size = m.text_scale;
-        mesh.rect(strip, th.header);
-        let ty = strip.y + (strip.h - font::height(size)) * 0.5;
-        let mut x = strip.x + m.pad;
-        // A section says which way it stands; a plain group has nothing to say.
+        // **A titled group's strip is a panel's bar**: the dock's ground and
+        // line, and of its parts the fold mark, for a section, and the title
+        let size = bar::text_size(m);
+        bar::ground(mesh, strip, m, th);
+        let mut rest = strip;
         if let Some(folded) = group.collapsed {
-            let mark = if folded {
-                font::symbol::POINT_RIGHT
-            } else {
-                font::symbol::POINT_DOWN
-            };
-            font::text(mesh, &mark.to_string(), x, ty, size, th.accent);
-            x += font::advance(size) + m.pad;
+            let mark = chrome::fold_mark(strip);
+            bar::fold(mesh, mark, folded, lit.fold, size, th);
+            rest.x = mark.x + mark.w;
+            rest.w = (strip.x + strip.w - rest.x).max(0.0);
         }
         // A dialog's strip ends in its close mark, and the title stops short
         // of it.
         let close = chrome::close_mark(p);
-        let end = close.map_or(strip.x + strip.w, |c| c.x);
-        font::text_ellipsis(
-            mesh,
-            title,
-            x,
-            ty,
-            (end - m.pad - x).max(0.0),
-            size,
-            th.text,
-        );
+        if let Some(c) = close {
+            rest.w = (c.x - rest.x).max(0.0);
+        }
+        bar::title(mesh, rest, title, size, m, th);
         if let Some(c) = close {
             font::text_centered(mesh, &font::symbol::CLOSE.to_string(), c, size, th.text_dim);
         }
