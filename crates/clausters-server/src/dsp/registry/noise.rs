@@ -128,4 +128,28 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, ctx| Box::new(Crackle::new(ctx.rand())),
     )),
+    // --- the dynamic noises and the logistic map ---
+    desc_draws(plain("LFDNoise0", I_FREQ500, |_, ctx| {
+        Box::new(LfdNoise::new(LfdShape::Step, ctx.rand()))
+    })),
+    desc_draws(plain("LFDNoise1", I_FREQ500, |_, ctx| {
+        Box::new(LfdNoise::new(LfdShape::Linear, ctx.rand()))
+    })),
+    desc_draws(plain("LFDNoise3", I_FREQ500, |_, ctx| {
+        Box::new(LfdNoise::new(LfdShape::Cubic, ctx.rand()))
+    })),
+    desc_draws(plain("LFDClipNoise", I_FREQ500, |_, ctx| {
+        Box::new(LfdNoise::new(LfdShape::Clip, ctx.rand()))
+    })),
+    plain(
+        "Logistic",
+        &[
+            inp("chaos_param", 3.0),
+            inp("freq", 1000.0),
+            inp("init", 0.5),
+        ],
+        |_, _| Box::new(Logistic::new()),
+    ),
 ];
+
+const I_FREQ500: &[UGenInput] = &[inp("freq", 500.0)];

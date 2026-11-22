@@ -29,3 +29,11 @@ def record_buf(bufnum, chan, signal, offset=0.0, rec_level=1.0, pre_level=0.0,
     """
     return Ugen("RecordBuf", [bufnum, chan, signal, offset, rec_level, pre_level,
                               run, loop, trigger, int(done_action)])
+
+
+def t_windex(trig, weights, normalize=0.0) -> Ugen:
+    """At each rising edge of `trig`, an index drawn with the probabilities of
+    `weights` (summing to 1, or divided by their sum with `normalize` 1) --
+    the weighted choice a `select` then reads a list by. A draw is made at the
+    start too. What unnormalized weights leave over goes to the last index."""
+    return Ugen("TWindex", [trig, normalize, *weights])

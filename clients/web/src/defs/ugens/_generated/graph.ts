@@ -115,3 +115,16 @@ export const t2k = (signal: Channel): Ugen => new Ugen("T2K", [signal]);
 
 /** The constant `signal`, taken at the synth's start and held. */
 export const dc = (signal: Channel): Ugen => new Ugen("DC", [signal]);
+
+/**
+ * `signal`'s bits through an integer hash, as a value in +/-1: noise that is
+ * a function of its input, the same for the same input every time.
+ */
+export const hasher = (signal: Channel): Ugen => new Ugen("Hasher", [signal]);
+
+/**
+ * `signal` with only the top `bits` (0 to 23) of its mantissa kept: the same
+ * relative coarseness at every level.
+ */
+export const mantissaMask = (signal: Channel, bits: Channel = 3.0): Ugen =>
+    new Ugen("MantissaMask", [signal, bits]);

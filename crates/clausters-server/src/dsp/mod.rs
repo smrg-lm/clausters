@@ -28,6 +28,8 @@ pub mod binop;
 pub mod bound;
 #[cfg(feature = "synth")]
 pub mod buf;
+#[cfg(feature = "synth")]
+pub mod chaos;
 // `conv` is listed with the core modules below: its kernel layout is data
 // the `/buffer_gen prepare_partconv` routine (feature-independent) writes; only
 // the UGen inside it is synth-gated.
@@ -116,6 +118,8 @@ pub mod spectral;
 // in every build, natively and in a page.
 #[cfg(feature = "synth")]
 pub mod stream;
+#[cfg(feature = "synth")]
+pub mod tables;
 
 /// **How many frames a list replaced while it plays fades out over, and the
 /// new one in** (`TransportDiskIn`): under three

@@ -52,3 +52,15 @@ export const recordBuf = (
         opts.trigger ?? 0.0,
         opts.doneAction ?? 0,
     ]);
+
+/**
+ * At each rising edge of `trig`, an index drawn with the probabilities of
+ * `weights` (summing to 1, or divided by their sum with `normalize` 1) -- the
+ * weighted choice a `select` then reads a list by. A draw is made at the start
+ * too. What unnormalized weights leave over goes to the last index.
+ */
+export const tWindex = (
+    trig: Channel,
+    weights: readonly Channel[],
+    normalize: Channel = 0.0,
+): Ugen => new Ugen("TWindex", [trig, normalize, ...weights]);

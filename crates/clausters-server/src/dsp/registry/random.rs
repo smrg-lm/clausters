@@ -133,4 +133,17 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, ctx| Box::new(RandSeed::new(ctx.rand())),
     )),
+    // A weighted choice of an index: the trigger and the normalize flag, then
+    // the weights.
+    desc_draws(desc(
+        "TWindex",
+        Variadic,
+        &[inp("trig", 0.0), inp("normalize", 0.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, ctx| Box::new(TWindex::new(ctx.rand())),
+    )),
 ];

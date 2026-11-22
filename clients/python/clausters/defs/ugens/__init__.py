@@ -82,6 +82,8 @@ from .graph import (
     mix,
     sum3,
     sum4,
+    hasher,
+    mantissa_mask,
     lin_exp,
     in_range,
     in_rect,
@@ -129,6 +131,11 @@ from .osc import (
     blip,
     formant,
     klang,
+    lfd_noise0,
+    lfd_noise1,
+    lfd_noise3,
+    lfd_clip_noise,
+    logistic,
 )
 from .filter import (
     allpass_c,
@@ -260,6 +267,14 @@ from .buf import (
     record_buf,
     vosc3,
     cosc,
+    index,
+    index_l,
+    wrap_index,
+    fold_index,
+    index_in_between,
+    detect_index,
+    degree_to_key,
+    t_windex,
 )
 from .spectral import (
     conv,
@@ -353,7 +368,7 @@ from .env import (
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
-    {"EnvGen", "IEnvGen", "Klang", "Klank", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+    {"EnvGen", "IEnvGen", "Klang", "Klank", "TWindex", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
 #: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
@@ -637,6 +652,21 @@ __all__ = [
     "points_to_env",
     "quads",
     "x_line",
+    "lfd_noise0",
+    "lfd_noise1",
+    "lfd_noise3",
+    "lfd_clip_noise",
+    "logistic",
+    "hasher",
+    "mantissa_mask",
+    "index",
+    "index_l",
+    "wrap_index",
+    "fold_index",
+    "index_in_between",
+    "detect_index",
+    "degree_to_key",
+    "t_windex",
     "fsin_osc",
     "sin_osc_fb",
     "psin_grain",

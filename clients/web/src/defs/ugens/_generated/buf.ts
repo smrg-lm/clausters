@@ -291,3 +291,47 @@ export const cosc = (
     freq: Channel = 440.0,
     beats: Channel = 0.5,
 ): Ugen => new Ugen("COsc", [bufnum, freq, beats]);
+
+/**
+ * The buffer as a table: its value at `signal` truncated, the index clipped
+ * to the table.
+ */
+export const index = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("Index", [bufnum, signal]);
+
+/**
+ * The buffer as a table read at a fractional index, linearly between the two
+ * values either side, the index clipped to the table.
+ */
+export const indexL = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("IndexL", [bufnum, signal]);
+
+/** `index` with the index wrapped around the table. */
+export const wrapIndex = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("WrapIndex", [bufnum, signal]);
+
+/** `index` with the index reflected at the table's ends. */
+export const foldIndex = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("FoldIndex", [bufnum, signal]);
+
+/**
+ * The inverse of `indexL` over an ascending table: the fractional index at
+ * which the table reaches `signal`.
+ */
+export const indexInBetween = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("IndexInBetween", [bufnum, signal]);
+
+/** The index of the first table value equal to `signal`, or -1. */
+export const detectIndex = (bufnum: Channel, signal: Channel): Ugen =>
+    new Ugen("DetectIndex", [bufnum, signal]);
+
+/**
+ * A scale degree to a key: the buffer holds one octave of the scale, and
+ * degree `signal` (floored) is its step plus `octave` per whole octave up or
+ * down. Degree -1 is the last step an octave down.
+ */
+export const degreeToKey = (
+    bufnum: Channel,
+    signal: Channel,
+    octave: Channel = 12.0,
+): Ugen => new Ugen("DegreeToKey", [bufnum, signal, octave]);

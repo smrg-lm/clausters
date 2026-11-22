@@ -42,6 +42,11 @@ __all__ = [
     "psin_grain",
     "blip",
     "formant",
+    "lfd_noise0",
+    "lfd_noise1",
+    "lfd_noise3",
+    "lfd_clip_noise",
+    "logistic",
 ]
 
 
@@ -345,3 +350,33 @@ def formant(fundfreq=440.0, formfreq=1760.0, bwfreq=880.0) -> Ugen:
     spectrum peaks at `formfreq` whatever the fundamental.
     """
     return Ugen("Formant", [fundfreq, formfreq, bwfreq])
+
+
+def lfd_noise0(freq=500.0) -> Ugen:
+    """A random value `freq` times a second, held: `lf_noise0` whose rate can
+    move, taking effect at once, at the cost of a phase per sample.
+    """
+    return Ugen("LFDNoise0", [freq])
+
+
+def lfd_noise1(freq=500.0) -> Ugen:
+    """`lfd_noise0` joined by straight lines."""
+    return Ugen("LFDNoise1", [freq])
+
+
+def lfd_noise3(freq=500.0) -> Ugen:
+    """`lfd_noise0` joined by a cubic through four values, within +/-1."""
+    return Ugen("LFDNoise3", [freq])
+
+
+def lfd_clip_noise(freq=500.0) -> Ugen:
+    """`lfd_noise0` with only +/-1."""
+    return Ugen("LFDClipNoise", [freq])
+
+
+def logistic(chaos_param=3.0, freq=1000.0, init=0.5) -> Ugen:
+    """The logistic map `y = r y (1 - y)`, `r` the `chaos_param`, iterated `freq`
+    times a second from `init` and held between: chaos from about 3.57 on,
+    cycles below.
+    """
+    return Ugen("Logistic", [chaos_param, freq, init])

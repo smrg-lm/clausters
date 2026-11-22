@@ -265,4 +265,10 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         |_, _| Box::new(T2K),
     ),
     plain("DC", &[inp("signal", 0.0)], |_, _| Box::new(Dc::default())),
+    plain("Hasher", I_SIGNAL, |_, _| Box::new(Hasher)),
+    plain(
+        "MantissaMask",
+        &[inp("signal", 0.0), inp("bits", 3.0)],
+        |_, _| Box::new(MantissaMask),
+    ),
 ];

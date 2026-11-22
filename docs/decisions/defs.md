@@ -1624,3 +1624,16 @@ What the comparison allows is part of the decision:
   - `Blip`, in a block where the harmonic count is clipped to Nyquist,
     advances its phase at the larger of the last and the new frequency; here
     at the frequency.
+  - `IndexL` truncates a negative index toward zero and interpolates by its
+    fraction, reading between the first two values below the table; here
+    below the table is its first value.
+  - `DegreeToKey` takes C's remainder of a negative degree, so a whole
+    negative octave reads one past the table, and truncates its octave to an
+    integer; here the degree divides as a scale does and the octave is any
+    size.
+  - `TWindex` answers an index past the weights where unnormalized weights
+    leave probability over; here that probability goes to the last index,
+    which is where `Select` would clip scsynth's to.
+  - The dynamic noises (`LFDNoise0`, `LFDNoise1`, `LFDNoise3`,
+    `LFDClipNoise`) only move their phase down, so a negative frequency
+    freezes them; here the rate is the frequency's magnitude.

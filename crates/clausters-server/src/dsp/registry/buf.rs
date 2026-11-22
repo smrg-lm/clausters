@@ -232,4 +232,40 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(COsc::new()),
     ),
+    // --- a buffer read as a table of values ---
+    plain(
+        "Index",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(Index::new(IndexMode::Clip)),
+    ),
+    plain(
+        "IndexL",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(IndexL),
+    ),
+    plain(
+        "WrapIndex",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(Index::new(IndexMode::Wrap)),
+    ),
+    plain(
+        "FoldIndex",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(Index::new(IndexMode::Fold)),
+    ),
+    plain(
+        "IndexInBetween",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(IndexInBetween),
+    ),
+    plain(
+        "DetectIndex",
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
+        |_, _| Box::new(DetectIndex::default()),
+    ),
+    plain(
+        "DegreeToKey",
+        &[inp("bufnum", 0.0), inp("signal", 0.0), inp("octave", 12.0)],
+        |_, _| Box::new(DegreeToKey),
+    ),
 ];

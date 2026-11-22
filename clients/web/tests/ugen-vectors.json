@@ -983,6 +983,24 @@
       ]
     },
     {
+      "name": "DegreeToKey",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "octave",
+          "default": 12.0
+        }
+      ]
+    },
+    {
       "name": "Delay1",
       "arity": 2,
       "inputs": [
@@ -1070,6 +1088,20 @@
         },
         {
           "name": "source",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "DetectIndex",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
           "default": 0.0
         }
       ]
@@ -1485,6 +1517,20 @@
       ]
     },
     {
+      "name": "FoldIndex",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Formant",
       "arity": 3,
       "inputs": [
@@ -1589,6 +1635,16 @@
     },
     {
       "name": "HPZ2",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Hasher",
       "arity": 1,
       "inputs": [
         {
@@ -1718,6 +1774,48 @@
       ]
     },
     {
+      "name": "Index",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "IndexInBetween",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "IndexL",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Integrator",
       "arity": 2,
       "inputs": [
@@ -1798,6 +1896,46 @@
         {
           "name": "iphase",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "LFDClipNoise",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 500.0
+        }
+      ]
+    },
+    {
+      "name": "LFDNoise0",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 500.0
+        }
+      ]
+    },
+    {
+      "name": "LFDNoise1",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 500.0
+        }
+      ]
+    },
+    {
+      "name": "LFDNoise3",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 500.0
         }
       ]
     },
@@ -2232,6 +2370,38 @@
         {
           "name": "signal",
           "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Logistic",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "chaos_param",
+          "default": 3.0
+        },
+        {
+          "name": "freq",
+          "default": 1000.0
+        },
+        {
+          "name": "init",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "name": "MantissaMask",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "signal",
+          "default": 0.0
+        },
+        {
+          "name": "bits",
+          "default": 3.0
         }
       ]
     },
@@ -3612,6 +3782,20 @@
       ]
     },
     {
+      "name": "TWindex",
+      "arity": -1,
+      "inputs": [
+        {
+          "name": "trig",
+          "default": 0.0
+        },
+        {
+          "name": "normalize",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "Timer",
       "arity": 1,
       "inputs": [
@@ -3950,6 +4134,20 @@
         {
           "name": "hi",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "WrapIndex",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
         }
       ]
     },

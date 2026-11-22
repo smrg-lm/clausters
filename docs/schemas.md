@@ -694,6 +694,8 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `T2A` | signal, offset | a control-rate trigger at audio rate: at a rising edge, the sample `offset` into the block takes its value |
 | `T2K` | signal | an audio-rate trigger at control rate: the block's largest sample, 0 when none is positive |
 | `DC` | signal | the constant `signal`, taken at the start and held |
+| `Hasher` | signal | the input's bits through scsynth's integer hash, as a value in ±1: noise that is a function of its input |
+| `MantissaMask` | signal, bits | the input with only the top `bits` (0..23) of its mantissa kept |
 | `Sum3` | a, b, c | `a + b + c` |
 | `Sum4` | a, b, c, d | `a + b + c + d` |
 | `In` | bus | copies an audio bus (read once per block) |
@@ -718,6 +720,11 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `VOsc3` | bufpos, freq1, freq2, freq3 (Hz) | `VOsc`'s morphing table read at three frequencies and summed |
 | `COsc` | bufnum, freq (Hz), beats (Hz) | `Osc` twice, at `freq ± beats/2`, summed: two voices beating `beats` times a second; peak twice the table's |
 | `Shaper` | bufnum, signal | waveshaper: maps `signal` (in ±1, clamped) through a transfer table in wavetable format (typically `/buffer_gen cheby`); the table's first point is `signal = −1` and the end of its last pair `signal = +1`, as scsynth's |
+| `Index`, `WrapIndex`, `FoldIndex` | bufnum, signal | the buffer as a table (its samples in order, channels interleaved): the value at `signal` truncated, the index clipped, wrapped or folded into it |
+| `IndexL` | bufnum, signal | the table at a fractional index, linear between neighbours, the index clipped. scsynth interpolates a negative index by its fraction; here below the table is its first value |
+| `IndexInBetween` | bufnum, signal | the inverse of `IndexL` over an ascending table: the fractional index where the table reaches `signal`, by scsynth's search from the start |
+| `DetectIndex` | bufnum, signal | the index of the first table value equal to `signal`, or −1 |
+| `DegreeToKey` | bufnum, signal, octave | a scale degree to a key: the table is one octave of steps, degree `⌊signal⌋` its step plus `octave` per whole octave, below included. scsynth reads past the table at a negative whole octave and truncates `octave`; here the degree divides as a scale does and `octave` is any size |
 | `DiskIn` | chan | streams a file from disk (mono per UGen — `chan` picks the channel); needs a `path` field; `start` is the file frame it begins at (default 0); `loop` restarts at the file's top at end of stream; a W64 or an RF64 is read by arithmetic, its start a seek; see streaming note below |
 | `DiskOut` | signal | streams `signal` to a mono sound file on disk — a WAV, closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the `path` ends in `.w64` or `.rf64`; needs a `path` field; `format` is the sample format; passes `signal` through as its output |
 | `LocalIn` | channel | reads synth-private feedback channel `channel` (a constant); see feedback note below |
@@ -740,6 +747,8 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `LFNoise1` | freq | the same, ramped linearly between values |
 | `LFNoise2` | freq | the same, quadratic between values — no corners, and it **overshoots** to about ±1.7 |
 | `LFClipNoise` | freq | `LFNoise0` restricted to ±1 |
+| `LFDNoise0`, `LFDNoise1`, `LFDNoise3`, `LFDClipNoise` | freq | the dynamic noises: held, linear, cubic (values within ±0.8, so within ±1) or ±1, their position a phase per sample, so a change of `freq` takes effect at once. scsynth's, its phase in `f32`; a negative `freq` is its magnitude, where scsynth's freezes |
+| `Logistic` | chaos_param, freq, init | the logistic map `y = r·y·(1 − y)` iterated `freq` times a second from `init`, held between; scsynth's constructor iterates once before the first block, so its output starts an iterate later |
 | `Dust` | density | random impulses in [0, 1) at a **mean** `density` per second — exponential gaps, not a clock |
 | `Dust2` | density | the same, firing both ways in ±1 |
 | `Crackle` | chaos | the chaotic map `y[n] = |chaos·y[n-1] − y[n-2] − 0.05|`; deterministic, one-sided (carries DC) |
@@ -782,6 +791,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `NRand` | lo, hi, n | one value in `[lo, hi)`, the mean of `n` draws, drawn once and held; `ir` |
 | `TRand`, `TIRand`, `TExpRand` | lo, hi, trig | a uniform, integer or log-uniform value drawn at the start and again at each rising edge of `trig`, held between |
 | `CoinGate` | prob, trig | each rising edge of `trig` passes (its own value, for that sample) with probability `prob`; 0 otherwise |
+| `TWindex` | trig, normalize, *weights* | at each rising edge of `trig` (and at the start), an index drawn with the weights' probabilities, divided by their sum with `normalize` 1. What unnormalized weights leave goes to the last index, where scsynth answers one past the weights |
 | `RandID` | id | chooses which of the server's 64 generators the synth's random UGens draw from, from its place in the graph on (0 until it runs); outputs 0 |
 | `RandSeed` | trig, seed | at each rising edge of `trig`, reseeds the generator the synth draws from with `seed` (at `ir`, once at the start), so every synth drawing from it restarts the same sequence; outputs 0 |
 | `Demand` | trig, reset, source | demand driver: pulls the next value from `source` on each rising edge of `trig`, holds it between triggers; a rising `reset` restarts the stream; 0 before the first trigger, the last value once the stream ends — see the demand note below |

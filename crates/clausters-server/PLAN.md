@@ -1659,7 +1659,10 @@ holds what is open.
     `IEnvGen`, `LinExp`, `InRange`, `InRect`, `ModDif`, `Unwrap`, `AmpComp`,
     `AmpCompA`, `K2A`, `A2K`, `T2A`, `T2K`, `DC`; `OscUGens.cpp`'s
     oscillators: `FSinOsc`, `SinOscFB`, `Blip`, `Formant`, `COsc`, `VOsc3`,
-    `Klang`, `Klank`, `PSinGrain`.
+    `Klang`, `Klank`, `PSinGrain`; the tables and the small noises: `Index`,
+    `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
+    `DegreeToKey`, `TWindex`, `Hasher`, `MantissaMask`, `Logistic`,
+    `LFDNoise0`, `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1681,11 +1684,6 @@ holds what is open.
     names, 17 of them out of scope above, 190 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **3. Tables and the small noises:** `OscUGens.cpp`'s `Index`,
-      `IndexL`, `WrapIndex`, `FoldIndex`, `IndexInBetween`, `DetectIndex`,
-      `DegreeToKey`, `TWindex`; `NoiseUGens.cpp`'s `Hasher`,
-      `MantissaMask`, `Logistic`; `DynNoiseUGens.cpp`'s `LFDNoise0`,
-      `LFDNoise1`, `LFDNoise3`, `LFDClipNoise`.
     - ⬜ **4. `ChaosUGens.cpp` and `GendynUGens.cpp`:** the 24 maps
       (`CuspN/L`, `FBSineN/L/C`, `GbmanN/L`, `HenonN/L/C`,
       `LatoocarfianN/L/C`, `LinCongN/L/C`, `LorenzL`, `QuadN/L/C`,

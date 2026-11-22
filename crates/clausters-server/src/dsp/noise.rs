@@ -532,3 +532,132 @@ impl UGen for Crackle {
         }
     }
 }
+
+/// Which dynamic noise an [`LfdNoise`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LfdShape {
+    /// `LFDNoise0`: each value held.
+    Step,
+    /// `LFDClipNoise`: held, only +/-1.
+    Clip,
+    /// `LFDNoise1`: a line from one value to the next.
+    Linear,
+    /// `LFDNoise3`: a cubic through four values, drawn within +/-0.8 so its
+    /// overshoot stays within +/-1.
+    Cubic,
+}
+
+/// scsynth's `float` `sc_wrap` into `[lo, hi)`.
+#[inline]
+fn sc_wrap(x: f32, lo: f32, hi: f32) -> f32 {
+    let range = hi - lo;
+    let y = if x >= hi {
+        x - range
+    } else if x < lo {
+        x + range
+    } else {
+        return x;
+    };
+    if (lo..hi).contains(&y) {
+        y
+    } else if hi == lo {
+        lo
+    } else {
+        y - range * ((y - lo) / range).floor()
+    }
+}
+
+/// `LFDNoise0`, `LFDClipNoise`, `LFDNoise1`, `LFDNoise3`: a random value
+/// `freq` times a second, held, joined by lines or by a cubic -- the
+/// **dynamic** forms of the `LFNoise` family. Their position in the segment
+/// is a phase, recomputed every sample, so a change of `freq` takes effect at
+/// once rather than at the next value; the price is a phase per sample, which
+/// is why the `LFNoise` forms stay for a fixed rate.
+///
+/// scsynth's, its phase in `f32` so the values fall on its samples, and its
+/// draws in its order. Its phase only decreases, so a negative frequency
+/// freezes it; here the rate is the frequency's magnitude.
+pub struct LfdNoise {
+    rand: SynthRand,
+    shape: LfdShape,
+    phase: f32,
+    /// The values: `[a, b, c, d]` for the cubic, `[prev, next, ..]` for the
+    /// line, `[level, ..]` for the steps.
+    v: [f32; 4],
+    started: bool,
+}
+
+impl LfdNoise {
+    pub fn new(shape: LfdShape, rand: SynthRand) -> Self {
+        Self {
+            rand,
+            shape,
+            phase: 0.0,
+            v: [0.0; 4],
+            started: false,
+        }
+    }
+}
+
+impl UGen for LfdNoise {
+    fn reset(&mut self) {
+        self.started = false;
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        if !self.started {
+            self.started = true;
+            self.phase = 0.0;
+            // The values scsynth's constructor draws.
+            self.v = match self.shape {
+                LfdShape::Step | LfdShape::Clip => [0.0; 4],
+                LfdShape::Linear => [0.0, self.rand.draw(|g| g.frand2()), 0.0, 0.0],
+                LfdShape::Cubic => self.rand.draw(|g| {
+                    let mut v = [0.0; 4];
+                    for x in v.iter_mut() {
+                        *x = g.frand2() * 0.8;
+                    }
+                    v
+                }),
+            };
+        }
+        // scsynth's sample duration, rounded to f32 from the double.
+        let dur = (1.0 / ctx.sample_rate as f64) as f32;
+        let freq = inputs[0];
+        for (i, s) in output.iter_mut().enumerate() {
+            self.phase -= at(freq, i).abs() * dur;
+            if self.phase < 0.0 {
+                self.phase = sc_wrap(self.phase, 0.0, 1.0);
+                let v = &mut self.v;
+                match self.shape {
+                    LfdShape::Step => v[0] = self.rand.draw(|g| g.frand2()),
+                    LfdShape::Clip => v[0] = self.rand.draw(|g| g.fcoin()),
+                    LfdShape::Linear => {
+                        v[0] = v[1];
+                        v[1] = self.rand.draw(|g| g.frand2());
+                    }
+                    LfdShape::Cubic => {
+                        v.copy_within(1.., 0);
+                        v[3] = self.rand.draw(|g| g.frand2()) * 0.8;
+                    }
+                }
+            }
+            let v = &self.v;
+            *s = match self.shape {
+                LfdShape::Step | LfdShape::Clip => v[0],
+                LfdShape::Linear => v[1] + self.phase * (v[0] - v[1]),
+                LfdShape::Cubic => cubic32(1.0 - self.phase, v[0], v[1], v[2], v[3]),
+            };
+        }
+    }
+}
+
+/// scsynth's `cubicinterp`, in `f32` as its is: the four-point Hermite.
+#[inline]
+fn cubic32(x: f32, y0: f32, y1: f32, y2: f32, y3: f32) -> f32 {
+    let c0 = y1;
+    let c1 = 0.5 * (y2 - y0);
+    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    ((c3 * x + c2) * x + c1) * x + c0
+}

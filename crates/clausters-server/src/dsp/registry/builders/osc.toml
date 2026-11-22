@@ -343,3 +343,41 @@ spectrum peaks at `formfreq` whatever the fundamental.
 [[hand]]
 kind = "Klang"
 why = "the partials' lists lead, where their triples trail on the wire"
+
+[[ugen]]
+kind = "LFDNoise0"
+builder = "lfd_noise0"
+doc = '''
+A random value `freq` times a second, held: `lf_noise0` whose rate can
+move, taking effect at once, at the cost of a phase per sample.
+'''
+
+[[ugen]]
+kind = "LFDNoise1"
+builder = "lfd_noise1"
+doc = '''
+`lfd_noise0` joined by straight lines.
+'''
+
+[[ugen]]
+kind = "LFDNoise3"
+builder = "lfd_noise3"
+doc = '''
+`lfd_noise0` joined by a cubic through four values, within +/-1.
+'''
+
+[[ugen]]
+kind = "LFDClipNoise"
+builder = "lfd_clip_noise"
+doc = '''
+`lfd_noise0` with only +/-1.
+'''
+
+[[ugen]]
+kind = "Logistic"
+builder = "logistic"
+doc = '''
+The logistic map `y = r y (1 - y)`, `r` the `chaos_param`, iterated `freq`
+times a second from `init` and held between: chaos from about 3.57 on,
+cycles below.
+'''

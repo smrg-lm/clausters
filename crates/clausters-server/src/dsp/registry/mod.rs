@@ -17,6 +17,7 @@ use crate::dsp::banks::{Klang, Klank};
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::bound::Bound;
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, BufWr, PlayBuf, RecordBuf, TransportBufRd};
+use crate::dsp::chaos::Logistic;
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{
@@ -34,17 +35,21 @@ use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
 use crate::dsp::lfo::{LfGauss, Vibrato};
 use crate::dsp::line::{Line, LineShape};
 use crate::dsp::local::{LocalIn, LocalOut};
-use crate::dsp::maps::{AmpComp, AmpCompA, InRange, InRect, LinExp, ModDif, Unwrap};
+use crate::dsp::maps::{
+    AmpComp, AmpCompA, Hasher, InRange, InRect, LinExp, MantissaMask, ModDif, Unwrap,
+};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
 use crate::dsp::noise::{
-    BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
-    WhiteNoise,
+    BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, LfdNoise,
+    LfdShape, PinkNoise, WhiteNoise,
 };
 use crate::dsp::osc::{COsc, Osc, OscN, Shaper, VOsc, VOsc3};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, SyncSaw, TransportFade, TransportPos};
 use crate::dsp::rand::SynthRand;
-use crate::dsp::random::{CoinGate, Once, OnceKind, RandId, RandSeed, Triggered, TriggeredKind};
+use crate::dsp::random::{
+    CoinGate, Once, OnceKind, RandId, RandSeed, TWindex, Triggered, TriggeredKind,
+};
 use crate::dsp::randop::RandOp;
 use crate::dsp::rangemap::RangeMap;
 use crate::dsp::rates::{A2K, Dc, K2A, T2A, T2K};
@@ -56,6 +61,7 @@ use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
     PvMagFreeze, PvMagSmear,
 };
+use crate::dsp::tables::{DegreeToKey, DetectIndex, Index, IndexInBetween, IndexL, IndexMode};
 use crate::dsp::trig::{
     Changed, Counter, CounterMode, Decay, DetectSilence, Elapsed, ElapsedMode, FlipFlop,
     FlipFlopMode, Hold, HoldMode, Schmidt, Stepper, TrigMode, TrigPulse,

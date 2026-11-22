@@ -38,6 +38,13 @@ __all__ = [
     "rand_seed",
     "vosc3",
     "cosc",
+    "index",
+    "index_l",
+    "wrap_index",
+    "fold_index",
+    "index_in_between",
+    "detect_index",
+    "degree_to_key",
 ]
 
 
@@ -300,3 +307,47 @@ def cosc(bufnum, freq=440.0, beats=0.5) -> Ugen:
     twice the table's.
     """
     return Ugen("COsc", [bufnum, freq, beats])
+
+
+def index(bufnum, signal) -> Ugen:
+    """The buffer as a table: its value at `signal` truncated, the index clipped
+    to the table.
+    """
+    return Ugen("Index", [bufnum, signal])
+
+
+def index_l(bufnum, signal) -> Ugen:
+    """The buffer as a table read at a fractional index, linearly between the two
+    values either side, the index clipped to the table.
+    """
+    return Ugen("IndexL", [bufnum, signal])
+
+
+def wrap_index(bufnum, signal) -> Ugen:
+    """`index` with the index wrapped around the table."""
+    return Ugen("WrapIndex", [bufnum, signal])
+
+
+def fold_index(bufnum, signal) -> Ugen:
+    """`index` with the index reflected at the table's ends."""
+    return Ugen("FoldIndex", [bufnum, signal])
+
+
+def index_in_between(bufnum, signal) -> Ugen:
+    """The inverse of `index_l` over an ascending table: the fractional index at
+    which the table reaches `signal`.
+    """
+    return Ugen("IndexInBetween", [bufnum, signal])
+
+
+def detect_index(bufnum, signal) -> Ugen:
+    """The index of the first table value equal to `signal`, or -1."""
+    return Ugen("DetectIndex", [bufnum, signal])
+
+
+def degree_to_key(bufnum, signal, octave=12.0) -> Ugen:
+    """A scale degree to a key: the buffer holds one octave of the scale, and
+    degree `signal` (floored) is its step plus `octave` per whole octave up or
+    down. Degree -1 is the last step an octave down.
+    """
+    return Ugen("DegreeToKey", [bufnum, signal, octave])

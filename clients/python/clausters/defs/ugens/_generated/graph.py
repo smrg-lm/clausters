@@ -25,6 +25,8 @@ __all__ = [
     "t2a",
     "t2k",
     "dc",
+    "hasher",
+    "mantissa_mask",
 ]
 
 
@@ -126,3 +128,17 @@ def t2k(signal) -> Ugen:
 def dc(signal) -> Ugen:
     """The constant `signal`, taken at the synth's start and held."""
     return Ugen("DC", [signal])
+
+
+def hasher(signal) -> Ugen:
+    """`signal`'s bits through an integer hash, as a value in +/-1: noise that is
+    a function of its input, the same for the same input every time.
+    """
+    return Ugen("Hasher", [signal])
+
+
+def mantissa_mask(signal, bits=3.0) -> Ugen:
+    """`signal` with only the top `bits` (0 to 23) of its mantissa kept: the same
+    relative coarseness at every level.
+    """
+    return Ugen("MantissaMask", [signal, bits])

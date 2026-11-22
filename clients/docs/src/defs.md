@@ -428,6 +428,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `gray_noise()` / `clip_noise()` | one random bit flipped per sample, grainy and low-leaning / ±1 only |
 | | `lf_noise0(freq)` / `lf_noise1(freq)` / `lf_noise2(freq)` | a new random value every `1/freq` s: held / ramped / curved (overshoots to ±1.7) |
 | | `lf_clip_noise(freq)` | the held one, restricted to ±1 |
+| | `lfd_noise0`, `lfd_noise1`, `lfd_noise3`, `lfd_clip_noise(freq=500.0)` | the dynamic forms: a change of rate takes effect at once |
+| | `logistic(chaos_param=3, freq=1000, init=0.5)` | the logistic map, iterated and held |
 | | `dust(density)` / `dust2(density)` | random impulses at a **mean** density — exponential gaps, not a clock |
 | | `crackle(chaos)` | a deterministic chaotic map; one-sided, so it carries DC |
 | Panning | `pan2(signal, pos=0.0, level=1.0)` | places a mono signal between two channels at **equal power**; returns two channels |
@@ -467,6 +469,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `oscn(bufnum, freq=440.0, phase=0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq=440.0, phase=0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
 | | `vosc3(bufpos, freq1, freq2, freq3)`, `cosc(bufnum, freq, beats)` | three voices of one morphing table; two detuned voices of one table |
+| | `index`, `index_l`, `wrap_index`, `fold_index(bufnum, signal)` | a buffer as a table, read at an index |
+| | `index_in_between`, `detect_index(bufnum, signal)`, `degree_to_key(bufnum, signal, octave=12)` | a table searched for a value; a scale degree to a key |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
 | Disk | `disk_in(chan=0.0, *, path, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
 | | `disk_out(signal, *, path, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
@@ -484,6 +488,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `irand(lo=0.0, hi=127.0)`, `exp_rand(lo=0.01, hi=1.0)`, `lin_rand(lo, hi, minmax=0.0)`, `n_rand(lo=0.0, hi=1.0, n=0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
 | | `t_rand(lo, hi, trig)`, `ti_rand(...)`, `t_exp_rand(...)` | a random value drawn at the start and again at each trigger |
 | | `coin_gate(prob=0.5, trig=0.0)` | lets each trigger through with probability `prob` |
+| | `t_windex(trig, weights, normalize=0)` | a weighted choice of an index at each trigger |
 | | `rand_id(id=0.0)`, `rand_seed(trig=0.0, seed=56789.0)` | choose the server generator the synth draws from; reseed it on a trigger (a root) |
 | Demand (`dr`) | `dseq(values, repeats=0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats=0.0)` / `dxrand(...)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
@@ -505,6 +510,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `mod_dif(x, y, mod)`, `unwrap(signal, lo, hi)` | a distance on a circle; a wrap undone |
 | | `amp_comp(freq, root, exp)`, `amp_comp_a(freq, root, min_amp, root_amp)` | loudness compensation by a power, or along the A-weighting |
 | Rates | `k2a`, `a2k`, `t2a(signal, offset)`, `t2k`, `dc(signal)` | control to audio and back, for signals and triggers; a constant |
+| | `hasher(signal)`, `mantissa_mask(signal, bits)` | noise that is a function of its input; precision reduced |
 | Measure | `meter(signal, decay=20.0, hold=0.0)` | a level with a **meter's ballistics**: instantaneous attack, a fall of `decay` decibels per second, a new peak held `hold` seconds before it starts falling. One number a block, which is what a control bus carries — pair it with `out_ctl` for a meter a host reads as a bus |
 | | `clip_count(signal, ceiling=1.0, run=3)` | **how many times the signal was flattened**, since the pass began: a run of `run` consecutive samples at or over `ceiling` is one over, however long it lasts. A lone sample at full scale is not clipping — the engine is floating point — so the run is what a red lamp is actually reporting; `run=1` is the pessimistic meter. It walks samples rather than blocks, which is what a block peak has already lost. Pair it with `out_ctl` and hand the bus to a `meter` widget's `clip` |
 | | `true_peak(signal, decay=20.0, hold=0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `out_ctl` and a `meter` widget at `rate="control"` with `peak="true"` |
@@ -561,6 +567,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `grayNoise()` / `clipNoise()` | one random bit flipped per sample, grainy and low-leaning / ±1 only |
 | | `lfNoise0(freq = 500.0)` / `lfNoise1(freq = 500.0)` / `lfNoise2(freq = 500.0)` | a new random value every `1/freq` s: held / ramped / curved (overshoots to ±1.7) |
 | | `lfClipNoise(freq = 500.0)` | the held one, restricted to ±1 |
+| | `lfdNoise0`, `lfdNoise1`, `lfdNoise3`, `lfdClipNoise(freq = 500.0)` | the dynamic forms: a change of rate takes effect at once |
+| | `logistic(chaosParam = 3, freq = 1000, init = 0.5)` | the logistic map, iterated and held |
 | | `dust(density = 1.0)` / `dust2(density = 1.0)` | random impulses at a **mean** density — exponential gaps, not a clock |
 | | `crackle(chaos = 1.5)` | a deterministic chaotic map; one-sided, so it carries DC |
 | Panning | `pan2(signal, pos = 0.0, level = 1.0)` | places a mono signal between two channels at **equal power**; returns two channels |
@@ -600,6 +608,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `oscN(bufnum, freq = 440.0, phase = 0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq = 440.0, phase = 0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
 | | `vosc3(bufpos, freq1, freq2, freq3)`, `cosc(bufnum, freq, beats)` | three voices of one morphing table; two detuned voices of one table |
+| | `index`, `indexL`, `wrapIndex`, `foldIndex(bufnum, signal)` | a buffer as a table, read at an index |
+| | `indexInBetween`, `detectIndex(bufnum, signal)`, `degreeToKey(bufnum, signal, octave = 12)` | a table searched for a value; a scale degree to a key |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
 | Disk | `diskIn(chan = 0.0, { path, loop = false, start = 0 })` | streams a file from disk, one channel per UGen, no resampling |
 | | `diskOut(signal, { path, format = "int16" })` | streams `signal` to a mono WAV on disk; passes `signal` through |
@@ -617,6 +627,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `irand(lo = 0.0, hi = 127.0)`, `expRand(lo = 0.01, hi = 1.0)`, `linRand(lo, hi, minmax = 0.0)`, `nRand(lo = 0.0, hi = 1.0, n = 0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
 | | `tRand(lo, hi, trig)`, `tiRand(...)`, `tExpRand(...)` | a random value drawn at the start and again at each trigger |
 | | `coinGate(prob = 0.5, trig = 0.0)` | lets each trigger through with probability `prob` |
+| | `tWindex(trig, weights, normalize = 0)` | a weighted choice of an index at each trigger |
 | | `randId(id = 0.0)`, `randSeed(trig = 0.0, seed = 56789.0)` | choose the server generator the synth draws from; reseed it on a trigger (a root) |
 | Demand (`dr`) | `dseq(values, repeats = 0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
 | | `drand(values, repeats = 0.0)` / `dxrand(values, repeats = 0.0)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
@@ -638,6 +649,7 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `modDif(x, y, mod)`, `unwrap(signal, lo, hi)` | a distance on a circle; a wrap undone |
 | | `ampComp(freq, root, exp)`, `ampCompA(freq, root, minAmp, rootAmp)` | loudness compensation by a power, or along the A-weighting |
 | Rates | `k2a`, `a2k`, `t2a(signal, offset)`, `t2k`, `dc(signal)` | control to audio and back, for signals and triggers; a constant |
+| | `hasher(signal)`, `mantissaMask(signal, bits)` | noise that is a function of its input; precision reduced |
 | Measure | `meter(signal, decay = 20.0, hold = 0.0)` | a level with a **meter's ballistics**: instantaneous attack, a fall of `decay` decibels per second, a new peak held `hold` seconds before it starts falling. One number a block, which is what a control bus carries — pair it with `outCtl` for a meter a host reads as a bus |
 | | `clipCount(signal, ceiling = 1.0, run = 3)` | **how many times the signal was flattened**, since the pass began: a run of `run` consecutive samples at or over `ceiling` is one over, however long it lasts. A lone sample at full scale is not clipping — the engine is floating point — so the run is what a red lamp is actually reporting; `run=1` is the pessimistic meter. It walks samples rather than blocks, which is what a block peak has already lost. Pair it with `outCtl` and hand the bus to a `meter` widget's `clip` |
 | | `truePeak(signal, decay = 20.0, hold = 0.0)` | a meter's level over the **reconstructed** signal: `meter`'s ballistics, but the block's true peak (the ITU-R BS.1770-4 filter) rather than its largest sample, so the reading is in dBTP. Pair it with `outCtl` and a `meter` widget at `rate: "control"` with `peak: "true"` |

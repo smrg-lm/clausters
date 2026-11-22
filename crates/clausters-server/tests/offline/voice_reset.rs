@@ -84,6 +84,18 @@ const STATELESS: &[(&str, &str)] = &[
     ("AmpCompA", "arithmetic"),
     ("A2K", "this block's first sample"),
     ("T2K", "this block's largest sample"),
+    ("Index", "reads the buffer at its index input"),
+    ("IndexL", "reads the buffer at its index input"),
+    ("WrapIndex", "reads the buffer at its index input"),
+    ("FoldIndex", "reads the buffer at its index input"),
+    ("IndexInBetween", "searches the buffer for its input"),
+    (
+        "DetectIndex",
+        "searches the buffer for its input; the last search is a cache",
+    ),
+    ("DegreeToKey", "reads the buffer at its degree input"),
+    ("Hasher", "arithmetic"),
+    ("MantissaMask", "arithmetic"),
     (
         "IEnvGen",
         "a curve read at its index input; the last read is a cache",
@@ -125,6 +137,11 @@ const STOCHASTIC: &[&str] = &[
     "Dust2",
     "Crackle",
     "Vibrato",
+    "TWindex",
+    "LFDNoise0",
+    "LFDNoise1",
+    "LFDNoise3",
+    "LFDClipNoise",
 ];
 
 /// Kinds whose state is not the voice's to reset.
@@ -321,6 +338,10 @@ fn cases() -> Vec<Case> {
             json!([input(), {"kind": "Lag", "inputs": [u(0), c(0.01)]}, out(1)]),
         )
         .source("noise"),
+        Case::new(
+            "logistic",
+            json!([{"kind": "Logistic", "inputs": [c(3.7), c(3000.0), c(0.3)]}, out(0)]),
+        ),
         Case::new(
             "fsinosc",
             json!([{"kind": "FSinOsc", "inputs": [c(431.0), c(0.1)]}, out(0)]),

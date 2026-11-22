@@ -90,6 +90,7 @@ const TRAILING: Record<string, string> = {
 const SIGNATURE_DIFFERS: Record<string, string> = {
     EnvGen: "the Env leads in TS, its flattened array trails on the wire",
     IEnvGen: "the Env leads in TS, its flattened array trails on the wire",
+    TWindex: "the weights' list comes before normalize in TS, after it on the wire",
     Klang: "the partials' lists lead in TS, their triples trail on the wire",
     Klank: "the partials' lists follow the input in TS, their triples trail on the wire",
     SendReply: "the value list leads; replyId and cmd are an options object",

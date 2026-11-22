@@ -73,6 +73,8 @@ export {
     sub,
     sum3,
     sum4,
+    hasher,
+    mantissaMask,
     linExp,
     inRange,
     inRect,
@@ -123,6 +125,11 @@ export {
     blip,
     formant,
     klang,
+    lfdNoise0,
+    lfdNoise1,
+    lfdNoise3,
+    lfdClipNoise,
+    logistic,
 } from "./osc.ts";
 
 export {
@@ -258,6 +265,14 @@ export {
     sampleRate,
     shaper,
     vosc,
+    index,
+    indexL,
+    wrapIndex,
+    foldIndex,
+    indexInBetween,
+    detectIndex,
+    degreeToKey,
+    tWindex,
     vosc3,
     cosc,
 } from "./buf.ts";
@@ -361,6 +376,7 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "IEnvGen",
     "Klang",
     "Klank",
+    "TWindex",
     "SendReply",
     "Dseq",
     "Poll",

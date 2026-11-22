@@ -341,6 +341,7 @@ if __name__ == "__main__":
 _WIRE_ORDER_FORCED = {
     "EnvGen": "the Env comes first in Python, its array last on the wire",
     "IEnvGen": "the Env comes first in Python, its array last on the wire",
+    "TWindex": "the weights' list comes before normalize in Python, after it on the wire",
     "Klang": "the partials' lists come first in Python, their triples last on the wire",
     "Klank": "the partials' lists come after the input in Python, their triples last on the wire",
     "SendReply": "reply_id follows trig on the wire, but must be keyword-only here",

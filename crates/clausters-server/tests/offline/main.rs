@@ -64,6 +64,7 @@ mod soundfile;
 mod spectral;
 mod subjects;
 mod synthdef;
+mod tables;
 mod transport;
 mod triggers;
 mod voice_reset;

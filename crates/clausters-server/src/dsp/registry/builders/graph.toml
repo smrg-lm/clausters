@@ -184,3 +184,21 @@ required = ["signal"]
 doc = '''
 The constant `signal`, taken at the synth's start and held.
 '''
+
+[[ugen]]
+kind = "Hasher"
+builder = "hasher"
+required = ["signal"]
+doc = '''
+`signal`'s bits through an integer hash, as a value in +/-1: noise that is
+a function of its input, the same for the same input every time.
+'''
+
+[[ugen]]
+kind = "MantissaMask"
+builder = "mantissa_mask"
+required = ["signal"]
+doc = '''
+`signal` with only the top `bits` (0 to 23) of its mantissa kept: the same
+relative coarseness at every level.
+'''

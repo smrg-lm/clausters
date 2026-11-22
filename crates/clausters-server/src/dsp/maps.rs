@@ -224,3 +224,36 @@ impl UGen for AmpCompA {
         }
     }
 }
+
+/// `Hasher(in)`: the input's bits through scsynth's integer hash, as a value
+/// in `[-1, 1)` -- noise that is a function of its input, the same value for
+/// the same input every time.
+pub struct Hasher;
+
+impl UGen for Hasher {
+    fn reset(&mut self) {}
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        for (i, s) in output.iter_mut().enumerate() {
+            let h = clausters_core::rng::sc_hash(at(inputs[0], i).to_bits() as i32) as u32;
+            *s = f32::from_bits(0x4000_0000 | (h >> 9)) - 3.0;
+        }
+    }
+}
+
+/// `MantissaMask(in, bits)`: the input with all but the top `bits` (0 to 23)
+/// of its mantissa cleared -- a reduction of precision that keeps the
+/// exponent, so it is the same relative coarseness at every level.
+pub struct MantissaMask;
+
+impl UGen for MantissaMask {
+    fn reset(&mut self) {}
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let bits = (at(inputs[1], 0) as i32).clamp(0, 23);
+        let mask = u32::MAX << (23 - bits);
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = f32::from_bits(at(inputs[0], i).to_bits() & mask);
+        }
+    }
+}

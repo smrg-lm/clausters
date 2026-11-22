@@ -276,3 +276,76 @@ impl UGen for RandSeed {
         output.fill(0.0);
     }
 }
+
+/// `TWindex(trig, normalize, weights...)`: at each rising edge of `trig`, an
+/// index drawn with the weights' probabilities -- the weighted choice
+/// `Select` then reads a list by. The weights sum to 1, or, with
+/// `normalize` 1, are divided by their sum. A draw is made at the start too,
+/// and a trigger already high there is not an edge, as scsynth's is.
+///
+/// Where unnormalized weights sum to less than 1, the probability left over
+/// goes to the last index; scsynth answers an index past the weights there,
+/// which `Select` clips to the same last one.
+pub struct TWindex {
+    rand: SynthRand,
+    index: f32,
+    prev: f32,
+    started: bool,
+}
+
+/// `TWindex`'s inputs before its weights.
+const TWINDEX_HEAD: usize = 2;
+
+impl TWindex {
+    pub fn new(rand: SynthRand) -> Self {
+        Self {
+            rand,
+            index: 0.0,
+            prev: 0.0,
+            started: false,
+        }
+    }
+
+    fn choose(&mut self, inputs: &[&[f32]], i: usize) -> f32 {
+        let weights = &inputs[TWINDEX_HEAD..];
+        if weights.is_empty() {
+            return 0.0;
+        }
+        let total = if at(inputs[1], i) == 1.0 {
+            weights.iter().map(|w| at(w, i)).sum()
+        } else {
+            1.0
+        };
+        let target = total * self.rand.draw(|g| g.frand());
+        let mut sum = 0.0;
+        for (k, w) in weights.iter().enumerate() {
+            sum += at(w, i);
+            if sum >= target {
+                return k as f32;
+            }
+        }
+        (weights.len() - 1) as f32
+    }
+}
+
+impl UGen for TWindex {
+    fn reset(&mut self) {
+        self.started = false;
+    }
+
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        if !self.started {
+            self.started = true;
+            self.index = self.choose(inputs, 0);
+            self.prev = 1.0;
+        }
+        for (i, s) in output.iter_mut().enumerate() {
+            let t = at(inputs[0], i);
+            if t > 0.0 && self.prev <= 0.0 {
+                self.index = self.choose(inputs, i);
+            }
+            self.prev = t;
+            *s = self.index;
+        }
+    }
+}

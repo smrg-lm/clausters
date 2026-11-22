@@ -93,6 +93,7 @@ def cases() -> list[dict]:
         _sections,
         _lfugens,
         _oscugens,
+        _tables,
     ]:
         out.extend(f())
     return out
@@ -934,4 +935,61 @@ def _oscugens() -> list[dict]:
     spec = [800.0, 0.3, 0.05, 1231.7, 0.2, 0.02, 2900.0, 0.1, 0.004]
     out.append(through("Klank.imp", "Klank", "ar", 1.0, 0.0, 1.0, *spec, source=impulse, blocks=8, tol=2e-5, why="scsynth runs Klank's resonators in f32"))
     out.append(through("Klank.sig", "Klank", "ar", 0.9, 13.0, 0.7, *spec, blocks=8, tol=5e-5, why="scsynth runs Klank's resonators in f32"))
+    return out
+
+
+def _tables() -> list[dict]:
+    """A buffer read as a table; `TWindex`; the small noises."""
+    out = []
+    data = [0.5, -1.0, 2.0, 3.0, 7.0, 1.5]
+    table = [{"num": 0, "channels": 1, "frames": len(data), "data": data}]
+
+    def indexed(name, kind, mul, add, *extra, buffers=table, blocks=4):
+        g = G()
+        x = g.add("LFSaw", "ar", 331.7, 0)
+        x = g.add("MulAdd", "ar", x, mul, add)
+        g.add(kind, "ar", 0, x, *extra)
+        return case(name, g, blocks, buffers=buffers)
+
+    for kind in ["Index", "WrapIndex", "FoldIndex"]:
+        out.append(indexed(f"{kind}.ar", kind, 9, 2.5))
+    # Not below 0: scsynth interpolates a negative index by its fraction.
+    out.append(indexed("IndexL.ar", "IndexL", 3.2, 3.3))
+    rising = [{"num": 0, "channels": 1, "frames": 6, "data": [0.0, 1.0, 2.5, 3.0, 7.0, 9.0]}]
+    out.append(indexed("IndexInBetween.ar", "IndexInBetween", 5.5, 4.5, buffers=rising))
+    # Not below -6: scsynth reads past the table at a whole negative octave.
+    scale = [{"num": 0, "channels": 1, "frames": 7, "data": [0.0, 2.0, 4.0, 5.0, 7.0, 9.0, 11.0]}]
+    out.append(indexed("DegreeToKey.ar", "DegreeToKey", 8, 2, 12, buffers=scale))
+    g = G()
+    x = g.add("LFSaw", "ar", 331.7, 0)
+    x = g.add("MulAdd", "ar", x, 4, 4)
+    v = g.add("Index", "ar", 1, x)
+    g.add("DetectIndex", "ar", 0, v)
+    probe = [table[0], {"num": 1, "channels": 1, "frames": 8, "data": [2.0, 5.0, 7.0, 0.5, -1.0, 4.0, 1.5, 3.0]}]
+    out.append(case("DetectIndex.ar", g, 4, buffers=probe))
+    for name, norm, weights in [("TWindex.ar", 0, [0.1, 0.5, 0.4]), ("TWindex.norm", 1, [1.0, 3.0, 2.0])]:
+        g = G()
+        t = g.add("Impulse", "ar", 3000, 0.5)
+        g.add("TWindex", "ar", t, norm, *weights)
+        out.append(case(name, g, 8, seed=41))
+    g = G()
+    t = g.add("Impulse", "kr", 300, 0.5)
+    g.add("TWindex", "kr", t, 1, 2.0, 1.0, 1.0, 4.0)
+    out.append(case("TWindex.kr", g, 64, seed=42))
+    # Hasher is chaotic in its input's bits, so its input is one both compute
+    # exactly: a phasor stepping by a power of two.
+    g = G()
+    x = g.add("Phasor", "ar", 0, 0.125, -5, 5, 0)
+    g.add("Hasher", "ar", x)
+    out.append(case("Hasher.ar", g))
+    for bits in [3, 10]:
+        out.append(through(f"MantissaMask.{bits}", "MantissaMask", "ar", bits))
+    out.append(one("Logistic.ar", "Logistic", "ar", 3.7, 1200, 0.3, blocks=8, shift=40, why="scsynth's constructor iterates the map once before the first block"))
+    out.append(one("Logistic.full", "Logistic", "ar", 3.9, 48000, 0.2, blocks=4, shift=1, why=_PRIMED, tol=1e-4))
+    for kind in ["LFDNoise0", "LFDNoise1", "LFDNoise3", "LFDClipNoise"]:
+        for rate, blocks, freq in [("ar", 8, 2333.0), ("kr", 64, 41.0)]:
+            out.append(one(f"{kind}.{rate}", kind, rate, freq, blocks=blocks, seed=78, shift=1, why=_PRIMED))
+        # Not a modulated rate: scsynth's priming reads the first sample's
+        # rate once more, so against a moving one no shift lines them up
+        # (`tests/offline/tables.rs` holds a change of rate).
     return out

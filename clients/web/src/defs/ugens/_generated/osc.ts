@@ -307,3 +307,30 @@ export const formant = (
     formfreq: Channel = 1760.0,
     bwfreq: Channel = 880.0,
 ): Ugen => new Ugen("Formant", [fundfreq, formfreq, bwfreq]);
+
+/**
+ * A random value `freq` times a second, held: `lfNoise0` whose rate can
+ * move, taking effect at once, at the cost of a phase per sample.
+ */
+export const lfdNoise0 = (freq: Channel = 500.0): Ugen => new Ugen("LFDNoise0", [freq]);
+
+/** `lfdNoise0` joined by straight lines. */
+export const lfdNoise1 = (freq: Channel = 500.0): Ugen => new Ugen("LFDNoise1", [freq]);
+
+/** `lfdNoise0` joined by a cubic through four values, within +/-1. */
+export const lfdNoise3 = (freq: Channel = 500.0): Ugen => new Ugen("LFDNoise3", [freq]);
+
+/** `lfdNoise0` with only +/-1. */
+export const lfdClipNoise = (freq: Channel = 500.0): Ugen =>
+    new Ugen("LFDClipNoise", [freq]);
+
+/**
+ * The logistic map `y = r y (1 - y)`, `r` the `chaosParam`, iterated `freq`
+ * times a second from `init` and held between: chaos from about 3.57 on,
+ * cycles below.
+ */
+export const logistic = (
+    chaosParam: Channel = 3.0,
+    freq: Channel = 1000.0,
+    init: Channel = 0.5,
+): Ugen => new Ugen("Logistic", [chaosParam, freq, init]);

@@ -320,3 +320,68 @@ doc = '''
 beating `beats` times a second, a chorus from one wavetable. The peak is
 twice the table's.
 '''
+
+[[ugen]]
+kind = "Index"
+builder = "index"
+required = ["bufnum", "signal"]
+doc = '''
+The buffer as a table: its value at `signal` truncated, the index clipped
+to the table.
+'''
+
+[[ugen]]
+kind = "IndexL"
+builder = "index_l"
+required = ["bufnum", "signal"]
+doc = '''
+The buffer as a table read at a fractional index, linearly between the two
+values either side, the index clipped to the table.
+'''
+
+[[ugen]]
+kind = "WrapIndex"
+builder = "wrap_index"
+required = ["bufnum", "signal"]
+doc = '''
+`index` with the index wrapped around the table.
+'''
+
+[[ugen]]
+kind = "FoldIndex"
+builder = "fold_index"
+required = ["bufnum", "signal"]
+doc = '''
+`index` with the index reflected at the table's ends.
+'''
+
+[[ugen]]
+kind = "IndexInBetween"
+builder = "index_in_between"
+required = ["bufnum", "signal"]
+doc = '''
+The inverse of `index_l` over an ascending table: the fractional index at
+which the table reaches `signal`.
+'''
+
+[[ugen]]
+kind = "DetectIndex"
+builder = "detect_index"
+required = ["bufnum", "signal"]
+doc = '''
+The index of the first table value equal to `signal`, or -1.
+'''
+
+[[ugen]]
+kind = "DegreeToKey"
+builder = "degree_to_key"
+required = ["bufnum", "signal"]
+doc = '''
+A scale degree to a key: the buffer holds one octave of the scale, and
+degree `signal` (floored) is its step plus `octave` per whole octave up or
+down. Degree -1 is the last step an octave down.
+'''
+
+[[hand]]
+kind = "TWindex"
+why = "the weights' list leads, where it trails on the wire"
