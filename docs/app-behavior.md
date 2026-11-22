@@ -593,12 +593,30 @@ code that keeps it lives.
   `copy()`, `delete()` and `paste()` and the Edit menu act on it the same
   (`WidgetKind::holds_samples`).
 - **An ellipsis says the verb asks before it acts.** A menu entry whose verb
-  opens a form that has to be filled before anything happens (New file...,
-  Open file..., Save as...) ends in `...`; one that acts at once does not,
+  opens a form that has to be filled before anything happens (the audio
+  editor's New..., Open..., Save As...) ends in `...`; one that acts at once does not,
   whatever it shows -- a switch that shows a panel (Spectrogram settings), a
   view chosen, a sheet to read. It is the convention of the platforms' menu
   guidelines, the same in every application; a switch or a choice never ends
   in one (`verbs` tests), and the audio editor's forms are the verbs that do.
+- **A file is handled alike in every application.** The File menu is built
+  once (`chrome::file_menu`), the score's and the code editor's with the
+  others': New, Open..., Open Recent where the application keeps its recent
+  files, Close File; then Save and Save As...; then what is the
+  application's own (a page's setup, an export, a conversion); then Close or
+  Quit. The words are the window's verbs' (`verbs::WINDOW`), so no
+  application says "session" or "file" where another says neither, and a
+  scope restates one only to add the ellipsis of a verb that asks (the audio
+  editor's New...). Open and Save As are one dialog, the host's `files`
+  chooser in a form (`forms::Chooser`): Open chooses among the files the
+  application reads, Save As shows the folder with the file's name in a
+  field under it, which a file selected fills, and a pick (a double click or
+  Enter) accepts either. It is the same natively and in a page; no
+  application types a path into a bare field or asks the desktop's dialog.
+  Check it with `chrome`'s, the score menu's and `forms`' tests (found
+  2026-11-22: the score asked for a path in a text field, its file entries
+  under the page's, the code editor used the desktop's dialog, and the
+  multitrack said "session").
 - **A step tells the window where it left the context once it has landed.**
   Undo or redo from one window of a shared order may restore a file another
   window holds; the asking window learns the new version only after that walk
@@ -716,9 +734,9 @@ code that keeps it lives.
 - **A close form goes down with its answer, in every application.** Its Save runs with the window usable: what the form was up for waits for the confirmed write, stays undone if the write fails, and stays undone if the contents moved meanwhile, the status line saying why. Only a save over the file a take reads refuses edits while it runs, since the file is moved under the list that reads it.
 - **A save leaves a whole file or the one it found.** A save over a file a take reads moves that file aside and the render into its place; when the second does not land, or the steps are called off between them, the first is moved back. A move across filesystems (the working folder is rarely where the file is) copies beside the destination, names it when whole, and only then removes the source. A session or an MEI file is written beside its name and renamed.
 - **A refused operation corrects its window.** What the abort read back reaches the gesture's answer, beside why, so a picture a gesture moved ahead returns to what the take holds.
-- **A view of a session goes with the session.** A roll opened from a multitrack's box edits what that session holds, in that session's order. When the window lets the session go (File > New session, Open session..., Close session, or its own close) the rolls opened from it close and the order goes with them, so nothing walks or draws a session no window holds; the multitrack goes on. A roll that goes with its multitrack's window is closed as its own close closes it: its application forgets it and whoever asked for it hears it go (found 2026-11-10, when a closed multitrack left its roll's member open).
+- **A view of a session goes with the session.** A roll opened from a multitrack's box edits what that session holds, in that session's order. When the window lets the session go (File > New, Open..., Close File, or its own close) the rolls opened from it close and the order goes with them, so nothing walks or draws a session no window holds; the multitrack goes on. A roll that goes with its multitrack's window is closed as its own close closes it: its application forgets it and whoever asked for it hears it go (found 2026-11-10, when a closed multitrack left its roll's member open).
 - **What a window does not do is refused with why.** An application publishes a reading for every verb of the window's table, so a key, an entry or a script's `/gui_verb` that asks for something the structure cannot do says so on the status line. A points editor is the plain case: a curve plays nothing here, has no grid, and its points have no clipboard, so a Ctrl+V over one explains itself and turns nothing into points. Such a verb is read as `absent`: refused with why, and left off the window's key sheet, which lists what the window does. A page reads the verbs of a grid and a mix the same way. A curve's holder may play it: with `on_play` (`onPlay`) set, the window's play is available and calls it, from the space bar or a widget that names the verb. A points editor needs only what it does: no engine, no device, no playback. An editor publishes its readings from the moment its window opens.
-- **A change of a window's session asks as a close asks.** File > New session, Open session... and Close session put another session in the window's place, or none; where the window is the work's one holder and its session has unsaved work, the close form asks first. Its Save changes the session only once the file is written, and not at all if the session moved while it was: what waited for a save is done only over what the save wrote, and a close waits the same way. A window a client holds hands the session back to it instead, and asks nothing. The menu's file verbs name no data a gesture was drawn against, so they are never refused as overtaken, and the window is told the version it draws after the change. A session opened read-only is so alone: the one the window makes or opens in its place saves where its own file is.
+- **A change of a window's session asks as a close asks.** File > New, Open... and Close File put another session in the window's place, or none; where the window is the work's one holder and its session has unsaved work, the close form asks first. Its Save changes the session only once the file is written, and not at all if the session moved while it was: what waited for a save is done only over what the save wrote, and a close waits the same way. A window a client holds hands the session back to it instead, and asks nothing. The menu's file verbs name no data a gesture was drawn against, so they are never refused as overtaken, and the window is told the version it draws after the change. A session opened read-only is so alone: the one the window makes or opens in its place saves where its own file is.
 - **Content confirmation preserves current presentation.** Showing or hiding an envelope while an edit or history restore waits for I/O remains in effect after confirmation and redraw. Curve visibility is matched by identity against the current file, not restored from the prepared content snapshot.
 - **An applied curve is put away.** Apply renders the gain curve into the take and leaves it at unity, which shows nothing: once the render lands the curve is hidden and the hand is back on the take. An undo brings the points back and leaves the curve hidden, since which body is shown is the view's. What a confirmation tells the window is the whole pane as the editor holds it (its label, the body in hand, whether the curve is shown), never part of it.
 

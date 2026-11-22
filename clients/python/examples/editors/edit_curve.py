@@ -43,9 +43,8 @@ server, because a curve is data and this example never plays it.
 # %%
 import sys
 
-from clausters import Session
+from clausters import Session, open_app
 from clausters.base import MonotonicTimebase
-from clausters.gui import open_app
 
 # %% [markdown]
 # ## A curve, built the ordinary way

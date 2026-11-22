@@ -54,8 +54,7 @@ It self-launches the audio server and the GUI host, and needs a display.
 import os
 import sys
 
-from clausters import Session
-from clausters.gui import open_app
+from clausters import Session, open_app
 from clausters.seq import Timeline
 from clausters.seq.event import Event
 

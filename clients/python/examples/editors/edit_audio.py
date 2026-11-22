@@ -58,9 +58,9 @@ it, which act on the take as the keys do. ``hear()`` plays the take as the
 edits have left it, through the editor's transport, and ``parts()``
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the file it was opened from, and
-``editor.save(path)`` writes it as another file instead. File -> New file...
+``editor.save(path)`` writes it as another file instead. File -> New...
 adds a file not written yet to this editor, as ``new_file()`` does;
-its first save asks where it goes. File -> Open file... uses the host's
+its first save asks where it goes. File -> Open... uses the host's
 chooser, which lists only audio files and takes the keyboard: Ctrl/Shift
 selects several files, and a double click or Enter on a file opens the
 selection as OK does. Cancel it and open it again: it is back in the last
@@ -98,8 +98,7 @@ import math
 import pathlib
 import sys
 
-from clausters import Session, SoundFile
-from clausters.gui import open_app
+from clausters import Session, SoundFile, open_app
 
 SECONDS = 2.0
 

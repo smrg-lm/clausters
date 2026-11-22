@@ -178,8 +178,7 @@ It self-launches the audio server and the GUI host: this one plays.
 # %%
 import sys
 
-from clausters import Session
-from clausters.gui import open_app
+from clausters import Session, open_app
 from clausters.seq import OscItem, Timeline
 from clausters.seq.event import Event
 

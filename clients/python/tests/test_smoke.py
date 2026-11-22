@@ -24,7 +24,7 @@ def _native_or_skip():
 def test_package_reexports_what_a_script_names():
     # The top level holds the verbs, the hosts, the server's resources, the def
     # formats and the timing types -- plus the layer modules themselves.
-    for name in ("play", "render", "plot", "scope",
+    for name in ("play", "render", "plot", "scope", "edit", "open_app",
                  "Session", "Server", "GuiHost",
                  "Synth", "Group", "Bus", "Buffer",
                  "SynthDef", "FaustDef", "GraphDef",

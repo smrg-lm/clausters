@@ -32,25 +32,32 @@ impl Spec for Form {
     fn title(self) -> &'static str {
         match self {
             Form::SaveAs => "Save as",
-            Form::Open => "Open session",
+            Form::Open => "Open",
         }
     }
 
     fn fields(self) -> Vec<(&'static str, &'static str)> {
         match self {
-            Form::SaveAs => vec![("path", "File")],
-            Form::Open => vec![("path", "Session")],
+            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
+            Form::Open => vec![("path", "")],
         }
     }
 
-    /// The session to open is chosen in the host's own chooser, one file.
+    /// The session to open is chosen in the host's own chooser, one file,
+    /// and the file to save as in it too.
     fn chooser(self, name: &str) -> Option<Chooser> {
-        (self == Form::Open && name == "path").then_some(Chooser {
-            filter: SESSIONS,
-            multiple: false,
-            w: 420.0,
-            h: 300.0,
-        })
+        match (self, name) {
+            (Form::Open, "path") => Some(Chooser::open(SESSIONS, false)),
+            (Form::SaveAs, "path") => Some(Chooser::save(SESSIONS)),
+            _ => None,
+        }
+    }
+
+    fn accept(self) -> &'static str {
+        match self {
+            Form::Open => "Open",
+            Form::SaveAs => "Save",
+        }
     }
 }
 

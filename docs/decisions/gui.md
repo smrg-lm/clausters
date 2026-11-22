@@ -2539,6 +2539,24 @@ the mark and asks, since the rows are the owner's -- the host holds no
 document. Which branches are open is a prop, written where it is drawn and
 reported, as a menu's check is.
 
+*(2026-11-22, with the user.)* **It is every application's Open and Save
+As.** The applications had grown three file dialogs over it and beside it:
+the chooser in the audio, multitrack and notes editors' Open forms, a bare
+path field for the score's Open and for everyone's Save As, and the code
+editor's own dialog in a page with the desktop portal's natively. Now one
+form (`forms::Chooser`) is all of them: Open chooses among the files the
+application reads, and Save As is the same chooser with the file's name in a
+field under it, which a file selected fills and a name typed is placed in the
+folder shown. The code editor draws the same dialog in a window as in a tab;
+the desktop is asked only for the documentation folder, a preference, since
+the editor's preferences are a dialog and a file dialog does not stand over
+another one. Its storage's own changes (a new folder, a rename, a delete)
+are carried out by the platform, natively on the disk; the copies to and
+from the disk are a page's alone, since natively the disk is the storage.
+A list longer than the chooser draws a scroll bar the hand drags: a folder
+whose files came after its subfolders hid them, with nothing to say they
+were there.
+
 ## The clipboard is the platform's, and text is all that crosses
 
 *(2026-10-04, with the user.)* The host had one typed clipboard of its own --

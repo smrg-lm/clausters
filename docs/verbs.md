@@ -44,7 +44,11 @@ The verdict is one of three:
 |---|---|---|---|---|
 | `window` | `undo` | `Editor.undo` | `Editor.undo` | **api** |
 | `window` | `redo` | `Editor.redo` | `Editor.redo` | **api** |
+| `window` | `new_file` | `AudioEditor.new_file` `MultitrackEditor.new_file` `ScoreEditor.new_file` | `AudioEditor.newFile` `MultitrackEditor.newFile` `ScoreEditor.newFile` | **api** — a new, untitled session or score in the window's place, the one let go handed back to the handler; the audio editor's adds a take of the form's shape. A roll's is the File menu of a roll the host holds alone (`clausters-gui --roll`, a conversion's copy), and a client's roll edits the client's sequence, which has no file of its own; the code editor's is in the windows of its application, which no client opens |
+| `window` | `open_file` | `AudioEditor.open_file` `MultitrackEditor.open_file` `ScoreEditor.open_file` | `AudioEditor.openFile` `MultitrackEditor.openFile` `ScoreEditor.openFile` | **api** — a path (the audio editor's, a list of them), chosen in the host's chooser from the window; a session another window holds brings that window forward. A client reads a file into a sequence itself (`EventSequence.from_smf`, `from_clip`) |
 | `window` | `save` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | **api** |
+| `window` | `save_as` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | `AudioEditor.save` `MultitrackEditor.save` `ScoreEditor.save` | **api** — `save(path)`; in the window, the host's chooser with the file's name under it. A client writes its sequence itself (`to_smf`, `to_clip`) |
+| `window` | `close_file` | `AudioEditor.close_file` `MultitrackEditor.close_file` `ScoreEditor.close_file` | `AudioEditor.closeFile` `MultitrackEditor.closeFile` `ScoreEditor.closeFile` | **api** — the audio editor's file in focus, or one by its index in the list (`focus_file` focuses one); the multitrack's session or the score, the window going on empty and what it held handed back to the handler |
 | `window` | `close` | `Editor.close` | `Editor.close` | **api** |
 | `window` | `view_all` | `Editor.view_all` | `Editor.viewAll` | **api** |
 | `window` | `play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | **api** |
@@ -65,12 +69,9 @@ The verdict is one of three:
 | `window` | `ruler_time` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | **api** — `ruler = "time"`; on the web `setRuler("time")` |
 | `window` | `ruler_samples` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | `AudioEditor.ruler` `MultitrackEditor.ruler` `NotesEditor.ruler` | **api** — `ruler = "samples"`; on the web `setRuler("samples")` |
 | `window` | `keys` | — | — | **n/a** — the window's key sheet, a page of the window itself rather than an act on what it holds; `verb("keys")` shows it |
-| `audio` | `new_file` | `AudioEditor.new_file` | `AudioEditor.newFile` | **api** — the form's shape, added to this editor as a file in focus |
-| `audio` | `open_file` | `AudioEditor.open_file` | `AudioEditor.openFile` | **api** — a path or a list of them, chosen in the host's chooser from the window, each added to this editor |
-| `audio` | `close_file` | `AudioEditor.close_file` | `AudioEditor.closeFile` | **api** — the file in focus, or one by its index in the list; `focus_file` focuses one. The last one closed leaves the editor open with no file |
+| `audio` | `new_file` | `AudioEditor.new_file` | `AudioEditor.newFile` | **api** — the window's `new_file`, restated only for its ellipsis: a new take asks its shape first, which is added to this editor as a file in focus |
 | `audio` | `toggle_files` | `AudioEditor.show_files` `AudioEditor.hide_files` | `AudioEditor.showFiles` `AudioEditor.hideFiles` | **api** — the file list beside the editing view |
 | `audio` | `spectrogram_settings` | `AudioEditor.show_spectrogram_settings` `AudioEditor.hide_spectrogram_settings` | `AudioEditor.showSpectrogramSettings` `AudioEditor.hideSpectrogramSettings` | **api** — the spectrogram's settings panel beside the take; the settings themselves are `AudioEditor.spectrogram` and `set_spectrogram` (`spectrogram()`, `setSpectrogram`) |
-| `audio` | `save_as` | `AudioEditor.save` | `AudioEditor.save` | **api** — `save(path)` |
 | `audio` | `show_all_channels` | `AudioEditor.show_all_channels` | `AudioEditor.showAllChannels` | **api** — beside `fold_channel` and `solo_channel`, which the menu reaches per channel |
 | `audio` | `view_wave` | `AudioEditor.view_wave` | `AudioEditor.viewWave` | **api** |
 | `audio` | `view_spectrogram` | `AudioEditor.view_spectrogram` | `AudioEditor.viewSpectrogram` | **api** |
@@ -80,10 +81,6 @@ The verdict is one of three:
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
-| `multitrack` | `new_file` | `MultitrackEditor.new_file` | `MultitrackEditor.newFile` | **api** — a new, untitled session in the window's place; the one let go is handed back to the handler |
-| `multitrack` | `open_file` | `MultitrackEditor.open_file` | `MultitrackEditor.openFile` | **api** — a session file by its path, chosen in the host's chooser from the window; one another window holds brings that window forward |
-| `multitrack` | `close_file` | `MultitrackEditor.close_file` | `MultitrackEditor.closeFile` | **api** — no session: the window goes on empty |
-| `multitrack` | `save_as` | `MultitrackEditor.save` | `MultitrackEditor.save` | **api** — `save(path)` |
 | `multitrack` | `pause` | `MultitrackTransport.pause` | `MultitrackTransport.pause` | **api** |
 | `multitrack` | `stop` | `MultitrackTransport.stop` | `MultitrackTransport.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |
@@ -139,10 +136,6 @@ The verdict is one of three:
 | `notes` | `convert_midi1` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("1.0")` answers the copy |
 | `notes` | `convert_mpe` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("mpe")` |
 | `notes` | `convert_midi2` | `NotesEditor.to_midi` | `NotesEditor.toMidi` | **api** — `to_midi("2.0")` |
-| `notes` | `new_file` | — | — | **n/a** — the File menu of a roll the host holds alone (`clausters-gui --roll`, a conversion's copy); a client's roll edits the client's sequence, which has no file of its own |
-| `notes` | `open_file` | — | — | **n/a** — as `new_file`: a client reads a file into a sequence itself (`EventSequence.from_smf`, `from_clip`) |
-| `notes` | `save_as` | — | — | **n/a** — as `new_file`: a client writes its sequence itself (`to_smf`, `to_clip`) |
-| `notes` | `close_file` | — | — | **n/a** — as `new_file` |
 | `notes` | `show_system` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = "system"`; on the web `setScope("system")` |
 | `notes` | `show_part` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("part", n)` |
 | `notes` | `show_staff` | `NotesEditor.scope` | `NotesEditor.scope` | **api** — `scope = ("staff", n)` |
@@ -173,8 +166,6 @@ The verdict is one of three:
 | `notes` | `dynamic_f` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("f")` |
 | `notes` | `dynamic_ff` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("ff")` |
 | `notes` | `dynamic_none` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic(None)`; on the web `dynamic(null)` |
-| `score` | `new_file` | `ScoreEditor.new_file` | `ScoreEditor.newFile` | **api** — a new score in the window's place; the one let go is handed back to the handler |
-| `score` | `close_file` | `ScoreEditor.close_file` | `ScoreEditor.closeFile` | **api** — no document: the window goes on empty, and the score is handed back to the handler |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |
 | `score` | `delete` | `ScoreEditor.delete` | `ScoreEditor.delete` | **api** |
 | `score` | `deselect` | `ScoreEditor.select` | `ScoreEditor.select` | **api** — with no elements |
@@ -223,9 +214,6 @@ The verdict is one of three:
 | `note_entry` | `value_whole` | `ScoreEditor.value` | `ScoreEditor.value` | **api** — `value = (1, 1)` |
 | `note_entry` | `dot` | `ScoreEditor.dotted` | `ScoreEditor.dotted` | **api** |
 | `note_entry` | `enter_rest` | `ScoreEditor.enter_rest` | `ScoreEditor.enterRest` | **api** |
-| `editor` | `new_file` | — | — | **n/a** — the code editor's own, in the windows of its application, which no client opens |
-| `editor` | `open_file` | — | — | **n/a** |
-| `editor` | `save_as` | — | — | **n/a** |
 | `editor` | `close_tab` | — | — | **n/a** |
 | `editor` | `quit` | — | — | **n/a** |
 | `editor` | `preferences` | — | — | **n/a** |

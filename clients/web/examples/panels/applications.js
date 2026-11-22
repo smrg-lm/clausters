@@ -10,8 +10,7 @@
 // application keeps its own menu bar.
 
 // %%
-import { Session, play, scope } from "clausters";
-import { edit, openApp } from "clausters/gui";
+import { Session, edit, openApp, play, scope } from "clausters";
 import { INF, EventSequence, pbind, pseq } from "clausters/seq";
 
 const s = (await Session.live()).activate();

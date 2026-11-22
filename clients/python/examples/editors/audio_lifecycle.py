@@ -69,9 +69,8 @@ import math
 import pathlib
 import sys
 
-from clausters import Session, SoundFile
+from clausters import Session, SoundFile, open_app
 from clausters.errors import CommandError
-from clausters.gui import open_app
 from clausters.segments import Segment
 
 SECONDS = 2.0

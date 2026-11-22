@@ -45,7 +45,7 @@ import { EventSequence } from "../../seq/sequence.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
-import type { PointsEditorOptions } from "./points.ts";
+import type { EditableCurve, PointsEditorOptions } from "./points.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { AudioEditor } from "./audio.ts";
 import { Multitrack } from "../../document.ts";
@@ -253,11 +253,14 @@ export async function edit(structure: Node, options?: EditOptions): Promise<Node
 export async function edit(structure: SoundFile, options?: EditOptions): Promise<AudioEditor>;
 export async function edit(structure: MultitrackSession | Multitrack, options?: EditOptions): Promise<MultitrackEditor>;
 export async function edit(structure: EventSequence | Timeline, options: EditOptions & { view?: "roll" }): Promise<NotesEditor>;
+export async function edit(structure: EditableCurve, options?: EditOptions): Promise<PointsEditor>;
 export async function edit(structure: unknown, options?: EditOptions): Promise<any>;
 export async function edit(
     structure: unknown,
     options: EditOptions = {},
-): Promise<Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor> {
+): Promise<
+    Editor<never> | NodeEditor | AudioEditor | MultitrackEditor | NotesEditor | ScoreEditor | PointsEditor
+> {
     if (structure instanceof Node) return nodeEditor(structure, options);
     // **the view alone**, unless the caller (`openApp`) asks for the chrome
     options = { ...options, chrome: options.chrome ?? false };

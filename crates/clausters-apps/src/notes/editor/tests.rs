@@ -1318,7 +1318,7 @@ fn a_roll_with_a_file_saves_and_asks_before_a_close_loses_work() {
         };
         e.event(&event, 1)
     };
-    said(&mut e, "file:path", "/tmp/a roll.mid");
+    said(&mut e, "file:name", "/tmp/a roll.mid");
     let out = said(&mut e, "file:ok", "click");
     assert_eq!(out.save.as_deref(), Some("/tmp/a roll.mid"));
     // a path the host said: Save names it at once

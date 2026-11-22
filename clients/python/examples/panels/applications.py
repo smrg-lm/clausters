@@ -12,8 +12,7 @@ clients/web/examples/panels/applications.js, for the editor's page.
 """
 
 # %%
-from clausters import Session, play, scope
-from clausters.gui import edit, open_app
+from clausters import Session, play, scope, edit, open_app
 from clausters.seq import INF, EventSequence, pbind, pseq
 
 s = Session.live().activate()

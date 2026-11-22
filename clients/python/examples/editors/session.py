@@ -63,7 +63,7 @@ import struct
 import sys
 import wave
 
-from clausters.gui import open_app
+from clausters import open_app
 from clausters.document import Content, Multitrack, Source, Span, Tempo
 from clausters.gui.editing import MultitrackView, MultitrackSession
 

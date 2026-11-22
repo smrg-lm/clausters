@@ -1,6 +1,5 @@
-//! **The editor's own file dialog**, over the platform's storage: what a
-//! platform with no dialog of its own (a page, whose files are its storage)
-//! opens and saves with.
+//! **The editor's file dialog**, over the platform's storage: what it opens
+//! and saves with, natively and in a page alike.
 //!
 //! It is the protocol's file dialog: the host's `files` chooser, which
 //! lists the disk in a window and the page's storage in a tab, a field
@@ -37,10 +36,6 @@ const ACCEPT: i32 = BASE + 9;
 pub const SPARE: i32 = BASE + 20;
 /// Past the dialog's ids.
 const END: i32 = BASE + 100;
-
-/// The chooser's size, in logical pixels.
-const W: f64 = 520.0;
-const H: f64 = 300.0;
 
 /// What the hand did in the dialog, for the application to carry out.
 #[derive(Debug, PartialEq)]
@@ -105,10 +100,6 @@ impl FileDialog {
     /// A change that did not happen says why; one that did says nothing.
     pub fn changed(&mut self, done: Result<(), String>) {
         self.says = done.err().unwrap_or_default();
-    }
-
-    fn saving(&self) -> bool {
-        matches!(self.purpose, Purpose::SaveAs { .. })
     }
 
     /// The path the field names: from the root when it starts with one,
@@ -211,37 +202,46 @@ impl FileDialog {
         Does::Redraw
     }
 
-    /// **The dialog's tree**, as it is now.
-    pub fn tree(&self) -> Value {
-        let (title, accept) = if self.saving() {
-            ("Save", "Save")
-        } else {
-            ("Open", "Open")
+    /// **The dialog's tree**, as it is now: every application's file dialog
+    /// ([`clausters_apps::forms`]) -- the chooser, the name it fills, the
+    /// buttons -- with the storage's own changes between them, the copies
+    /// to and from the disk where the storage is not the disk (`transfers`).
+    pub fn tree(&self, transfers: bool) -> Value {
+        use clausters_apps::forms::{Chooser, chooser_widget, field_row, footer};
+        let (title, accept) = match self.purpose {
+            Purpose::SaveAs { .. } => ("Save as", "Save"),
+            Purpose::Open | Purpose::DocsFolder => ("Open", "Open"),
         };
+        // a file to open is chosen or typed alike, so the chooser fills the
+        // field either way
+        let chooser = Chooser::save(&[]);
         let tool = |id: i32, label: &str| json!({"id": id, "type": "button", "label": label, "variant": "ghost", "size": "sm"});
+        let mut tools = Vec::new();
+        if transfers {
+            tools.extend([tool(UPLOAD, "Upload..."), tool(DOWNLOAD, "Download")]);
+        }
+        tools.extend([
+            tool(NEW_FOLDER, "New folder"),
+            tool(RENAME, "Rename"),
+            tool(DELETE, "Delete"),
+        ]);
+        let files = chooser_widget(
+            Some(FILES),
+            &self.dir.to_string_lossy(),
+            &chooser,
+            Some(NAME),
+        );
+        let name = json!({"id": NAME, "type": "text", "value": self.typed});
         json!({
             "id": DIALOG, "type": "layout", "modal": 1, "hug": 1, "title": title, "flow": "col",
             "children": [
-                {"id": FILES, "type": "files", "path": self.dir.to_string_lossy(),
-                    "w": W, "h": H, "bind": ["widget", NAME, "value"]},
+                field_row("", None, files, Some(chooser.w)),
                 {"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 4,
-                    "children": [
-                        tool(UPLOAD, "Upload..."),
-                        tool(DOWNLOAD, "Download"),
-                        tool(NEW_FOLDER, "New folder"),
-                        tool(RENAME, "Rename"),
-                        tool(DELETE, "Delete"),
-                    ]},
-                {"id": NAME, "type": "text", "value": self.typed},
+                    "children": tools},
+                field_row("Name", None, name, None),
                 {"type": "label", "text": self.says, "wrap": 1, "muted": 1,
                     "shown": !self.says.is_empty()},
-                {"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
-                    "children": [
-                        {"type": "separator", "weight": 1, "line": 0},
-                        {"id": CANCEL, "type": "button", "label": "Cancel", "variant": "outline"},
-                        {"id": ACCEPT, "type": "button", "label": accept, "default": 1,
-                            "variant": "default"},
-                    ]},
+                footer(Some(CANCEL), Some(ACCEPT), accept),
             ]
         })
     }
@@ -259,7 +259,10 @@ mod tests {
             Purpose::SaveAs { win: 1 },
             Some(Path::new("/sketches/a.mjs")),
         );
-        assert_eq!(d.tree()["children"][0]["path"], "/sketches");
+        assert_eq!(
+            d.tree(true)["children"][0]["children"][0]["path"],
+            "/sketches"
+        );
         assert_eq!(
             d.on(ACCEPT, "click", String::new()),
             Does::Chosen(Some("/sketches/a.mjs".into()))

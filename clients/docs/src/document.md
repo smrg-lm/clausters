@@ -121,9 +121,9 @@ what the window left, contents and sources, without reading the file over
 changes made since. A client-held session does not ask to discard work on
 window close, because the {{alt script's || page's}} multitrack holds it.
 
-**The window's File menu changes its session**: New session puts an empty,
-untitled one in its place, Open session... chooses a session file in the
-host's chooser and opens it, Close session leaves the window with none. The
+**The window's File menu changes its session**: New puts an empty, untitled
+one in its place, Open... chooses a session file in the host's chooser and
+opens it, Close File leaves the window with none. The
 handler has the same three, `{{api new_file}}()`, `{{api open_file}}(path)` and
 `{{api close_file}}()`, and each hands the {{alt script's || page's}} multitrack back as above. A window
 the host holds alone asks first when its session has unsaved work (Don't
@@ -169,9 +169,10 @@ opened from (moved aside first while the list reads it, and the render moved whe
 renders it as another file, which a later save then writes over. {{alt `edit(SoundFile.empty(channels, || `await edit(SoundFile.empty(channels,}} frames, rate))` is silence not
 written anywhere yet: its first save needs a path, which Ctrl+S asks for in a **Save
 as...** form and `editor.save()` refuses without one. {{alt `editor.file` || `await editor.file()`}} is the `SoundFile` the
-take is now. The window's File menu has **New file...** (a form for the channels, the
-length and the rate, which adds the new file to this editor), **Open file...** (the host's
-file chooser, with Ctrl/Shift to select several files) and **Save as...**. {{alt `editor.parts` || `await editor.parts()`}} is
+take is now. The window's File menu has **New...** (a form for the channels, the
+length and the rate, which adds the new file to this editor), **Open...** (the host's
+file chooser, with Ctrl/Shift to select several files) and **Save As...** (the same
+chooser, the file's name in a field under it). {{alt `editor.parts` || `await editor.parts()`}} is
 the spans of files the take is made of. **It plays what it edits** on the application's engine,
 on a transport of its own (another window's play moves nothing in it), and `editor.transport`
 is that transport in the take's seconds, with the verbs and the span a server's `Transport` has: the space bar over the window plays the
@@ -246,7 +247,7 @@ The curve is heard once it is applied. Save writes only the current samples;
 apply before saving to keep the gain in the file.
 
 ```python
-from clausters.gui import edit
+from clausters import edit
 
 editor = edit(curve, sample_rate=48_000.0)
 
@@ -254,7 +255,7 @@ curve.to_points()      # the edited curve, out of the object you already held
 ```
 
 ```ts
-import { edit } from "clausters/gui";
+import { edit } from "clausters";
 
 const editor = await edit(curve, { sampleRate: 48_000 });
 
@@ -1286,6 +1287,10 @@ So the history belongs to the **data**, and two windows over one structure find
 the same one:
 
 ```python
+from clausters import edit
+from clausters.defs import Env
+
+curve = Env([0, 1, 0], [0.1, 0.9])
 first = edit(curve, sample_rate=sr)
 second = edit(curve, sample_rate=sr)      # a second window, same structure
                                           # drag a point in either window
@@ -1294,6 +1299,10 @@ second.undo()                             # and the point springs back in both
 ```
 
 ```ts
+import { edit } from "clausters";
+import { Env } from "clausters/defs";
+
+const curve = new Env([0, 1, 0], [0.1, 0.9]);
 const first = await edit(curve, { sampleRate: sr });
 const second = await edit(curve, { sampleRate: sr });   // a second window, same structure
                                                         // drag a point in either window

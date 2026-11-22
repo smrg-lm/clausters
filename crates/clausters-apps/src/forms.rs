@@ -20,6 +20,11 @@
 //! **A field may be chosen rather than typed** ([`Spec::chooser`]): it is
 //! then the host's `files` chooser, which lists the disk in a window and the
 //! page's storage in a tab, so no application builds a browser of its own.
+//! **It is every application's Open and Save As**, the code editor's too
+//! ([`chooser_widget`], [`field_row`], [`footer`]): a chooser that opens
+//! chooses files, and one that saves ([`Chooser::save`]) fills the name
+//! field under it ([`NAME`]) with the file it selects, a typed name being
+//! in the folder it shows ([`Open::path`]).
 //! The chooser keeps what it is doing -- the directory, the listing it waits
 //! on, an error -- and reports what the hand chose; the form keeps the paths
 //! chosen and the directory the field opens in; and what the paths are for
@@ -65,6 +70,11 @@ pub trait Spec: Copy + PartialEq {
     fn closes(self) -> Option<&'static str> {
         None
     }
+    /// **What its accepting button says**: `OK`, or the verb a file form
+    /// performs (`Open`, `Save`, `Export`).
+    fn accept(self) -> &'static str {
+        "OK"
+    }
     /// Props a field adds to the text widget it is (a multiline one).
     fn field(self, _name: &str, _widget: &mut Map<String, Value>) {}
     /// **Whether field `name` is chosen in the host's file chooser** rather
@@ -86,7 +96,8 @@ fn option_index(options: &[&str], text: &str) -> usize {
 }
 
 /// **A field chosen in the host's file chooser**: which files it shows,
-/// whether several can be chosen at once, and how much room it takes.
+/// whether several can be chosen at once, whether it saves, and how much
+/// room it takes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chooser {
     /// The extensions a file must have to be shown, without the dot; empty
@@ -94,9 +105,127 @@ pub struct Chooser {
     pub filter: &'static [&'static str],
     /// Whether Ctrl and Shift choose several files.
     pub multiple: bool,
+    /// **Whether it says where a file is written**: the file it selects
+    /// fills the form's name field ([`NAME`]), and a name typed there is in
+    /// the folder it shows.
+    pub saves: bool,
     /// Its width and height, in logical pixels.
     pub w: f64,
     pub h: f64,
+}
+
+/// **The field a saving chooser fills**, which a form that saves lists
+/// after it: the file's name, or a path from the root.
+pub const NAME: &str = "name";
+
+/// How large every file chooser is drawn, in logical pixels.
+pub const CHOOSER_W: f64 = 520.0;
+pub const CHOOSER_H: f64 = 300.0;
+
+impl Chooser {
+    /// **A chooser that opens** the files `filter` shows: one, or several
+    /// with Ctrl and Shift.
+    #[must_use]
+    pub const fn open(filter: &'static [&'static str], multiple: bool) -> Self {
+        Chooser {
+            filter,
+            multiple,
+            saves: false,
+            w: CHOOSER_W,
+            h: CHOOSER_H,
+        }
+    }
+
+    /// **A chooser that saves**, listing the files `filter` shows beside
+    /// the one written.
+    #[must_use]
+    pub const fn save(filter: &'static [&'static str]) -> Self {
+        Chooser {
+            saves: true,
+            ..Chooser::open(filter, false)
+        }
+    }
+}
+
+/// **The `files` widget a chooser is**, numbered `id`, listing `dir`; a
+/// saving one fills the field numbered `name` with the file it selects.
+#[must_use]
+pub fn chooser_widget(id: Option<i32>, dir: &str, chooser: &Chooser, name: Option<i32>) -> Value {
+    let mut widget = json!({
+        "type": "files",
+        "id": id,
+        "path": Some(dir).filter(|dir| !dir.is_empty()).unwrap_or(START),
+        "filter": chooser.filter,
+        "multiple": chooser.multiple,
+        "weight": 1,
+        "h": chooser.h,
+    });
+    if let (true, Some(name), Some(map)) = (chooser.saves, name, widget.as_object_mut()) {
+        map.insert("bind".into(), json!(["widget", name, "value"]));
+    }
+    widget
+}
+
+/// **A field of a dialog**: its caption over it, as the design system's
+/// form sets one, in the caption's weight -- none for an empty caption --
+/// `w` wide where it is given. `caption` is the caption's id, for a form
+/// that corrects it.
+#[must_use]
+pub fn field_row(caption: &str, caption_id: Option<i32>, field: Value, w: Option<f64>) -> Value {
+    let mut children = Vec::new();
+    if !caption.is_empty() {
+        let mut label = json!({"type": "label", "text": caption, "variant": "caption"});
+        if let (Some(id), Some(map)) = (caption_id, label.as_object_mut()) {
+            map.insert("id".into(), json!(id));
+        }
+        children.push(label);
+    }
+    children.push(field);
+    let mut row = json!({
+        "type": "layout",
+        "flow": "col",
+        "hug": true,
+        "margin": 0,
+        "gap": CAPTION_GAP,
+        "children": children,
+    });
+    if let (Some(w), Some(map)) = (w, row.as_object_mut()) {
+        map.insert("w".into(), json!(w));
+    }
+    row
+}
+
+/// **A dialog's footer**: the buttons at its end, `Cancel` and the one
+/// that accepts, saying `accept`.
+#[must_use]
+pub fn footer(cancel: Option<i32>, ok: Option<i32>, accept: &str) -> Value {
+    let spring = json!({"type": "separator", "weight": 1, "line": false});
+    let cancel = json!({"type": "button", "id": cancel, "label": "Cancel", "variant": "outline"});
+    let ok = json!({"type": "button", "id": ok, "label": accept, "default": true,
+        "variant": "default"});
+    json!({
+        "type": "layout",
+        "flow": "row",
+        "hug": true,
+        "pack": true,
+        "margin": 0,
+        "gap": crate::closing::FOOTER_GAP,
+        "children": [spring, cancel, ok],
+    })
+}
+
+/// The parent folder and the name of the file at `path`.
+fn split_path(path: &str) -> (String, String) {
+    let path = std::path::Path::new(path);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dir = path
+        .parent()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    (dir, name)
 }
 
 /// The directory a chooser opens in before the hand has been anywhere: the
@@ -163,23 +292,8 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
         .iter()
         .map(|(name, label)| {
             let chooser = form.chooser(name);
-            // **A field's caption stands over it**, as the design system's
-            // form sets one, in the caption's weight
-            let mut caption = json!({"type": "label", "text": label, "variant": "caption"});
-            // the caption a form corrects is the question it is asking
-            if let (Some(_), Some(map)) = (form.label(), caption.as_object_mut()) {
-                map.insert("id".into(), json!(id("label")));
-            }
             let mut field = match chooser {
-                Some(chooser) => json!({
-                    "type": "files",
-                    "id": id(name),
-                    "path": Some(held(name)).filter(|dir| !dir.is_empty()).unwrap_or(START),
-                    "filter": chooser.filter,
-                    "multiple": chooser.multiple,
-                    "weight": 1,
-                    "h": chooser.h,
-                }),
+                Some(chooser) => chooser_widget(id(name), held(name), &chooser, id(NAME)),
                 None => match form.options(name) {
                     Some(options) => json!({
                         "type": "choice",
@@ -193,38 +307,14 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
             if let Some(map) = field.as_object_mut() {
                 form.field(name, map);
             }
-            // a field is its caption over its control, the caption's gap
-            // between them; the body's gap separates one field from the next
-            let mut row = json!({
-                "type": "layout",
-                "flow": "col",
-                "hug": true,
-                "margin": 0,
-                "gap": CAPTION_GAP,
-                "children": [caption, field],
-            });
-            // the field a chooser stands in is as wide as the chooser, so
-            // the dialog takes its width
-            if let (Some(chooser), Some(map)) = (chooser, row.as_object_mut()) {
-                map.insert("w".into(), json!(chooser.w));
-            }
-            row
+            // the caption a form corrects is the question it is asking; the
+            // field a chooser stands in is as wide as the chooser, so the
+            // dialog takes its width
+            let caption = form.label().and_then(|_| id("label"));
+            field_row(label, caption, field, chooser.map(|c| c.w))
         })
         .collect();
-    let spring = json!({"type": "separator", "weight": 1, "line": false});
-    let cancel =
-        json!({"type": "button", "id": id("cancel"), "label": "Cancel", "variant": "outline"});
-    let ok = json!({"type": "button", "id": id("ok"), "label": "OK", "default": true,
-        "variant": "default"});
-    let buttons = json!({
-        "type": "layout",
-        "flow": "row",
-        "hug": true,
-        "pack": true,
-        "margin": 0,
-        "gap": crate::closing::FOOTER_GAP,
-        "children": [spring, cancel, ok],
-    });
+    let buttons = footer(id("cancel"), id("ok"), form.accept());
     // the fields are the dialog's body, closer to each other than the
     // dialog's parts are
     let body = json!({
@@ -375,6 +465,32 @@ impl<F: Spec> Open<F> {
         self.values.get(name).map_or("", String::as_str)
     }
 
+    /// **The path a saving chooser `field` says**: the name typed or the
+    /// file selected ([`NAME`]), in the folder the chooser shows unless it
+    /// is a path from the root -- or `None` with no name.
+    #[must_use]
+    pub fn path(&self, field: &str) -> Option<String> {
+        let name = self.value(NAME).trim();
+        if name.is_empty() {
+            return None;
+        }
+        let named = std::path::Path::new(name);
+        if named.has_root() {
+            return Some(name.to_string());
+        }
+        // in the folder the host starts in, a name is already where it is
+        let dir = self.value(field);
+        if dir.is_empty() || dir == START {
+            return Some(name.to_string());
+        }
+        Some(
+            std::path::Path::new(dir)
+                .join(named)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+
     /// **What the window is corrected with to show it**: every field's text,
     /// the caption it asks with, its title, and the stack turned to its page.
     #[must_use]
@@ -390,9 +506,11 @@ impl<F: Spec> Open<F> {
                 // path lists it afresh with nothing selected, and the keyboard
                 // goes to it, where Enter picks and the arrows move.
                 Some(match (self.form.chooser(name), self.form.options(name)) {
-                    (Some(_), _) => {
+                    (Some(chooser), _) => {
                         let dir = Some(self.value(name)).filter(|d| !d.is_empty());
-                        (id, json!({"path": dir.unwrap_or(START), "focus": 1}))
+                        let props = json!({"path": dir.unwrap_or(START), "focus": 1,
+                            "filter": chooser.filter});
+                        (id, props)
                     }
                     (None, Some(options)) => (
                         id,
@@ -405,9 +523,13 @@ impl<F: Spec> Open<F> {
         if let (Some(label), Some(id)) = (self.form.label(), ids.get(&format!("{prefix}:label"))) {
             out.push((*id, json!({"text": label})));
         }
-        // a dialog that serves several questions says which it is asking
+        // a dialog that serves several questions says which it is asking,
+        // and what its accepting button does
         if let Some(id) = ids.get(prefix) {
             out.push((*id, json!({"title": self.form.title()})));
+        }
+        if let Some(id) = ids.get(&format!("{prefix}:ok")) {
+            out.push((*id, json!({"label": self.form.accept()})));
         }
         if let Some(stack) = ids.get(STACK) {
             out.push((*stack, json!({"index": self.form.page()})));
@@ -501,13 +623,26 @@ impl<F: Spec> Dialogs<F> {
     /// **Opens `form`**, its fields holding `values`, and answers what the
     /// window is corrected with to show it. A chooser opens where the hand
     /// last left it, and with nothing chosen.
+    ///
+    /// A saving chooser is given the path of the file the window writes,
+    /// when it has one: it opens in that file's folder, the file's name in
+    /// the name field.
     pub fn open(&mut self, form: F, mut values: BTreeMap<String, String>) -> Vec<(i32, Value)> {
         let prefix = form.prefix();
         for (name, _) in form.fields() {
-            if form.chooser(name).is_some() {
-                let dir = self.dirs.get(&format!("{prefix}:{name}")).cloned();
-                values.insert(name.to_string(), dir.unwrap_or_else(|| START.into()));
+            let Some(chooser) = form.chooser(name) else {
+                continue;
+            };
+            let mut dir = self.dirs.get(&format!("{prefix}:{name}")).cloned();
+            let given = values.get(name).filter(|p| !p.trim().is_empty()).cloned();
+            if let (true, Some(file)) = (chooser.saves, given) {
+                let (folder, file) = split_path(&file);
+                if !folder.is_empty() {
+                    dir = Some(folder);
+                }
+                values.insert(NAME.to_string(), file);
             }
+            values.insert(name.to_string(), dir.unwrap_or_else(|| START.into()));
         }
         let open = Open { form, values };
         let shown = open.shown(&self.ids);
@@ -538,11 +673,27 @@ impl<F: Spec> Dialogs<F> {
     pub fn read(&mut self, name: &str, tag: &str, values: &[Value]) -> Option<Said> {
         let open = self.up.as_mut()?;
         let said = read(open.form, name, tag, values)?;
+        let saves = |field: &str| open.form.chooser(field).is_some_and(|c| c.saves);
         match &said {
             Said::Field(field, text) => {
                 open.values.insert(field.clone(), text.clone());
             }
-            Said::Chosen(field, paths) => {
+            // a saving chooser's file is the name the form writes to, and a
+            // pick of one accepts it
+            Said::Chosen(field, paths) if saves(field) => {
+                if let Some(path) = paths.first() {
+                    open.values.insert(NAME.to_string(), path.clone());
+                }
+            }
+            Said::Picked(field, paths) if saves(field) => {
+                if let Some(path) = paths.first() {
+                    open.values.insert(NAME.to_string(), path.clone());
+                }
+                return Some(Said::Accept);
+            }
+            // what a pick picks is what is chosen, for a form that reads it
+            // as `OK`
+            Said::Chosen(field, paths) | Said::Picked(field, paths) => {
                 self.chosen.insert(field.clone(), paths.clone());
             }
             Said::Entered(field, dir) => {
@@ -551,7 +702,7 @@ impl<F: Spec> Dialogs<F> {
                     .insert(format!("{}:{field}", open.form.prefix()), dir.clone());
                 self.chosen.remove(field);
             }
-            Said::Picked(..) | Said::Accept | Said::Cancel | Said::Discard => {}
+            Said::Accept | Said::Cancel | Said::Discard => {}
         }
         Some(said)
     }
@@ -592,10 +743,8 @@ mod tests {
         }
         fn chooser(self, name: &str) -> Option<Chooser> {
             (self == Form::Load && name == "files").then_some(Chooser {
-                filter: &["wav"],
-                multiple: true,
                 w: 400.0,
-                h: 300.0,
+                ..Chooser::open(&["wav"], true)
             })
         }
     }
@@ -695,7 +844,7 @@ mod tests {
         let mut d = dialogs();
         let id = d.ids["load:files"];
         let shown = d.open(Form::Load, BTreeMap::new());
-        assert!(shown.contains(&(id, json!({"path": START, "focus": 1}))));
+        assert!(shown.contains(&(id, json!({"path": START, "focus": 1, "filter": ["wav"]}))));
         assert!(shown.contains(&(d.ids[STACK], json!({"index": 2}))));
         d.read("load:files", "path", &[json!("/takes")]);
         d.read("load:files", "select", &[json!("/takes/a.wav")]);
@@ -709,7 +858,7 @@ mod tests {
             "a report with no form up is nobody's"
         );
         let again = d.open(Form::Load, BTreeMap::new());
-        assert!(again.contains(&(id, json!({"path": "/takes", "focus": 1}))));
+        assert!(again.contains(&(id, json!({"path": "/takes", "focus": 1, "filter": ["wav"]}))));
         assert!(d.chosen("files").is_empty());
     }
 
@@ -807,6 +956,89 @@ mod tests {
             find(&stack, d.ids["asked:value"]).unwrap()["value"],
             "typed"
         );
+    }
+
+    /// A form that saves: its chooser, and the name it fills.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Keep;
+
+    impl Spec for Keep {
+        fn prefix(self) -> &'static str {
+            "keep"
+        }
+        fn page(self) -> i32 {
+            1
+        }
+        fn title(self) -> &'static str {
+            "Save as"
+        }
+        fn fields(self) -> Vec<(&'static str, &'static str)> {
+            vec![("path", ""), (NAME, "Name")]
+        }
+        fn chooser(self, name: &str) -> Option<Chooser> {
+            (name == "path").then_some(Chooser::save(&["wav"]))
+        }
+        fn accept(self) -> &'static str {
+            "Save"
+        }
+    }
+
+    /// **Save As is the chooser too**: it opens in the folder of the file
+    /// written, that file's name in the field under it; a file it selects
+    /// is the name, a name typed is in the folder shown, and a pick saves.
+    #[test]
+    fn a_saving_chooser_fills_its_name_and_a_pick_saves() {
+        let forms = [Keep];
+        let mut d = Dialogs {
+            ids: names(&forms)
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name, 100 + i as i32))
+                .collect(),
+            ..Dialogs::default()
+        };
+        let chooser = d.ids["keep:path"];
+        let name = d.ids["keep:name"];
+        let shown = d.open(
+            Keep,
+            BTreeMap::from([("path".into(), "/takes/a.wav".into())]),
+        );
+        assert!(shown.contains(&(
+            chooser,
+            json!({"path": "/takes", "focus": 1, "filter": ["wav"]})
+        )));
+        assert!(shown.contains(&(name, json!({"value": "a.wav"}))));
+        assert!(shown.contains(&(d.ids["keep:ok"], json!({"label": "Save"}))));
+        let up = d.up().unwrap().clone();
+        assert_eq!(up.path("path").as_deref(), Some("/takes/a.wav"));
+        // the chooser fills the name field, which it is bound to
+        let stack = d.stack(&forms).unwrap();
+        assert_eq!(
+            find(&stack, chooser).unwrap()["bind"],
+            json!(["widget", name, "value"])
+        );
+        assert_eq!(find(&stack, d.ids["keep:ok"]).unwrap()["label"], "Save");
+        d.read("keep:name", "b.wav", &[]);
+        assert_eq!(
+            d.up().unwrap().path("path").as_deref(),
+            Some("/takes/b.wav")
+        );
+        d.read("keep:path", "/other/c.wav", &[]);
+        assert_eq!(
+            d.up().unwrap().path("path").as_deref(),
+            Some("/other/c.wav")
+        );
+        assert_eq!(
+            d.read("keep:path", "pick", &[json!(["/other/d.wav"])]),
+            Some(Said::Accept)
+        );
+        assert_eq!(
+            d.up().unwrap().path("path").as_deref(),
+            Some("/other/d.wav")
+        );
+        // nothing typed names nothing
+        d.read("keep:name", "  ", &[]);
+        assert_eq!(d.up().unwrap().path("path"), None);
     }
 
     #[test]

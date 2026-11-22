@@ -453,7 +453,7 @@ fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
         page(h) == 1
     });
     let path = folder.join("named.json");
-    let field = widget(&host, "dialog:file:path");
+    let field = widget(&host, "dialog:file:name");
     let typed = host.event_message(field, 2, vec![OscType::String(path.display().to_string())]);
     assert!(host.deliver(def_id, &typed));
     let ok = widget(&host, "dialog:file:ok");

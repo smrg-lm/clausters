@@ -741,10 +741,9 @@ impl MultitrackEditor {
                 self.open_chosen(&paths, out)
             }
             Said::Accept => {
-                let path = open.value("path").trim().to_string();
-                if path.is_empty() {
+                let Some(path) = open.path("path") else {
                     return (Some("a session is saved under a path".into()), Vec::new());
-                }
+                };
                 out.save_as = Some(path);
                 (None, crate::forms::corrections(self.dialogs.hide()))
             }
@@ -3124,7 +3123,7 @@ mod tests {
             "the form is up: {corrections:?}"
         );
         ed.event(
-            &event(i64::from(ids["file:path"]), 2, 1, "/songs/a.json", vec![]),
+            &event(i64::from(ids["file:name"]), 2, 1, "/songs/a.json", vec![]),
             1,
         );
         let accepted = ed.event(&event(i64::from(ids["file:ok"]), 3, 1, "click", vec![]), 1);

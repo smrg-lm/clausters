@@ -251,7 +251,13 @@ pub const WINDOW: &[Verb] = &[
     // Ctrl+Shift+Z is the spelling that works on a keyboard with no Y where
     // an English one has one.
     verb("redo", &["Ctrl+Shift+Z", "Ctrl+Y"], "Redo"),
+    // **the window's file**, one set of words in every application: what
+    // has none refuses them as absent
+    verb("new_file", &["Ctrl+N"], "New"),
+    verb("open_file", &["Ctrl+O"], "Open..."),
     verb("save", &["Ctrl+S"], "Save"),
+    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
+    verb("close_file", &[], "Close file"),
     verb("close", &[], "Close"),
     verb("view_all", &["R"], "Zoom to fit"),
     verb("play", &["Space"], "Play or stop"),
@@ -282,9 +288,9 @@ pub const AUDIO_SCOPE: &str = "audio";
 
 /// Audio view presets; menu commands share the application's JSON verbs.
 pub const AUDIO: &[Verb] = &[
-    verb("new_file", &[], "New file..."),
-    verb("open_file", &["Ctrl+O"], "Open file..."),
-    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
+    // a new take asks its shape first, which its ellipsis says: the one
+    // file verb a scope restates, and only to add that
+    verb("new_file", &["Ctrl+N"], "New..."),
     verb("show_all_channels", &[], "Show all channels"),
     choice("views", "view_wave", &["W"], "Waveform"),
     choice("layer", "layer_take", &[], "Edit audio"),
@@ -296,7 +302,6 @@ pub const AUDIO: &[Verb] = &[
     choice("views", "view_both", &["B"], "Waveform and spectrogram"),
     toggle("toggle_files", &[], "Files"),
     toggle("spectrogram_settings", &[], "Spectrogram settings"),
-    verb("close_file", &[], "Close file"),
 ];
 
 /// The multitrack window's scope.
@@ -306,10 +311,6 @@ pub const MULTITRACK_SCOPE: &str = "multitrack";
 /// where a pass ends, its rows' own commands, how its boxes of samples are
 /// drawn, and the automatic crossfade.
 pub const MULTITRACK: &[Verb] = &[
-    verb("new_file", &[], "New session"),
-    verb("open_file", &["Ctrl+O"], "Open session..."),
-    verb("close_file", &[], "Close session"),
-    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
     verb("pause", &[], "Pause"),
     verb("stop", &[], "Stop"),
     toggle("stop_at_end", &["Shift+L"], "Stop at end, on or off"),
@@ -383,11 +384,6 @@ pub const NOTES: &[Verb] = &[
     verb("note_pressure", &[], "Add note pressure"),
     verb("note_timbre", &[], "Add note timbre"),
     verb("curve_remove", &[], "Remove shown curve"),
-    // the roll's file, when the window is its sequence's only holder
-    verb("new_file", &[], "New"),
-    verb("open_file", &["Ctrl+O"], "Open..."),
-    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
-    verb("close_file", &[], "Close file"),
     // the conversions: the mode is the sequence's format's, and going to
     // another format makes a copy, opened in a roll of its own
     verb("convert_notation", &[], "Convert to notation..."),
@@ -438,9 +434,6 @@ pub const EDITOR_SCOPE: &str = "editor";
 /// its size. Evaluating is the `code` element's own, and these name it for
 /// the menu and for a panel the element is not in.
 pub const EDITOR: &[Verb] = &[
-    verb("new_file", &["Ctrl+N"], "New"),
-    verb("open_file", &["Ctrl+O"], "Open..."),
-    verb("save_as", &["Ctrl+Shift+S"], "Save as..."),
     verb("close_tab", &["Ctrl+W"], "Close tab"),
     verb("quit", &["Ctrl+Q"], "Quit"),
     verb("preferences", &["Ctrl+,"], "Preferences..."),
@@ -482,8 +475,6 @@ pub const NOTE_ENTRY_SCOPE: &str = "note_entry";
 /// **The score window's own keys**: over the selection, and into note entry.
 /// The chords are the settled ones of notation programs.
 pub const SCORE: &[Verb] = &[
-    verb("new_file", &[], "New"),
-    verb("close_file", &[], "Close file"),
     toggle("entry", &["N"], "Note entry on or off"),
     // over the selection: what note entry's own rows, read first while the
     // window is in it, give the cursor and the note written
@@ -735,6 +726,26 @@ mod tests {
         assert_eq!(label(MULTITRACK, "view_all"), "Zoom to fit");
         assert_eq!(label(MULTITRACK, "stop_at_end"), "Stop at end, on or off");
         assert_eq!(label(MULTITRACK, "make_coffee"), "Make coffee");
+    }
+
+    /// **A file is named alike in every application**: its verbs are the
+    /// window's, and a scope restates one only to say that it asks more
+    /// first -- the window's words with an ellipsis.
+    #[test]
+    fn every_application_names_its_file_in_the_window_s_words() {
+        const FILE: &[&str] = &["new_file", "open_file", "save", "save_as", "close_file"];
+        for name in FILE {
+            assert!(find(WINDOW, name).is_some(), "{name} is the window's");
+        }
+        for rows in [AUDIO, MULTITRACK, NOTES, SCORE, NOTE_ENTRY, EDITOR] {
+            for v in rows.iter().filter(|v| FILE.contains(&v.name)) {
+                let window = find(WINDOW, v.name).unwrap();
+                assert_eq!(v.label, format!("{}...", window.label), "{}", v.name);
+                assert_eq!(v.keys, window.keys, "{}", v.name);
+            }
+        }
+        assert_eq!(label(MULTITRACK, "open_file"), "Open...");
+        assert_eq!(label(AUDIO, "new_file"), "New...");
     }
 
     /// The declaration is the table, row for row.

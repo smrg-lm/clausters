@@ -114,10 +114,9 @@ Needs a display and a GPU adapter.
 import os
 import sys
 
-from clausters import Session, SoundFile, Synth
+from clausters import Session, SoundFile, Synth, open_app
 from clausters.defs import SynthDef, out
 from clausters.defs.ugens import line, pink_noise, saw, sine, white_noise
-from clausters.gui import open_app
 from clausters.document import Content, Multitrack, Source
 from clausters.gui.editing import MultitrackSession
 from clausters.seq import EventSequence

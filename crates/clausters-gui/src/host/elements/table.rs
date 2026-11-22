@@ -75,6 +75,8 @@ pub(crate) struct Rows {
     reveal: Cell<Option<usize>>,
     /// Where a Shift range is counted from, by index into the rows.
     anchor: Option<usize>,
+    /// The scroll bar's thumb a press holds.
+    thumb: Option<controls::ThumbGrip>,
 }
 
 /// A column off the wire: a title, or `{"title", "w"}`.
@@ -416,6 +418,47 @@ impl Rows {
         (to - from).abs() > f32::EPSILON
     }
 
+    /// **The scroll bar**, down the list's right edge, where it holds more
+    /// rows than fit: what says there are more, and a hand's way to them.
+    fn bar(&self, g: &Geometry, m: &Metrics) -> Option<controls::ScrollBar> {
+        let w = m.scrollbar_w.min(g.list.w);
+        let track = Rect::new(g.list.x + g.list.w - w, g.list.y, w, g.list.h);
+        let scroll = self.scroll.get().clamp(0.0, g.max_scroll());
+        controls::ScrollBar::new(true, track, g.list.h, g.max_scroll(), scroll, g.row_h)
+    }
+
+    /// **A press on the scroll bar**, which takes its thumb (bringing it to
+    /// the pointer first when the press was off it); whether it was there.
+    pub(crate) fn press_bar(&mut self, at: (f64, f64), input: &Input) -> bool {
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        let Some((grip, offset)) = self
+            .bar(&g, input.metrics)
+            .and_then(|bar| bar.press(at, self.scroll.get()))
+        else {
+            return false;
+        };
+        self.thumb = Some(grip);
+        self.scroll.set(offset);
+        true
+    }
+
+    /// The thumb held dragged to `at`; whether a thumb was held.
+    pub(crate) fn drag_bar(&mut self, at: (f64, f64), input: &Input) -> bool {
+        let Some(grip) = self.thumb else {
+            return false;
+        };
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        if let Some(bar) = self.bar(&g, input.metrics) {
+            self.scroll.set(bar.drag(grip, at));
+        }
+        true
+    }
+
+    /// The thumb let go of.
+    pub(crate) fn release_bar(&mut self) {
+        self.thumb = None;
+    }
+
     /// Whether the list has more rows than fit, so the wheel is its own.
     pub(crate) fn scrolls(&self, input: &Input) -> bool {
         self.geometry(input.rect, input.scale, input.metrics)
@@ -482,6 +525,10 @@ impl Rows {
                 empty,
             },
         );
+        if let Some(bar) = self.bar(&g, ctx.metrics) {
+            let (mesh, m, theme) = d.parts();
+            controls::scroll_thumb(mesh, bar.thumb, m, theme);
+        }
     }
 }
 
@@ -549,6 +596,9 @@ impl Element for Table {
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let placed = self.placed(input);
+        if self.rows.press_bar(at, &placed) {
+            return Claim::take();
+        }
         let changed = match self.rows.hit(at, &placed) {
             Some(Hit::Header(c)) => {
                 // The owner orders the rows; the host moves the mark and asks.
@@ -565,6 +615,16 @@ impl Element for Table {
             None => return Claim::take(),
         };
         Claim::events(self.rows.events(&changed))
+    }
+
+    fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        self.rows.drag_bar(at, &self.placed(input));
+        Events::none()
+    }
+
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+        self.rows.release_bar();
+        Events::none()
     }
 
     fn accepts_focus(&self) -> bool {
@@ -600,6 +660,14 @@ mod tests {
         /// calls.
         pub(crate) fn rows(&self) -> &[Row] {
             &self.rows
+        }
+
+        /// How far the list is scrolled, and its scroll bar's track and
+        /// thumb where it has one, laid out in `input`.
+        pub(crate) fn scrolled(&self, input: &Input) -> (f32, Option<(Rect, Rect)>) {
+            let g = self.geometry(input.rect, input.scale, input.metrics);
+            let bar = self.bar(&g, input.metrics).map(|b| (b.track, b.thumb));
+            (self.scroll.get(), bar)
         }
     }
 

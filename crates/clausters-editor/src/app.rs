@@ -1085,12 +1085,10 @@ impl App {
         self.ask_path(purpose, start);
     }
 
-    /// **A path asked for `purpose`**: of the platform's dialog, or of the
-    /// editor's own over the platform's storage where it has none.
+    /// **A path asked for `purpose`**, in the editor's file dialog over the
+    /// platform's storage: every application's, drawn by the host, the same
+    /// natively and in a page.
     fn ask_path(&mut self, purpose: Purpose, start: Option<PathBuf>) {
-        if self.offers.dialogs {
-            return self.platform.choose(purpose, start);
-        }
         if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
             return;
         }
@@ -1100,7 +1098,8 @@ impl App {
 
     /// The editor's file dialog, drawn again as it is now.
     fn show_file_dialog(&mut self) {
-        if let Some(tree) = self.file_dialog.as_ref().map(FileDialog::tree) {
+        let transfers = self.offers.transfers;
+        if let Some(tree) = self.file_dialog.as_ref().map(|d| d.tree(transfers)) {
             self.show_dialog(tree, filedialog::SPARE);
         }
     }
@@ -2015,21 +2014,9 @@ impl App {
                 "checked": self.settings.theme == pref})
         };
         let split = self.editor_split();
+        let file = self.file_menu(recent);
         let mut menu = json!([
-            {"label": "File", "menu": [
-                {"label": "New", "verb": "new_file"},
-                {"label": "Open...", "verb": "open_file"},
-                {"label": "Open Recent", "menu": recent},
-                "-",
-                {"label": "Save", "verb": "save"},
-                {"label": "Save As...", "verb": "save_as"},
-                "-",
-                {"label": "Close Tab", "verb": "close_tab"},
-                "-",
-                {"label": "Preferences...", "verb": "preferences"},
-                "-",
-                {"label": "Quit", "verb": "quit"},
-            ]},
+            file,
             {"label": "Edit", "menu": [
                 {"label": "Undo", "verb": "undo"},
                 {"label": "Redo", "verb": "redo"},
@@ -2096,6 +2083,31 @@ impl App {
         }
         hide(&mut menu, &hidden);
         menu
+    }
+
+    /// **File**: every application's ([`clausters_apps::chrome::file_menu`]),
+    /// its file a tab's, with the recent files the editor keeps and the
+    /// preferences, and the program's quit where the window has none.
+    fn file_menu(&self, recent: Vec<Value>) -> Value {
+        use clausters_apps::chrome::{File, file_menu, word};
+        use clausters_editing::verbs::{EDITOR, titled};
+        let mut file = titled(file_menu(&File {
+            files: true,
+            saves: true,
+            recent: Some(Vec::new()),
+            close_file: "close_tab",
+            own: vec![vec![word(EDITOR, "preferences")]],
+            last: vec![word(EDITOR, "quit")],
+            ..File::new(EDITOR)
+        }));
+        // the recent files are named as they are, never in a title's capitals
+        if let Some(entry) = file["menu"]
+            .as_array_mut()
+            .and_then(|entries| entries.iter_mut().find(|e| e.get("menu").is_some()))
+        {
+            entry["menu"] = Value::Array(recent);
+        }
+        file
     }
 
     /// View > Font: the bundled face, then the system's monospaced

@@ -132,10 +132,7 @@ fn opening_measures_the_file_and_draws_its_list() {
     assert_eq!(walk(&steps), ["measure"]);
     let measured = &steps[0]["measure"];
     assert_eq!(measured["path"], "/in/take3.wav", "the file itself");
-    assert_eq!(
-        measured["label"], "Open file",
-        "shown as the open's progress"
-    );
+    assert_eq!(measured["label"], "Open", "shown as the open's progress");
     assert_eq!(spans(&mut editor), [span("take3", 0, 100)]);
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
     let list = editor
@@ -846,7 +843,7 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
 
     event(
         &mut editor,
-        json!([ids["file:path"], 2, 0, "/takes/new.wav"]),
+        json!([ids["file:name"], 2, 0, "/takes/new.wav"]),
     );
     let ok = event(&mut editor.clone(), json!([ids["file:ok"], 3, 0, "click"]));
     assert!(
@@ -872,12 +869,13 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
 fn a_save_as_with_no_path_is_refused_and_cancel_closes_it() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync", "path": "/takes/a.wav"}));
     let shown = event(&mut editor, json!([900, 1, 0, "save_as"]));
+    // the chooser opens in the file's folder, its name in the name field
+    let said = shown["answer"]["corrections"].to_string();
     assert!(
-        shown["answer"]["corrections"]
-            .to_string()
-            .contains("/takes/a.wav")
+        said.contains("\"/takes\"") && said.contains("\"a.wav\""),
+        "{said}"
     );
-    event(&mut editor, json!([ids["file:path"], 2, 0, "  "]));
+    event(&mut editor, json!([ids["file:name"], 2, 0, "  "]));
     let refused = event(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
     assert!(
         refused["answer"]["reason"]
@@ -995,12 +993,12 @@ fn a_fields_focus_report_is_not_what_it_holds() {
     let made = event(&mut editor, json!([ids["new:ok"], 5, 0, "click"]));
     assert_eq!(made["newFile"]["channels"], 3);
     event(&mut editor, json!([900, 6, 0, "save_as"]));
-    event(&mut editor, json!([ids["file:path"], 7, 0, "focus"]));
+    event(&mut editor, json!([ids["file:name"], 7, 0, "focus"]));
     let (_, saved) = window_save(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
     assert_eq!(
         renders(&saved["steps"])[0]["path"],
-        "focus",
-        "a path typed as the word is the word"
+        "/in/focus",
+        "a name typed as the word is the word, in the folder shown"
     );
 }
 
@@ -1088,7 +1086,7 @@ fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
     let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
     assert_eq!(
         corrections_of(&shown, chooser),
-        json!({"path": ".", "focus": 1})
+        json!({"path": ".", "focus": 1, "filter": crate::audio::dialogs::AUDIO})
     );
     event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
     event(
@@ -1105,7 +1103,7 @@ fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
     let again = event(&mut editor, json!([900, 5, 0, "open_file"]));
     assert_eq!(
         corrections_of(&again, chooser),
-        json!({"path": "/takes", "focus": 1}),
+        json!({"path": "/takes", "focus": 1, "filter": crate::audio::dialogs::AUDIO}),
         "where the hand left it"
     );
     let refused = event(&mut editor, json!([ids["open:ok"], 6, 0, "click"]));

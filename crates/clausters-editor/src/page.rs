@@ -257,7 +257,7 @@ impl Platform for Page {
             docs_folder: false,
             fonts: false,
             quit: false,
-            dialogs: false,
+            transfers: true,
         }
     }
 
@@ -322,8 +322,7 @@ impl Platform for Page {
         PathBuf::new()
     }
 
-    /// Never asked: a page has no dialog of its own, and the editor shows
-    /// its own over the page's storage.
+    /// Never asked: a page has no documentation folder of the user's.
     fn choose(&self, purpose: Purpose, _start: Option<PathBuf>) {
         Page::deliver(
             &self.inner,

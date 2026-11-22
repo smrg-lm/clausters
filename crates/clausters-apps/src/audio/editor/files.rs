@@ -460,11 +460,13 @@ impl AudioEditor {
         let Some(open) = self.window_state.dialogs.up().filter(writes) else {
             return false;
         };
+        // a pick in the save form's chooser accepts it as `OK` does
         self.dialog_name(widget).is_some_and(|name| {
-            matches!(
-                forms::read(open.form, &name, tag, values),
-                Some(Said::Accept)
-            )
+            match forms::read(open.form, &name, tag, values) {
+                Some(Said::Accept) => true,
+                Some(Said::Picked(..)) => open.form == Form::SaveAs,
+                _ => false,
+            }
         })
     }
 
@@ -655,10 +657,7 @@ impl AudioEditor {
                 // answered above
                 Form::Close => None,
                 Form::SaveAs => {
-                    let path = open.value("path").trim().to_string();
-                    if path.is_empty() {
-                        Some("a file is saved under a path".into())
-                    } else {
+                    if let Some(path) = open.path("path") {
                         match self.save_target(Some(path), "float") {
                             Ok(target) => {
                                 // the operation the request becomes writes here
@@ -668,6 +667,8 @@ impl AudioEditor {
                             }
                             Err(why) => Some(why),
                         }
+                    } else {
+                        Some("a file is saved under a path".into())
                     }
                 }
             },

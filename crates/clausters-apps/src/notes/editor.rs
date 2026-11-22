@@ -863,7 +863,10 @@ impl NotesEditor {
                     let paths = self.dialogs.chosen("path").to_vec();
                     self.open_chosen(&paths, out)
                 }
-                Form::SaveAs => crate::file::path_given(self, false, open.value("path"), out),
+                Form::SaveAs => {
+                    let path = open.path("path").unwrap_or_default();
+                    crate::file::path_given(self, false, &path, out)
+                }
                 Form::Close => crate::file::save_then_go(self, out),
             },
             _ => return (None, Vec::new()),

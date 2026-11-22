@@ -41,9 +41,9 @@ device.
 # %%
 import sys
 
-from clausters import Session, Synth
+from clausters import Session, Synth, open_app
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
-from clausters.gui import ICON, button, open_app
+from clausters.gui import ICON, button
 
 # %% [markdown]
 # ## Launch the server and the GUI

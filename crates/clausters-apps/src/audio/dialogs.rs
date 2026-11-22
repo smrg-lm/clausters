@@ -44,9 +44,9 @@ impl Spec for Form {
 
     fn title(self) -> &'static str {
         match self {
-            Form::New => "New file",
+            Form::New => "New",
             Form::SaveAs => "Save as",
-            Form::Open => "Open file",
+            Form::Open => "Open",
             Form::Close => "Close",
         }
     }
@@ -58,8 +58,8 @@ impl Spec for Form {
                 ("seconds", "Length (seconds)"),
                 ("rate", "Sample rate (Hz)"),
             ],
-            Form::SaveAs => vec![("path", "File")],
-            Form::Open => vec![("path", "Files")],
+            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
+            Form::Open => vec![("path", "")],
             Form::Close => Vec::new(),
         }
     }
@@ -69,14 +69,21 @@ impl Spec for Form {
     }
 
     /// The files to open are chosen in the host's own chooser, where Ctrl
-    /// and Shift select several, rather than typed.
+    /// and Shift select several, and the file to save as in it too.
     fn chooser(self, name: &str) -> Option<Chooser> {
-        (self == Form::Open && name == "path").then_some(Chooser {
-            filter: AUDIO,
-            multiple: true,
-            w: 420.0,
-            h: 300.0,
-        })
+        match (self, name) {
+            (Form::Open, "path") => Some(Chooser::open(AUDIO, true)),
+            (Form::SaveAs, "path") => Some(Chooser::save(AUDIO)),
+            _ => None,
+        }
+    }
+
+    fn accept(self) -> &'static str {
+        match self {
+            Form::Open => "Open",
+            Form::SaveAs => "Save",
+            Form::New | Form::Close => "OK",
+        }
     }
 }
 
@@ -213,10 +220,11 @@ mod tests {
             5,
             "no dialog, a new file, a save, an open and the close form"
         );
-        assert_eq!(pages[1]["children"][0]["title"], "New file");
+        assert_eq!(pages[1]["children"][0]["title"], "New");
         assert_eq!(pages[2]["children"][0]["title"], "Save as");
-        assert_eq!(pages[3]["children"][0]["title"], "Open file");
-        let chooser = &pages[3]["children"][0]["children"][0]["children"][0]["children"][1];
+        assert_eq!(pages[3]["children"][0]["title"], "Open");
+        // a chooser has no caption: the dialog's title says what it chooses
+        let chooser = &pages[3]["children"][0]["children"][0]["children"][0]["children"][0];
         assert_eq!(chooser["type"], "files", "the host's chooser");
         assert_eq!(chooser["id"], ids["open:path"]);
         assert_eq!(chooser["multiple"], true);

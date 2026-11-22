@@ -409,6 +409,7 @@ impl ScoreEditor {
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
         use clausters_editing::verbs::{self, ActionState, ActionTarget};
         let selected = !self.selection.is_empty();
+        let dialogs = self.dialogs.numbered(dialogs::forms());
         let entry = self.entry;
         let keys: &[verbs::Verb] = if entry { verbs::NOTE_ENTRY } else { &[] };
         verbs::WINDOW
@@ -418,13 +419,16 @@ impl ScoreEditor {
             .map(|verb| {
                 let mut state = ActionState::new(verb, ActionTarget::Window);
                 if !self.document {
-                    if !matches!(verb.name, "close" | "keys" | "new_file") {
+                    if !matches!(verb.name, "close" | "keys" | "new_file" | "open_file") {
                         state.refuse(NO_FILE);
                     }
                     return (verb.name, state);
                 }
                 match verb.name {
                     "close_file" if self.over.is_some() => state.refuse(OVER_NO_FILE),
+                    "open_file" | "save_as" if !dialogs => {
+                        state.refuse("this window has no dialogs");
+                    }
                     "undo" if !undo => state.refuse("there is nothing to undo"),
                     "redo" if !redo => state.refuse("there is nothing to redo"),
                     "entry" => state.checked = Some(entry),
@@ -1473,7 +1477,8 @@ impl ScoreEditor {
             .is_some_and(|widget| self.dialogs.name(widget).is_some());
         form || match word(3) {
             Some(crate::closing::VERB) => true,
-            Some(turn::MENU) => matches!(word(4), Some("new_file" | "dialog:open" | "close")),
+            Some(turn::MENU) => matches!(word(4), Some("new_file" | "open_file" | "close")),
+            Some("new_file" | "open_file") => true,
             _ => false,
         }
     }
@@ -1594,10 +1599,22 @@ impl ScoreEditor {
     fn pick(&mut self, message: &conversation::Message, args: &[Value], out: &mut Outcome) {
         let verb = args.get(4).map(text).unwrap_or_default();
         let state = args.get(5).map(int);
+        self.answer_pick(message, &verb, state, out);
+    }
+
+    /// **What the menu's verb `verb` asks, answered**: a pick of the bar,
+    /// or the key that performs the same verb.
+    fn answer_pick(
+        &mut self,
+        message: &conversation::Message,
+        verb: &str,
+        state: Option<i64>,
+        out: &mut Outcome,
+    ) {
         let mut reason = None;
         // a form opened corrects its own widgets, and no page is engraved
         let mut shown = None;
-        match menu::read(&verb, state) {
+        match menu::read(verb, state) {
             menu::Pick::Undo | menu::Pick::Redo => {
                 out.turn = Kind::Step;
                 out.seq = message.seq;
@@ -2300,6 +2317,11 @@ impl Converse for ScoreEditor {
         }
         match message.tag.as_str() {
             "menu" => self.pick(message, args, out),
+            // the window's file, by its keys: the menu's verbs
+            verb @ ("new_file" | "open_file" | "save_as" | "close_file") => {
+                let verb = verb.to_string();
+                self.answer_pick(message, &verb, None, out);
+            }
             // the space bar and `L` are the window's own: what they ask of
             // the playback is the pass, with the loop switch the host sends
             "play" | "loop" => {

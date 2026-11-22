@@ -24,8 +24,7 @@ names. Finish closes the session.
 <button id="open" disabled>Open editor</button><button id="finish" disabled>Finish</button>
 <pre id="log"></pre>
 <script type="module">
-import { PluginDef, Session, Synth, SynthDef, defs } from "../../dist/index.js";
-import { edit } from "../../dist/gui/index.js";
+import { PluginDef, Session, Synth, SynthDef, defs, edit } from "../../dist/index.js";
 const { out, sine } = defs;
 const $ = (id) => document.getElementById(id);
 const smoke = new URLSearchParams(location.search).has("smoke");

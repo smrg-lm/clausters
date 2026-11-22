@@ -200,8 +200,6 @@ impl Form {
         Some(match word {
             "text" => Form::Text,
             "page" => Form::Page,
-            "open" => Form::File(File::Open),
-            "save" => Form::File(File::SaveAs),
             "export_midi" => Form::File(File::ExportMidi),
             "export_clip" => Form::File(File::ExportClip),
             "close" => Form::Close,
@@ -224,13 +222,18 @@ impl Form {
 
 /// The forms the window holds; the parameter's is one form whatever
 /// transformation asks, and the file's one whichever way the file goes.
-const FORMS: [Form; 5] = [
+const FORMS: [Form; 6] = [
     Form::Text,
     Form::Param(Param::Transpose),
     Form::Page,
-    Form::File(File::Open),
+    Form::File(File::SaveAs),
     Form::Close,
+    Form::File(File::Open),
 ];
+
+/// **The extensions of the files a score editor opens**: what it reads as
+/// text -- MEI, MusicXML and ABC.
+pub const SCORES: &[&str] = &["mei", "musicxml", "xml", "abc"];
 
 /// What the close form asks.
 pub const UNSAVED: &str = "The score has changes that are not saved.";
@@ -245,6 +248,7 @@ impl Spec for Form {
             Form::Text => "text",
             Form::Param(_) => "param",
             Form::Page => "page",
+            Form::File(File::Open) => "open",
             Form::File(_) => "file",
             Form::Close => "close",
         }
@@ -256,6 +260,7 @@ impl Spec for Form {
             Form::Text => 1,
             Form::Param(_) => 2,
             Form::Page => 3,
+            Form::File(File::Open) => 6,
             Form::File(_) => 4,
             Form::Close => 5,
         }
@@ -282,7 +287,8 @@ impl Spec for Form {
                 ("left", "Left margin (mm)"),
                 ("staff", "Staff height (mm)"),
             ],
-            Form::File(_) => vec![("path", "File")],
+            Form::File(File::Open) => vec![("path", "")],
+            Form::File(_) => vec![("path", ""), (forms::NAME, "Name")],
             Form::Close => Vec::new(),
         }
     }
@@ -322,6 +328,30 @@ impl Spec for Form {
 
     fn closes(self) -> Option<&'static str> {
         (self == Form::Close).then_some(UNSAVED)
+    }
+
+    /// **A file is chosen in the host's chooser**: the score to open, and
+    /// where the score or an export of it is written, each among the files
+    /// of its kind.
+    fn chooser(self, name: &str) -> Option<forms::Chooser> {
+        let Form::File(file) = self else {
+            return None;
+        };
+        (name == "path").then(|| match file {
+            File::Open => forms::Chooser::open(SCORES, false),
+            File::SaveAs => forms::Chooser::save(&["mei"]),
+            File::ExportMidi => forms::Chooser::save(&["mid", "midi", "smf"]),
+            File::ExportClip => forms::Chooser::save(&["midi2"]),
+        })
+    }
+
+    fn accept(self) -> &'static str {
+        match self {
+            Form::File(File::Open) => "Open",
+            Form::File(File::SaveAs) => "Save",
+            Form::File(_) => "Export",
+            _ => "OK",
+        }
     }
 
     fn field(self, name: &str, widget: &mut serde_json::Map<String, Value>) {
@@ -486,7 +516,7 @@ mod tests {
         );
         assert_eq!(stack["h"], 0, "it takes no room in the window");
         let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 6, "no dialog, and the five forms");
+        assert_eq!(pages.len(), 7, "no dialog, and the six forms");
         assert!(pages[0].get("children").is_none());
         for (page, form) in pages[1..].iter().zip(FORMS) {
             let dialog = &page["children"][0];

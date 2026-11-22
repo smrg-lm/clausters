@@ -140,9 +140,8 @@ it as a plain script.
 import os
 import sys
 
-from clausters import Session
+from clausters import Session, edit, open_app
 from clausters import notation
-from clausters.gui import edit, open_app
 
 # Eight bars in ABC -- a score as it usually arrives: typed by somebody else, in
 # a format that is not ours. `M:` is the meter, `L:` the length a bare letter

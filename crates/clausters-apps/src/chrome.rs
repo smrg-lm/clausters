@@ -123,7 +123,7 @@ fn scope(app: App) -> &'static [Verb] {
 
 /// A menu entry: the verb, in the words the verb table gives it.
 fn entry(app: App, verb: &str) -> Value {
-    json!({"label": verbs::label(scope(app), verb), "verb": verb})
+    word(scope(app), verb)
 }
 
 fn sub(label: &str, entries: Vec<Value>) -> Value {
@@ -132,6 +132,89 @@ fn sub(label: &str, entries: Vec<Value>) -> Value {
 
 fn sep() -> Value {
     json!("-")
+}
+
+/// **What a window's File menu holds.** Every application's File menu is
+/// built here, the score's and the code editor's with the others', so its
+/// section on the window's file is the same section everywhere, in one
+/// order and in the verb table's words:
+///
+/// | | |
+/// |---|---|
+/// | the file | New, Open..., Open Recent (where the application keeps its recent files), Close File |
+/// | its writing | Save, Save As... |
+/// | the application's own | each group between separators: a page's setup, an export, a conversion |
+/// | the window | Close, or the program's Quit |
+///
+/// What a window does not have is left out rather than disabled: a curve's
+/// window has no file, and a roll a client holds writes none.
+pub struct File<'a> {
+    /// The verbs whose words the entries take: the application's scope,
+    /// and the window's under it.
+    pub scope: &'a [Verb],
+    /// Whether the window has a file of its own: New, Open, Close File.
+    pub files: bool,
+    /// Whether it writes its work itself: Save and Save As.
+    pub saves: bool,
+    /// The recent files, as the entries of Open Recent, where the
+    /// application keeps them.
+    pub recent: Option<Vec<Value>>,
+    /// The verb that lets go of the file in view: `close_file`, or a tab's.
+    pub close_file: &'a str,
+    /// The application's own entries, each group between separators.
+    pub own: Vec<Vec<Value>>,
+    /// What ends the menu: the window's `close`, by default.
+    pub last: Vec<Value>,
+}
+
+impl<'a> File<'a> {
+    /// A File menu with nothing but the window's close, in `scope`'s words.
+    #[must_use]
+    pub fn new(scope: &'a [Verb]) -> Self {
+        File {
+            scope,
+            files: false,
+            saves: false,
+            recent: None,
+            close_file: "close_file",
+            own: Vec::new(),
+            last: vec![word(scope, "close")],
+        }
+    }
+}
+
+/// An entry of `scope`'s: the verb, in the words the table gives it there.
+#[must_use]
+pub fn word(scope: &[Verb], verb: &str) -> Value {
+    json!({"label": verbs::label(scope, verb), "verb": verb})
+}
+
+/// **The File menu** ([`File`]), as an entry of the bar.
+#[must_use]
+pub fn file_menu(file: &File<'_>) -> Value {
+    let word = |verb: &str| word(file.scope, verb);
+    let mut groups: Vec<Vec<Value>> = Vec::new();
+    if file.files {
+        let mut group = vec![word("new_file"), word("open_file")];
+        if let Some(recent) = &file.recent {
+            group.push(sub("Open recent", recent.clone()));
+        }
+        group.push(word(file.close_file));
+        groups.push(group);
+    }
+    if file.saves {
+        groups.push(vec![word("save"), word("save_as")]);
+    }
+    groups.extend(file.own.iter().cloned());
+    groups.push(file.last.clone());
+    let mut entries = Vec::new();
+    for group in groups.into_iter().filter(|g| !g.is_empty()) {
+        if !entries.is_empty() {
+            entries.push(sep());
+        }
+        entries.extend(group);
+    }
+    sub("File", entries)
 }
 
 /// **The menu bar**, as the window's `menu` value, its labels in header
@@ -148,42 +231,34 @@ fn entries(app: App, saves: bool) -> Value {
     // would offer of the others' is refused where it is asked (`actions`)
     if app == App::Points {
         return json!([
-            sub("File", vec![entry(app, "close")]),
+            file_menu(&File::new(scope(app))),
             sub("Edit", vec![entry(app, "undo"), entry(app, "redo")]),
             sub("Help", vec![entry(app, "keys")]),
         ]);
     }
-    let mut file = Vec::new();
     // a roll has a file when its window is its sequence's only holder
-    if matches!(app, App::Audio | App::Multitrack) || (app == App::Notes && saves) {
-        file.extend([
-            entry(app, "new_file"),
-            entry(app, "open_file"),
-            entry(app, "close_file"),
-            sep(),
-        ]);
-    }
-    if saves {
-        file.push(entry(app, "save"));
-        if matches!(app, App::Audio | App::Multitrack | App::Notes) {
-            file.push(entry(app, "save_as"));
-        }
-        file.push(sep());
-    }
-    if app == App::Notes {
-        // a conversion opens a copy in another format in a roll of its own
-        file.extend(
+    let files = matches!(app, App::Audio | App::Multitrack) || (app == App::Notes && saves);
+    // a conversion opens a copy in another format in a roll of its own
+    let own = if app == App::Notes {
+        vec![
             [
                 "convert_notation",
                 "convert_midi1",
                 "convert_mpe",
                 "convert_midi2",
             ]
-            .map(|v| entry(app, v)),
-        );
-        file.push(sep());
-    }
-    file.push(entry(app, "close"));
+            .map(|v| entry(app, v))
+            .to_vec(),
+        ]
+    } else {
+        Vec::new()
+    };
+    let file = file_menu(&File {
+        files,
+        saves,
+        own,
+        ..File::new(scope(app))
+    });
 
     let mut edit = vec![
         entry(app, "undo"),
@@ -323,7 +398,7 @@ fn entries(app: App, saves: bool) -> Value {
     }
 
     let mut bar = vec![
-        sub("File", file),
+        file,
         sub("Edit", edit),
         sub("View", view),
         sub("Transport", transport),
@@ -420,8 +495,10 @@ pub(crate) fn grid_actions(
                 "undo" if !undo => state.refuse("there is nothing to undo"),
                 "redo" if !redo => state.refuse("there is nothing to redo"),
                 // a roll's and a curve's are the script's: never a file of theirs
-                "save" | "save_as" if !saves && matches!(app, App::Notes | App::Points) => {
-                    state.refuse_absent("this window writes no file");
+                "new_file" | "open_file" | "save" | "save_as" | "close_file"
+                    if !saves && matches!(app, App::Notes | App::Points) =>
+                {
+                    state.refuse_absent("this window has no file of its own");
                 }
                 "save" | "save_as" if !saves => state.refuse("this window writes no file"),
                 // a curve's window has an axis and no time ruler
@@ -590,7 +667,7 @@ pub fn dress(window: &mut Value, app: App, menu: Value, toolbar: Value, main: i3
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Every verb a menu names, its submenus' with them.
@@ -705,6 +782,52 @@ mod tests {
                 "the multitrack lacks {verb}"
             );
         }
+    }
+
+    /// **The File menu of a window**, as its labels read: what every
+    /// application's begins with, written once for the tests of each.
+    pub(crate) fn file_labels(bar: &Value) -> Vec<String> {
+        let file = bar
+            .as_array()
+            .and_then(|titles| titles.iter().find(|t| t["label"] == "File"))
+            .expect("a File menu");
+        file["menu"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["label"].as_str().or(e.as_str()).unwrap_or("").to_string())
+            .collect()
+    }
+
+    /// **What every application's File menu begins with**, the score's and
+    /// the code editor's too, in this order and these words.
+    pub(crate) const FILE_SECTION: [&str; 6] =
+        ["New", "Open...", "Close File", "-", "Save", "Save As..."];
+
+    /// **A file is handled alike everywhere**: the same entries, in the same
+    /// order and words, and the window's close at the end.
+    #[test]
+    fn every_application_s_file_menu_starts_alike() {
+        for (app, file) in [
+            (App::Multitrack, FILE_SECTION.to_vec()),
+            (App::Notes, FILE_SECTION.to_vec()),
+        ] {
+            let labels = file_labels(&menu(app, true));
+            assert_eq!(labels[..file.len()], file, "{app:?}");
+            assert_eq!(labels.last().map(String::as_str), Some("Close"), "{app:?}");
+        }
+        // a new take asks its shape first, and says so
+        let audio = file_labels(&menu(App::Audio, true));
+        assert_eq!(audio[0], "New...");
+        assert_eq!(audio[1..FILE_SECTION.len()], FILE_SECTION[1..]);
+        // without a file of its own, what the application adds and the close
+        let roll = file_labels(&menu(App::Notes, false));
+        assert_eq!(roll[0], "Convert to Notation...");
+        assert_eq!(roll.last().map(String::as_str), Some("Close"));
+        assert_eq!(file_labels(&menu(App::Points, false)), ["Close"]);
+        // a window that does not write its work has the file and no save
+        let multitrack = file_labels(&menu(App::Multitrack, false));
+        assert_eq!(multitrack, ["New", "Open...", "Close File", "-", "Close"]);
     }
 
     /// A tool is a verb and nothing else: no id, since what it does is the

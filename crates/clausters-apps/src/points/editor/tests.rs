@@ -317,7 +317,8 @@ fn the_actions_refuse_what_a_curve_does_not_do_and_say_why() {
         ("paste", "no clipboard"),
         ("delete", "no clipboard"),
         ("snap", "no grid"),
-        ("save", "writes no file"),
+        ("save", "has no file"),
+        ("open_file", "has no file"),
     ] {
         let state = &actions[verb];
         assert!(!state.enabled, "{verb}");

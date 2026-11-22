@@ -65,11 +65,9 @@ impl ScoreEditor {
             return (None, Vec::new());
         };
         match said {
-            // what a field holds is kept by the reading, and the score
-            // editor's forms have no chooser
-            Said::Field(..) | Said::Chosen(..) | Said::Picked(..) | Said::Entered(..) => {
-                (None, Vec::new())
-            }
+            // what a field holds and where a chooser is are kept by the
+            // reading
+            Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => (None, Vec::new()),
             Said::Cancel => {
                 self.leaving = None;
                 (None, corrections(self.dialogs.hide()))
@@ -79,7 +77,8 @@ impl ScoreEditor {
                 crate::file::let_what_waits_go(self, out);
                 (None, corrections(self.dialogs.hide()))
             }
-            Said::Accept => {
+            // a score picked in the chooser is opened as `OK` would
+            Said::Accept | Said::Picked(..) => {
                 let Some(open) = self.dialogs.up().cloned() else {
                     return (None, Vec::new());
                 };
@@ -124,7 +123,11 @@ impl ScoreEditor {
             // A file is its holder's to read and write: the outcome names
             // it, and for a save it is the score's file from now on.
             Form::File(file) => {
-                let path = open.value("path").trim().to_string();
+                let path = match file {
+                    dialogs::File::Open => self.dialogs.chosen("path").first().cloned(),
+                    _ => open.path("path"),
+                }
+                .unwrap_or_default();
                 match file.format() {
                     Some(_) if path.is_empty() => Some("a file is named by its path".into()),
                     Some(format) => {

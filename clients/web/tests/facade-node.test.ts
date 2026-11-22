@@ -11,7 +11,7 @@ import { Routine } from "../src/base/stream.ts";
 
 test("it imports with no document, and exports the session and its verbs", () => {
     assert.equal(typeof document, "undefined");
-    for (const name of ["Session", "play", "panic", "plot", "scope", "Routine", "defaultSession"]) {
+    for (const name of ["Session", "play", "panic", "plot", "scope", "edit", "openApp", "Routine", "defaultSession"]) {
         assert.ok(name in clausters, `the facade exports ${name}`);
     }
     assert.equal(clausters.Routine, Routine);

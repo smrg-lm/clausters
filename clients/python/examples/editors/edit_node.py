@@ -33,10 +33,9 @@ device. The paired page is ``clients/web/examples/editors/edit-node.html``.
 # %%
 import sys
 
-from clausters import Session, Synth, SynthDef
+from clausters import Session, Synth, SynthDef, edit
 from clausters.defs import control, out, sine
 from clausters.defs.ugens import lpf, pan2, saw
-from clausters.gui import edit
 
 session = Session.live()
 server = session.server

@@ -17,9 +17,9 @@ program would.
   edit -- double click it to open the roll again. Save writes the session back.
 - **Close and reopen the window** once: the client keeps its multitrack object,
   its contents and its sources while the view is gone.
-- **The window's File menu changes its session**: Close session leaves it
-  empty, Open session... chooses a session file in the host's chooser, New
-  session starts an untitled one. Each hands this script's multitrack back as
+- **The window's File menu changes its session**: Close File leaves it
+  empty, Open... chooses a session file in the host's chooser, New starts
+  an untitled one. Each hands this script's multitrack back as
   the window left it (``editor.closed`` turns true), and the window goes on as
   the host's own, asking before it loses unsaved work. A session another
   window holds is not opened twice: that window comes forward.
@@ -37,8 +37,7 @@ step through the cells::
 # %%
 import sys
 
-from clausters import Session
-from clausters.gui import open_app
+from clausters import Session, open_app
 from clausters.gui.editing import MultitrackSession
 
 # %% [markdown]

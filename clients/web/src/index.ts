@@ -112,6 +112,9 @@ export { plot } from "./plot.ts";
 export type { PatchViewOptions, PatchWindow, PlotWindow, Plottable, PlotOptions } from "./plot.ts";
 export { scope } from "./scope.ts";
 export type { ScopeOptions, ScopeView, ScopeWindow } from "./scope.ts";
+// the editing verbs: a structure's view in an editor of its kind, and an
+// application with its chrome -- `clausters/gui`'s, as in the Python client
+export { edit, openApp } from "./gui/editing/edit.ts";
 // audio files on the client side
 export { SoundFile } from "./soundfile.ts";
 export type { SoundFileFormat } from "./soundfile.ts";

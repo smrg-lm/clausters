@@ -33,8 +33,7 @@ It self-launches the audio server and the GUI host: this one plays.
 import pathlib
 import sys
 
-from clausters import Session
-from clausters.gui import open_app
+from clausters import Session, open_app
 from clausters.seq import EventSequence
 from clausters.seq.event import Event
 

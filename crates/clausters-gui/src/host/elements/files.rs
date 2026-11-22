@@ -243,6 +243,9 @@ impl Element for Files {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        if self.rows.press_bar(at, input) {
+            return Claim::take();
+        }
         match self.rows.hit(at, input) {
             Some(Hit::Row(i)) => {
                 let changed = self.rows.click(i, input.mods, input.clicks);
@@ -257,6 +260,16 @@ impl Element for Files {
             }
             _ => Claim::take(),
         }
+    }
+
+    fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        self.rows.drag_bar(at, input);
+        Events::none()
+    }
+
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
+        self.rows.release_bar();
+        Events::none()
     }
 
     fn accepts_focus(&self) -> bool {
@@ -380,6 +393,47 @@ mod tests {
             "filtered, with the way up"
         );
         assert_eq!(f.rows.rows()[2].cells[1], "2.0 kB");
+    }
+
+    /// **A folder longer than the chooser says so**: a scroll bar down its
+    /// edge, which a press on the track moves to and a drag of the thumb
+    /// moves with; one that fits has none.
+    #[test]
+    fn a_long_folder_has_a_scroll_bar_the_hand_drags() {
+        let m = Metrics::default();
+        let mut f = chooser(r#"{"path":"takes"}"#);
+        answer(&mut f, Ok(listing()));
+        assert_eq!(f.rows.scrolled(&input(&m)).1, None, "three rows fit");
+        let many = (0..60)
+            .map(|i| DirEntry {
+                name: format!("take{i:02}.wav"),
+                dir: false,
+                size: 10,
+            })
+            .collect();
+        let mut f = chooser(r#"{"path":"takes"}"#);
+        answer(&mut f, Ok(Listing::ordered("/takes".into(), many)));
+        let (scroll, bar) = f.rows.scrolled(&input(&m));
+        let (track, thumb) = bar.expect("a bar");
+        assert_eq!(scroll, 0.0);
+        assert!(thumb.h < track.h && thumb.y == track.y);
+        // a press low on the track brings the thumb there and holds it
+        let x = f64::from(track.x + track.w * 0.5);
+        let low = f64::from(track.y + track.h - 2.0);
+        assert!(matches!(f.press((x, low), &input(&m)), Claim::Take(_)));
+        let (pressed, _) = f.rows.scrolled(&input(&m));
+        assert!(pressed > 0.0, "the list moved down");
+        assert_eq!(f.value(), None, "a press on the bar selects nothing");
+        // a drag up takes the list back to the top
+        f.drag((x, f64::from(track.y) - 400.0), &input(&m));
+        assert_eq!(f.rows.scrolled(&input(&m)).0, 0.0);
+        f.release((x, 0.0), true, &input(&m));
+        f.drag((x, low), &input(&m));
+        assert_eq!(
+            f.rows.scrolled(&input(&m)).0,
+            0.0,
+            "let go, it holds no thumb"
+        );
     }
 
     #[test]

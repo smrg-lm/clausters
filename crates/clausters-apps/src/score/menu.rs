@@ -87,7 +87,7 @@ pub fn menu(state: &State<'_>) -> Value {
 
 /// **The verbs a window with no document takes**: what makes or opens one,
 /// and the close ([`super::editor::Editor::allows_empty`]).
-const WITHOUT_DOCUMENT: &[&str] = &["new_file", "dialog:open", "close"];
+const WITHOUT_DOCUMENT: &[&str] = &["new_file", "open_file", "close"];
 
 /// Every entry of `entries` that is not one of [`WITHOUT_DOCUMENT`],
 /// disabled: a window with nothing open keeps its menu bar, as every
@@ -133,56 +133,7 @@ fn document_entries(state: &State<'_>) -> Value {
         act(label, action)
     };
     json!([
-        sub(
-            "File",
-            vec![
-                sub(
-                    "Paper",
-                    PAPERS
-                        .iter()
-                        .map(|p| {
-                            json!({
-                                "label": p.name,
-                                "verb": json!({"action": "page", "paper": p.name}).to_string(),
-                                "group": "paper",
-                                "checked": state.paper == Some(p.name),
-                            })
-                        })
-                        .collect(),
-                ),
-                sub(
-                    "Orientation",
-                    vec![
-                        json!({
-                            "label": "Portrait",
-                            "verb": json!({"action": "page", "landscape": false}).to_string(),
-                            "group": "orientation",
-                            "checked": !state.landscape,
-                        }),
-                        json!({
-                            "label": "Landscape",
-                            "verb": json!({"action": "page", "landscape": true}).to_string(),
-                            "group": "orientation",
-                            "checked": state.landscape,
-                        }),
-                    ],
-                ),
-                form("Page setup...", "page", state),
-                sep(),
-                form("Page text...", "text", state),
-                sep(),
-                word("New", "new_file"),
-                form("Open...", "open", state),
-                word("Save", "save"),
-                form("Save as...", "save", state),
-                sep(),
-                form("Export MIDI...", "export_midi", state),
-                form("Export clip...", "export_clip", state),
-                sep(),
-                word("Close file", "close_file"),
-                word("Close", "close"),
-            ],
-        ),
+        file_menu(state),
         sub(
             "Edit",
             vec![
@@ -385,6 +336,69 @@ fn document_entries(state: &State<'_>) -> Value {
     ])
 }
 
+/// **The File menu**: every application's ([`crate::chrome::file_menu`]),
+/// with the page's own -- its paper, its setup and its text -- and the
+/// exports between the score's writing and the close. Open and Save As ask
+/// a form, so they are taken where the window has no dialogs.
+fn file_menu(state: &State<'_>) -> Value {
+    let paper = sub(
+        "Paper",
+        PAPERS
+            .iter()
+            .map(|p| {
+                json!({
+                    "label": p.name,
+                    "verb": json!({"action": "page", "paper": p.name}).to_string(),
+                    "group": "paper",
+                    "checked": state.paper == Some(p.name),
+                })
+            })
+            .collect(),
+    );
+    let orientation = sub(
+        "Orientation",
+        vec![
+            json!({
+                "label": "Portrait",
+                "verb": json!({"action": "page", "landscape": false}).to_string(),
+                "group": "orientation",
+                "checked": !state.landscape,
+            }),
+            json!({
+                "label": "Landscape",
+                "verb": json!({"action": "page", "landscape": true}).to_string(),
+                "group": "orientation",
+                "checked": state.landscape,
+            }),
+        ],
+    );
+    let mut file = crate::chrome::file_menu(&crate::chrome::File {
+        files: true,
+        saves: true,
+        own: vec![
+            vec![
+                form("Page setup...", "page", state),
+                form("Page text...", "text", state),
+                paper,
+                orientation,
+            ],
+            vec![
+                form("Export MIDI...", "export_midi", state),
+                form("Export clip...", "export_clip", state),
+            ],
+        ],
+        ..crate::chrome::File::new(clausters_editing::verbs::SCORE)
+    });
+    for entry in file["menu"].as_array_mut().into_iter().flatten() {
+        if matches!(entry["verb"].as_str(), Some("open_file" | "save_as"))
+            && let Some(map) = entry.as_object_mut()
+        {
+            map.insert("enabled".into(), json!(state.dialogs));
+        }
+    }
+    file
+}
+
 /// **What a pick asks for.**
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pick {
@@ -448,6 +462,8 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "redo" => Pick::Redo,
         "select_all" => Pick::SelectAll,
         "new_file" => Pick::New,
+        "open_file" => Pick::Dialog(Form::File(super::dialogs::File::Open)),
+        "save_as" => Pick::Dialog(Form::File(super::dialogs::File::SaveAs)),
         "save" => Pick::Save,
         "close_file" => Pick::CloseFile,
         "close" => Pick::Close,
@@ -534,7 +550,42 @@ mod tests {
             .filter(|e| e["enabled"] != false)
             .filter_map(|e| e["verb"].as_str())
             .collect();
-        assert_eq!(taken, ["new_file", "dialog:open", "close"]);
+        assert_eq!(taken, ["new_file", "open_file", "close"]);
+    }
+
+    /// **The score's File menu is every application's**: the file's
+    /// section on top, then the page's own and the exports, then the close.
+    #[test]
+    fn the_file_menu_is_every_application_s() {
+        use crate::chrome::tests::{FILE_SECTION, file_labels};
+        let labels = file_labels(&menu(&state()));
+        assert_eq!(labels[..FILE_SECTION.len()], FILE_SECTION);
+        assert_eq!(
+            labels[FILE_SECTION.len()..],
+            [
+                "-",
+                "Page Setup...",
+                "Page Text...",
+                "Paper",
+                "Orientation",
+                "-",
+                "Export MIDI...",
+                "Export Clip...",
+                "-",
+                "Close",
+            ]
+        );
+        // Open and Save As ask a form: a window without dialogs has them off
+        let bare = menu(&State {
+            dialogs: false,
+            ..state()
+        });
+        let mut all = Vec::new();
+        entries(&bare, &mut all);
+        for verb in ["open_file", "save_as"] {
+            let entry = all.iter().find(|e| e["verb"] == verb).unwrap();
+            assert_eq!(entry["enabled"], false, "{verb}");
+        }
     }
 
     #[test]

@@ -56,9 +56,9 @@ pub struct Offers {
     pub fonts: bool,
     /// A quit of the program's own (a page's tab is closed by the browser).
     pub quit: bool,
-    /// File dialogs of the platform's; without them the editor shows its
-    /// own, over the platform's storage.
-    pub dialogs: bool,
+    /// **Copies between the disk and the storage**, where the storage is
+    /// not the disk (a page's): its file dialog uploads and downloads.
+    pub transfers: bool,
 }
 
 /// What a file dialog was opened for, handed back with what was chosen.
@@ -162,14 +162,14 @@ pub trait Platform {
     /// The user's folder, which the recent files are written from (`~`),
     /// empty where there is none.
     fn home(&self) -> PathBuf;
-    /// Asks the platform's dialog for a path, for `purpose`: `Msg::Chosen`.
-    /// Only asked where it [`Offers::dialogs`].
+    /// Asks the platform's dialog for the documentation folder, a
+    /// preference: `Msg::Chosen`. Only asked where it
+    /// [`Offers::docs_folder`]; a file is opened and saved in the editor's
+    /// own file dialog.
     fn choose(&self, purpose: Purpose, start: Option<PathBuf>);
-    /// Makes a change to the storage, asked by the editor's own file
-    /// dialog where the platform has none: `Msg::Changed`.
-    fn change(&self, change: Change) {
-        let _ = change;
-    }
+    /// Makes a change to the storage, asked by the editor's file dialog:
+    /// `Msg::Changed`.
+    fn change(&self, change: Change);
 
     // -- the look and the documentation
 

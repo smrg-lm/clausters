@@ -5,7 +5,7 @@ SuperCollider's class library (sc3). It covers both of the server's def
 formats as peers: FaustDefs and UGen-graph SynthDefs.
 
 What the top level holds is what you name while playing: the free
-verbs (``play``, ``render``, ``plot``, ``scope``), the three hosts (`Session`,
+verbs (``play``, ``render``, ``plot``, ``scope``, ``edit``, ``open_app``), the three hosts (`Session`,
 `Server`, `GuiHost`), the server's resources, the three def formats, the
 timing types, the handful of grid and unit conversions beside them (``bar``,
 ``beat_in_bar``, ``quant_delay``, ``secs_to_samples``, ``samples_to_secs``),
@@ -76,6 +76,10 @@ The layers:
 - `clausters.plot` / `clausters.scope` -- the free-standing visual verbs: one
   window per call on the ambient GUI host, for a rendered signal (`plot`) or
   a live bus through the server's audio taps (`scope`).
+- ``edit`` / ``open_app`` -- the free-standing editing verbs, from
+  `clausters.gui.editing`: a structure's view in an editor of its kind
+  (``edit``), or the application with its menu bar, toolbar and status line
+  (``open_app``), on the ambient GUI host.
 - `clausters.session` -- `Session`, an explicit isolated environment; and the
   default session (`default_session`) it falls back to.
 - `clausters.launch` -- launching and owning the server and GUI processes.
@@ -128,7 +132,7 @@ from .defs import (
     SynthDef,
     Voices,
 )
-from .gui import GuiHost
+from .gui import GuiHost, edit, open_app
 from .panic import panic
 from .play import play
 from .plot import plot
@@ -195,6 +199,8 @@ __all__ = [
     "render",
     "plot",
     "scope",
+    "edit",
+    "open_app",
     # audio files on the client side
     "SoundFile",
     # incoming OSC and MIDI

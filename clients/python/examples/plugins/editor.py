@@ -28,9 +28,8 @@ the paired page attaches to one booted separately.
 # %%
 import os
 import sys
-from clausters import PluginDef, Session, Synth, SynthDef
+from clausters import PluginDef, Session, Synth, SynthDef, edit
 from clausters.defs import out, sine
-from clausters.gui import edit
 
 NAME = os.environ.get("PLUGIN", "")
 PATHS = [os.environ["PLUGIN_PATH"]] if os.environ.get("PLUGIN_PATH") else []

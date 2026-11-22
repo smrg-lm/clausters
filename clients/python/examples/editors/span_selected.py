@@ -9,8 +9,7 @@ import math
 
 import pathlib
 
-from clausters import Session, SoundFile
-from clausters.gui import open_app
+from clausters import Session, SoundFile, open_app
 from clausters.document import Content, Multitrack, Source
 from clausters.gui.editing import MultitrackSession
 from clausters.segments import Segment
