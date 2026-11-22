@@ -35,7 +35,9 @@ greeting("world")
 - **Restart** starts a new worker and clears every name.
 
 The page keeps the engine and the GUI host, and the session reaches them with
-no address named, as a Python session reaches the local server. The **startup
+no address named, as a Python session reaches the local server. The engine is
+the host's applications' engine: what the session plays and what the
+applications opened in the window play sound through one engine. The **startup
 code** (File → Preferences) makes the session's clausters session, and is where
 that changes:
 

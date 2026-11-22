@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>clausters: a session on a host's applications' engine</title>
+  </head>
+  <body>
+    <pre id="log"></pre>
+    <!--
+      A session on a GUI host's applications' engine, in a page
+      (clients/web/test.sh, headless, served isolated:
+      `apps-engine.html?isolated`). Every application a host opens plays on
+      one engine of the host's; `Session.live(undefined, { engine: host })`
+      makes a session on it, as the native client's
+      `Session.live(engine=host)` does. Checked: the session is answered by
+      that engine, its synth plays there, a roll the host opens plays on the
+      same engine (the session counts the notes it sounds), and closing the
+      session leaves the host it was given.
+      Verdict beaconed as a fetch, read from the access log.
+    -->
+    <script type="module">
+      import { Event, EventSequence, GuiHost, Session, Synth, gui } from "../dist/index.js";
+      import { guiHost } from "../dist/page.js";
+
+      const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      try {
+        if (!crossOriginIsolated) throw new Error("the page is not cross-origin isolated");
+        const page = await guiHost();
+        const host = await new GuiHost({ gui: page }).boot();
+        const session = await Session.live(undefined, { engine: host });
+        session.activate();
+        if (await session.gui() !== host) throw new Error("the session's host is not the one it was given");
+        const status = await session.server.status();
+        log(`the engine answers: ${status.synths} synths, ${status.groups} groups`);
+
+        // a synth the session plays sounds on the applications' engine
+        await session.server.sync();
+        const synth = new Synth("default", { freq: 880, amp: 0 });
+        await session.server.sync();
+        await sleep(200);
+        const playing = (await session.server.status()).synths;
+        if (playing < 1) throw new Error(`the session's synth is not on the engine (${playing})`);
+        synth.free();
+        await session.server.sync();
+        log("a synth of the session played on the applications' engine");
+
+        // an application the host opens plays on the same engine: the notes
+        // it sounds are in the node count the session reads
+        const sequence = new EventSequence([
+          [0, new Event({ midinote: 60, dur: 4, amp: 0 })],
+          [0, new Event({ midinote: 64, dur: 4, amp: 0 })],
+        ]);
+        const roll = await gui.edit(sequence, { title: "one engine" });
+        const before = (await session.server.status()).synths;
+        await roll.play(0);
+        let after = before;
+        for (let i = 0; i < 50 && after <= before; i++) {
+          await sleep(100);
+          after = (await session.server.status()).synths;
+        }
+        if (after <= before) throw new Error(`the application's notes are not on the session's engine (${before} -> ${after})`);
+        log(`an application played on the same engine: ${before} -> ${after} synths`);
+        await roll.stop?.();
+
+        session.close();
+        verdict("PASS: a session made on a host's applications' engine was answered by it, " +
+          "its synth played there, a roll's notes sounded on the same engine, and the host " +
+          "outlived the session");
+      } catch (error) {
+        verdict(`FAIL: ${error?.message ?? error}`);
+      }
+    </script>
+  </body>
+</html>

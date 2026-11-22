@@ -41,7 +41,9 @@ export { ENGINE_SHAPE, newPools, pagePools } from "./base/pool.ts";
 export type { Pool, PoolShape, Pools } from "./base/pool.ts";
 // The GUI host in the page, and how an element is measured against the
 // display -- what a page needs wherever it sizes a canvas itself.
-export { guiHost, newGuiHost, pageGuiConnection } from "./gui/page.ts";
+export { applicationsEngine, guiHost, newGuiHost, pageGuiConnection } from "./gui/page.ts";
+export { hostEngine } from "./gui/host-engine.ts";
+export { adoptPageEngine } from "./engine/server.ts";
 export type { ClaustersGui, GuiLink, PageGuiConnection } from "./gui/page.ts";
 export { canvasBox, onScaleChange } from "./gui/page.ts";
 export type { CanvasBox } from "./gui/page.ts";

@@ -75,6 +75,19 @@ export class GuiBridge {
      */
     dock(canvas: HTMLCanvasElement): void;
     /**
+     * Samples the page decoded, installed as the engine's buffer `index`
+     * (interleaved, `channels` wide, at `rate`): answered to
+     * [`on_engine`](Self::on_engine) as `("samples", token, null)`, or with
+     * why not.
+     */
+    engineSamples(token: number, index: number, channels: number, rate: number, samples: Float32Array): void;
+    /**
+     * One OSC packet from the page's client `peer` for the applications'
+     * engine, which opens it first if it has not; its replies come back to
+     * [`on_engine`](Self::on_engine) under the same tag.
+     */
+    engineSend(peer: number, packet: Uint8Array): void;
+    /**
      * Feeds one raw OSC packet (e.g. a `/gui_def`/`/gui_set`/`/gui_bind`) to the
      * host, exactly as the WS wire format delivers it (one packet per call),
      * from the page's own script.
@@ -118,6 +131,12 @@ export class GuiBridge {
      * canvas to change it.
      */
     msaa(samples: number): void;
+    /**
+     * **Who hears the applications' engine**: `listener(kind, id, value)` is
+     * called with `("reply", peer, bytes)` for each reply to a client and
+     * `("samples", token, null or why not)` for each install.
+     */
+    onEngine(listener: Function): void;
     /**
      * Pops the next outbound OSC packet (`/gui_event`/`/gui_closed`/`/gui_info`)
      * for the page to decode, or `undefined` when the queue is empty.
@@ -190,6 +209,18 @@ export class Polled {
  * The frames a block of the engine is ([`apps_engine_process`]).
  */
 export function apps_engine_block(): number;
+
+/**
+ * **The engine's sample clock**, read on the worklet's thread between its
+ * blocks: what pairs with the context's own frame counter in a client's clock
+ * anchor.
+ */
+export function apps_engine_clock(engine: number): number;
+
+/**
+ * **Where the engine's sample 0 stands, in Unix seconds** ([`EPOCH`]).
+ */
+export function apps_engine_epoch(): number;
 
 /**
  * **One block of the engine**, processed on the worklet's thread: answers

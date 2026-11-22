@@ -627,6 +627,25 @@ The applications allocate from one half of the engine's ids and a session on it 
 <!-- /python -->
 
 <!-- web -->
+### A GUI host's engine
+
+Every application a GUI host opens (the audio editor, the multitrack, the roll, the score) plays on **one engine of the host's**, and that engine is a server too. In a page that runs the applications (cross-origin isolated), `Session.live(undefined, { engine: host })` makes a session on the engine of `host`, a host of this page: what the script plays and what the applications play then sound through one engine, with one node tree and one set of buses and buffers, and the host is pointed at that engine too, for its bound widgets and its meters. The page's main thread may not wait and the engine lives in the host's memory, so the session's packets reach it through the application's thread; nothing else changes for the script.
+
+```ts
+import { GuiHost, Session } from "clausters";
+import { guiHost } from "clausters/page";
+
+const host = await new GuiHost({ gui: await guiHost() }).boot();
+const session = (await Session.live(undefined, { engine: host })).activate();
+const window = await host.openApp("multitrack");   // plays on the same engine
+```
+
+The applications allocate from one half of the engine's ids and the session and the host from the other. A host reached over a socket is refused: its engine is served at a shared-memory segment of its machine, which a page cannot map.
+
+**A page can hold that one engine as its own**: `guiHost({ ownEngine: true })` starts the page's host on its applications' engine and makes it the page's engine (`server()`), so every component, the page's script and the workers it links play on it, and no engine of the page's own is started. clausters-editor's page does this, so a script of the editor plays on the engine the editor's applications play on.
+<!-- /web -->
+
+<!-- web -->
 ## A session in a worker
 
 A page can run the code that plays in a **worker** and keep the engine itself. The page boots the engine, as always from a gesture, and makes a **link** to it for the worker: a client tag of its own and a port that goes to the engine directly. In the worker, that port is the engine's address:

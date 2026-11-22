@@ -272,10 +272,16 @@ export function pageIds(): IdSpaces {
  * the second. A second call answers the same share without splitting again,
  * since there is one host per page engine. Throws, changing nothing, when
  * something the page holds lies in the half it would give away.
+ *
+ * `within` is the share of the engine the page's clients have: the whole of
+ * it for the page's own engine, and the clients' half for the applications'
+ * engine of the host (whose other half is the applications'), where the page
+ * and its host split that half between them.
  */
-export function splitPageIds(): IdShare {
+export function splitPageIds(within: IdShare = { index: 0, of: 1 }): IdShare {
     if (pageSplit !== null) return pageSplit;
-    pageIds().narrow(0, 2);
-    pageSplit = { index: 1, of: 2 };
+    const of = 2 * within.of;
+    pageIds().narrow(2 * within.index, of);
+    pageSplit = { index: 2 * within.index + 1, of };
     return pageSplit;
 }

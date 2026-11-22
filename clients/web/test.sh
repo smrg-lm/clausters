@@ -299,6 +299,7 @@ run_pages() {
     run_page "gui.html?isolated"
     fetched gui-host-apps/clausters_gui_bg.wasm "applications' build of the host"
     run_page "apps.html?isolated" # the editing applications in a page, over shared memory
+    run_page "apps-engine.html?isolated" # a session on a host's applications' engine
     run_page "audio-editor.html?isolated" # the audio editor in a page: open, render, save, play
     run_page "multitrack-editor.html?isolated" # the multitrack in a page: a session, a loop over seams, a change
     run_page "app-window.html?isolated" # an application's own canvas: its size, and a press on it

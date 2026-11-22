@@ -53,14 +53,17 @@ let runtime: Promise<Runtime> | null = null;
 
 /** **The page's engine and GUI host, brought up once**, the host's dock in
  *  `stage`: the editor's windows and the session's are its panes. The
- *  engine's audio starts at the page's first key or click, which a browser
- *  requires; until then the engine answers nothing. */
+ *  engine is the host's applications' engine, so a session and the
+ *  applications play on one engine. Its audio starts at the page's first key
+ *  or click, which a browser requires; until then the engine answers nothing. */
 export function bringUp(stage?: HTMLElement): Promise<Runtime> {
   runtime ??= (async () => {
     const clausters = await import(/* @vite-ignore */ new URL("dist/index.js", CLAUSTERS).href);
     const page = await import(/* @vite-ignore */ new URL("dist/page.js", CLAUSTERS).href);
-    const engine = await page.server({ channels: 2 });
-    const gui = await page.guiHost();
+    // **one engine**: the host's applications' engine is the page's, what the
+    // session, its worker and the applications in the window all play on
+    const gui = await page.guiHost({ ownEngine: true });
+    const engine = gui.engine;
     if (stage) gui.dock(stage);
     // Asked again at every key and click until the audio runs: a browser may
     // not count the first one (Firefox does not count a modifier, the Shift

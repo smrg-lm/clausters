@@ -38,6 +38,11 @@ pub fn apps_engine_rate(rate: f32) {
     RATE.store(rate.to_bits(), Ordering::Release);
 }
 
+/// **Where the engine's sample 0 stands, in Unix seconds**: the page's time
+/// when the engine opened, which its server anchors a client's timetags to
+/// and a client's clock anchor reports ([`apps_engine_epoch`]).
+static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// The engine's processing half, and the block it writes.
 struct PageEngine {
     engine: Engine,
@@ -48,7 +53,11 @@ struct PageEngine {
 /// half handed to the page's worklet, the handle answered.
 pub(crate) fn open() -> Result<AppEngine, String> {
     let rate = f32::from_bits(RATE.load(Ordering::Acquire));
-    let (app, engine) = AppEngine::detached(rate, CHANNELS);
+    let (mut app, engine) = AppEngine::detached(rate, CHANNELS);
+    // sample 0 is now, on the page's clock
+    let epoch = js_sys::Date::now() / 1000.0;
+    app.set_unix_epoch(epoch);
+    EPOCH.store(epoch.to_bits(), Ordering::Release);
     let page = Box::into_raw(Box::new(PageEngine {
         engine,
         out: vec![0.0; BLOCK_SIZE * CHANNELS],
@@ -71,6 +80,22 @@ pub fn apps_engine_process(engine: u32) -> u32 {
     let page = unsafe { &mut *(engine as *mut PageEngine) };
     page.engine.process_block(&mut page.out);
     page.out.as_ptr() as u32
+}
+
+/// **The engine's sample clock**, read on the worklet's thread between its
+/// blocks: what pairs with the context's own frame counter in a client's clock
+/// anchor.
+#[wasm_bindgen]
+pub fn apps_engine_clock(engine: u32) -> f64 {
+    // SAFETY: as `apps_engine_process`: the worklet's box, read on its thread.
+    let page = unsafe { &*(engine as *const PageEngine) };
+    page.engine.processed_samples() as f64
+}
+
+/// **Where the engine's sample 0 stands, in Unix seconds** ([`EPOCH`]).
+#[wasm_bindgen]
+pub fn apps_engine_epoch() -> f64 {
+    f64::from_bits(EPOCH.load(Ordering::Acquire))
 }
 
 /// The frames a block of the engine is ([`apps_engine_process`]).

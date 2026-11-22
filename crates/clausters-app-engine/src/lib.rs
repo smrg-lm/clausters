@@ -277,6 +277,13 @@ impl AppEngine {
         self.server.attach_ipc(IpcPeer::new(segment, Role::Server))
     }
 
+    /// **Where the engine's sample 0 stands in Unix seconds**, for a client's
+    /// wall-clocked timetags: set by a program that reads the time where this
+    /// crate cannot (a page), which an engine opened natively reads itself.
+    pub fn set_unix_epoch(&mut self, epoch: f64) {
+        self.server.set_unix_epoch(epoch);
+    }
+
     /// **Serves one packet from a client in this process** tagged `tag`, as
     /// a ring's client is served, its replies handed to the sink set for the
     /// tag ([`Self::set_local_sink`]): how the program that holds the engine

@@ -623,6 +623,17 @@ impl OscServer {
         self.handed.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
+    /// **Says where the engine's sample 0 stands on a wall-clocked client's
+    /// axis**, in Unix seconds, for a server on the engine's sample clock
+    /// ([`Self::embedded`], [`Self::headless`]): what a program that could
+    /// not read the time when it built the server (a page's module) sets
+    /// once it can. A server on the wall clock keeps its own.
+    pub fn set_unix_epoch(&mut self, epoch: f64) {
+        if let TimeSource::Sample { unix_epoch } = &mut self.clock {
+            *unix_epoch = epoch;
+        }
+    }
+
     /// **How many packets the ring has brought** since the server started: a
     /// loop driving it with [`Self::step`] reads whether a turn served
     /// anyone, and rests longer while nobody writes.

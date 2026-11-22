@@ -301,12 +301,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **The GUI host's engine is a server a script reaches, and
-  clausters-editor's default** *(`crates/clausters-gui/PLAN.md`, Future
-  directions)*. A property of the host: the engine its applications share,
-  reached over shared memory on the sample clock, by default and never as a
-  restriction.
-
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
 

@@ -37,7 +37,7 @@ export const DEFAULT_PEER = 0;
  * client's internals, and it is a *read* door: there is no `send` under this.
  */
 export const ANY_PEER = -1;
-import type { BootOptions, ClockAnchor } from "./loader.ts";
+import type { BootOptions, ClaustersEngine, ClockAnchor } from "./loader.ts";
 
 export type ReplyListener = (packet: Uint8Array) => void;
 
@@ -153,6 +153,20 @@ export function server(options: BootOptions = {}): Promise<ClaustersServer> {
 }
 
 /**
+ * **Makes `engine` the page's engine**, the one {@link server} answers: what a
+ * page that plays on its GUI host's applications' engine does
+ * (`guiHost({ ownEngine: true })`), so every component on it, the page's
+ * script and its workers reach that one engine. Refused when the page's own
+ * engine is up already, since a page holds one.
+ */
+export function adoptPageEngine(engine: ClaustersServer): void {
+    if (instance !== null) {
+        throw new Error("the page's engine is up already: a page holds one engine");
+    }
+    instance = Promise.resolve(engine);
+}
+
+/**
  * The page's engine **only if one is already up**, else `null` -- asked without
  * bringing one into being, which {@link server} cannot be.
  *
@@ -184,7 +198,17 @@ export function engine(options: BootOptions = {}): Promise<ClaustersServer> {
 }
 
 async function boot(options: BootOptions): Promise<ClaustersServer> {
-    const raw = await bootClausters(options);
+    return wrap(await bootClausters(options));
+}
+
+/**
+ * **The engine surface over a raw engine**: its replies fanned out by client
+ * tag, a tag per client, ports for clients in other realms, the clock and
+ * the samples passed through. What every engine a page holds is, whichever
+ * engine is under it -- the page's own worklet (`bootClausters`), or the
+ * applications' engine a GUI host holds (`gui/host-engine.ts`).
+ */
+export function wrap(raw: ClaustersEngine): ClaustersServer {
     // Listeners are kept per client tag: a reply carries the tag of whoever
     // asked for it, so it reaches that client's listeners and nobody else's.
     const listeners = new Map<number, Set<ReplyListener>>();

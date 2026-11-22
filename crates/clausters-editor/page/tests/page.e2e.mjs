@@ -344,6 +344,16 @@ try {
   at = await run('const docked = await host.dockCall({ verb: "layout" });\ndocked.members.filter((id) => id < 2 ** 24).length');
   check(await waitFor("-> 2", at), "an application's window is a pane of the dock, and the session's dock calls are answered to it");
 
+  // **One engine**: the page's engine is its host's applications' engine,
+  // what the session's synths and the applications both play on.
+  const one = await evaluate(`(async () => {
+    const p = await import("./clausters/dist/page.js");
+    const engine = await p.server();
+    const gui = await p.guiHost();
+    return engine === gui.engine && engine === await p.applicationsEngine(gui);
+  })()`);
+  check(one === true, "the page holds one engine: the host's applications' engine");
+
   // An infinite loop: the worker is terminated and the session started again.
   at = await run("for (;;) {}");
   await sleep(500);

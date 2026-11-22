@@ -15,7 +15,13 @@
  */
 
 import "../engine/worklet-shim.ts";
-import { apps_engine_block, apps_engine_process, initSync } from "../gui-host-apps/clausters_gui.js";
+import {
+    apps_engine_block,
+    apps_engine_clock,
+    apps_engine_epoch,
+    apps_engine_process,
+    initSync,
+} from "../gui-host-apps/clausters_gui.js";
 
 /** What the page hands the processor. */
 interface EngineStart {
@@ -42,6 +48,18 @@ class AppsEngineProcessor extends AudioWorkletProcessor {
         this.engine = engine;
         this.channels = channels;
         this.block = apps_engine_block();
+        // **the engine's clock against the context's frame counter**, read in
+        // the same instant between two quanta, as the page's engine answers
+        // a clock anchor (`engine/worklet.ts`)
+        this.port.onmessage = (e: MessageEvent<{ type?: string }>) => {
+            if (e.data?.type !== "clock") return;
+            this.port.postMessage({
+                type: "clock",
+                clock: apps_engine_clock(this.engine),
+                frame: currentFrame,
+                epoch: apps_engine_epoch(),
+            });
+        };
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {

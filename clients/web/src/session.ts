@@ -47,7 +47,7 @@ import type { ServerOptions } from "./defs/server/index.ts";
 import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance } from "./engine/server.ts";
 import { GuiHost, namedHost } from "./gui/host.ts";
-import { newGuiHost } from "./gui/page.ts";
+import { applicationsEngine, newGuiHost } from "./gui/page.ts";
 import type { ClaustersGui } from "./gui/page.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
 import type { Pattern } from "./seq/pattern.ts";
@@ -117,6 +117,9 @@ export class Session extends Environment {
     readonly clock: TempoClock;
 
     private gui_: GuiHost | null = null;
+    /** Whether this session made its host (`gui()`), and so stops it on
+     * `close`: a host it was given is the giver's, and stays. */
+    private ownsGui_ = false;
     /**
      * The page host `gui()` booted, if it booted one -- the wasm instance
      * behind the client, which nothing else on the page holds and which
@@ -398,12 +401,47 @@ export class Session extends Environment {
      * `Symbol.for("clausters.links")`, as clausters-editor's page does)
      * attaches over the engine's, so its code writes `Session.live()` as a
      * script does; anywhere else the default is the local `--ws` server.
+     *
+     * **A GUI host's engine.** Every application a GUI host opens plays on
+     * one engine of the host's, and that engine is a server too. `engine:
+     * host`, a host of this page (`GuiHost` over the page's host), makes the
+     * session on it, so what the script plays and what the applications play
+     * sound through one engine; the host is pointed at it too, as the
+     * reference client's `Session.live(engine=host)` does. A host reached
+     * over a socket is refused: its engine is served at a shared-memory
+     * segment of its machine, which a page cannot map.
      */
     static async live(
         url?: string | MessagePort,
-        { clock, timebase, latency, timeout, share }: SessionOptions = {},
+        { clock, timebase, latency, timeout, share, engine }: SessionOptions & {
+            /** A GUI host of this page, whose applications' engine the session plays on. */
+            engine?: { readonly page: ClaustersGui | null };
+        } = {},
     ): Promise<Session> {
         await loadCore();
+        if (engine !== undefined) {
+            if (engine.page === null) {
+                throw new Error(
+                    "a host reached over a socket has no engine a page reaches: its engine is " +
+                        "served at a shared-memory segment of its machine, which a page cannot map",
+                );
+            }
+            const served = await applicationsEngine(engine.page);
+            // the session takes the first quarter of the engine's ids, the
+            // host the second and the applications the second half
+            const session = await Session.over(
+                {
+                    connection: await pageConnection(served),
+                    timeout,
+                    share: share ?? { index: 0, of: 4 },
+                },
+                { clock, timebase, latency },
+                "attach",
+            );
+            // the host is the session's, and stays the giver's
+            if (engine instanceof GuiHost) session.gui_ = engine;
+            return session;
+        }
         url ??= defaultLinks()?.engine ?? "ws://127.0.0.1:57120";
         // `attach`: nothing here started that server, and a WebSocket that
         // connects proves a listener rather than a server -- so the session
@@ -496,12 +534,14 @@ export class Session extends Environment {
             // The page's host, from another realm: attached, never booted,
             // and its windows are the page's to place.
             this.gui_ = await new GuiHost({ connection: await portConnection(port), share }).attach();
+            this.ownsGui_ = true;
         } else if (named !== null) {
             // **A host the environment names is attached to, not opened**:
             // an editor running this session, whose window the session's
             // windows open in, pointed at this session's server as an opened
             // one is wired to it.
             this.gui_ = await new GuiHost({ transport: "ws", url: named, share }).attach();
+            this.ownsGui_ = true;
             const address = this.server.connection.url;
             if (address !== undefined) this.gui_.server(address, { idShare: this.server.splitShare() });
         } else if (this.ownedEngine) {
@@ -515,8 +555,10 @@ export class Session extends Environment {
                 idShare: this.server.splitShare(),
             });
             this.gui_ = await new GuiHost({ gui: this.ownedGui, share }).boot();
+            this.ownsGui_ = true;
         } else {
             this.gui_ = await new GuiHost({ share }).attach();
+            this.ownsGui_ = true;
         }
         return this.gui_;
     }
@@ -693,7 +735,7 @@ export class Session extends Environment {
      * adopted the default slots, it gives them up.
      */
     close(): void {
-        this.gui_?.stop();
+        if (this.ownsGui_) this.gui_?.stop();
         this.gui_ = null;
         // The client detaches; the wasm host itself is released only when this
         // session is the one that booted it (the page's is shared page state).

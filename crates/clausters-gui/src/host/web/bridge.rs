@@ -51,6 +51,52 @@ impl Polled {
     }
 }
 
+/// **The applications' engine, as the page's clients reach it**: a page's
+/// main thread may not wait, so its clients reach the engine the
+/// applications hold through the application's thread, which may -- the
+/// engine a page's session plays on, so the page holds one engine.
+#[cfg(feature = "apps")]
+#[wasm_bindgen]
+impl GuiBridge {
+    /// One OSC packet from the page's client `peer` for the applications'
+    /// engine, which opens it first if it has not; its replies come back to
+    /// [`on_engine`](Self::on_engine) under the same tag.
+    #[wasm_bindgen(js_name = engineSend)]
+    pub fn engine_send(&self, peer: u32, packet: &[u8]) {
+        self.send(WebEvent::EngineSend(peer, packet.to_vec()));
+    }
+
+    /// Samples the page decoded, installed as the engine's buffer `index`
+    /// (interleaved, `channels` wide, at `rate`): answered to
+    /// [`on_engine`](Self::on_engine) as `("samples", token, null)`, or with
+    /// why not.
+    #[wasm_bindgen(js_name = engineSamples)]
+    pub fn engine_samples(
+        &self,
+        token: u32,
+        index: u32,
+        channels: u32,
+        rate: f64,
+        samples: Vec<f32>,
+    ) {
+        self.send(WebEvent::EngineSamples {
+            token,
+            index,
+            channels,
+            rate,
+            samples,
+        });
+    }
+
+    /// **Who hears the applications' engine**: `listener(kind, id, value)` is
+    /// called with `("reply", peer, bytes)` for each reply to a client and
+    /// `("samples", token, null or why not)` for each install.
+    #[wasm_bindgen(js_name = onEngine)]
+    pub fn on_engine(&self, listener: js_sys::Function) {
+        self.send(WebEvent::OnEngine(listener));
+    }
+}
+
 impl GuiBridge {
     /// Addresses one event to this bridge's instance and posts it.
     ///

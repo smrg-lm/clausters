@@ -198,6 +198,23 @@ enum WebEvent {
     /// Attach the audio-server leg to the in-page engine: outbound packets go
     /// to this page-registered callback (replies via `server_reply`).
     ConnectPage(js_sys::Function),
+    /// A packet of the page's client `0` for the applications' engine
+    /// ([`GuiBridge::engine_send`]).
+    #[cfg(feature = "apps")]
+    EngineSend(u32, Vec<u8>),
+    /// Samples a page decoded for the applications' engine
+    /// ([`GuiBridge::engine_samples`]).
+    #[cfg(feature = "apps")]
+    EngineSamples {
+        token: u32,
+        index: u32,
+        channels: u32,
+        rate: f64,
+        samples: Vec<f32>,
+    },
+    /// Who hears the applications' engine ([`GuiBridge::on_engine`]).
+    #[cfg(feature = "apps")]
+    OnEngine(js_sys::Function),
     /// One inbound OSC packet from the audio server over the WS leg (a streamed
     /// `/bus_stream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply` reply, a `/fail`).
     ServerInbound(Vec<u8>),
@@ -290,6 +307,10 @@ struct WebApp {
     /// The windows whose paste key waits for the browser's `paste`.
     paste_keys: std::collections::HashSet<i32>,
     outbox: Outbox,
+    /// **Who hears what the applications' engine says to the page's
+    /// clients** ([`GuiBridge::on_engine`]): its replies and its installs.
+    #[cfg(feature = "apps")]
+    engine_listener: Option<js_sys::Function>,
     /// The client whose packet is being answered: where a reply goes
     /// ([`HostEffect::Reply`]), the page's own script between packets.
     asker: ClientId,
@@ -435,6 +456,8 @@ impl WebApp {
             clipboard_text,
             paste_keys: Default::default(),
             outbox,
+            #[cfg(feature = "apps")]
+            engine_listener: None,
             asker: ClientId::Web(0),
             origins: HashMap::new(),
             canvases: HashMap::new(),
@@ -514,6 +537,40 @@ impl WebApp {
 
     /// Carries out what the host asks of this front: open or redraw a window,
     /// queue a reply for the page to drain.
+    /// **What the applications' engine said to the page's clients**, handed
+    /// to the page's listener ([`GuiBridge::on_engine`]): a reply as
+    /// `("reply", peer, bytes)`, an install as `("samples", token, null or
+    /// why not)`.
+    #[cfg(feature = "apps")]
+    fn tell_engine_clients(&mut self) {
+        for said in self.host.take_engine_said() {
+            match said {
+                crate::host::EngineSaid::Reply { peer, bytes } => {
+                    let bytes = js_sys::Uint8Array::from(&bytes[..]);
+                    self.tell_engine("reply", peer, &bytes.into());
+                }
+                crate::host::EngineSaid::Samples { token, result } => {
+                    let why = match result {
+                        Ok(()) => JsValue::NULL,
+                        Err(e) => JsValue::from_str(&e),
+                    };
+                    self.tell_engine("samples", token as u32, &why);
+                }
+            }
+        }
+    }
+
+    /// One thing the applications' engine said, to the page's listener.
+    #[cfg(feature = "apps")]
+    fn tell_engine(&self, kind: &str, id: u32, value: &JsValue) {
+        if let Some(listener) = &self.engine_listener
+            && let Err(e) =
+                listener.call3(&JsValue::NULL, &JsValue::from_str(kind), &id.into(), value)
+        {
+            log(&format!("the engine's listener threw: {e:?}"));
+        }
+    }
+
     fn apply_effects(&mut self, event_loop: &ActiveEventLoop, effects: Vec<HostEffect>) {
         for effect in effects {
             match effect {
@@ -1307,7 +1364,35 @@ impl WebApp {
             WebEvent::HostEffects => {
                 let effects = self.host.take_effects();
                 self.apply_effects(event_loop, effects);
+                #[cfg(feature = "apps")]
+                self.tell_engine_clients();
             }
+            #[cfg(feature = "apps")]
+            WebEvent::EngineSend(peer, packet) => {
+                if let Err(e) = self.host.engine_send(packet, peer) {
+                    log(&format!("the applications' engine took no packet: {e}"));
+                }
+            }
+            #[cfg(feature = "apps")]
+            WebEvent::EngineSamples {
+                token,
+                index,
+                channels,
+                rate,
+                samples,
+            } => {
+                if let Err(e) = self.host.engine_samples(
+                    u64::from(token),
+                    index as usize,
+                    channels as usize,
+                    rate,
+                    samples,
+                ) {
+                    self.tell_engine("samples", token, &JsValue::from_str(&e));
+                }
+            }
+            #[cfg(feature = "apps")]
+            WebEvent::OnEngine(listener) => self.engine_listener = Some(listener),
             WebEvent::BulkReady {
                 def_id,
                 widget_id,

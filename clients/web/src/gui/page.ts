@@ -15,7 +15,8 @@
 // The host's wasm glue is loaded **on demand** (inside `boot`), not at import
 // time.
 import type { GuiBridge } from "../gui-host/clausters_gui.js";
-import { engine as engineInstance, server } from "../engine/server.ts";
+import { adoptPageEngine, engine as engineInstance, server } from "../engine/server.ts";
+import { CLIENT_SHARE, hostEngine } from "./host-engine.ts";
 import type { ClaustersServer, LinkMessage } from "../engine/server.ts";
 import type { IdShare } from "../base/ids.ts";
 import { loadCore } from "../base/core.ts";
@@ -276,9 +277,39 @@ let instance: Promise<ClaustersGui> | null = null;
  * A caller that wants an *independent* client uses `newGuiHost`, which is to
  * this what `engine` is to `server`.
  */
-export function guiHost(): Promise<ClaustersGui> {
-    instance ??= boot();
+export function guiHost({ ownEngine = false }: { ownEngine?: boolean } = {}): Promise<ClaustersGui> {
+    instance ??= boot(undefined, undefined, undefined, ownEngine);
     return instance;
+}
+
+/** The applications' engine of each host, made once ({@link applicationsEngine}). */
+const hostEngines = new WeakMap<GuiBridge, Promise<ClaustersServer>>();
+
+/**
+ * **The engine `gui`'s applications play on, as an engine a client of the
+ * page plays on** -- what `Session.live(undefined, { engine: host })` makes
+ * its session on, as the native client's `Session.live(engine=host)` does:
+ * what the script plays and what the applications play sound through one
+ * engine. The host is pointed at it too, its bound widgets and meters a
+ * client of that engine (a quarter of its ids, beside the session's and the
+ * applications' half), as the native host is (`/gui_server engine`). A host
+ * started on its own engine (`guiHost({ ownEngine: true })`) answers that
+ * one. Made once per host.
+ */
+export function applicationsEngine(gui: ClaustersGui): Promise<ClaustersServer> {
+    let made = hostEngines.get(gui.bridge);
+    if (made === undefined) {
+        made = (async () => {
+            const engine = await hostEngine(gui);
+            const peer = engine.claimPeer();
+            engine.addReply((bytes) => gui.bridge.server_reply(bytes), peer);
+            gui.bridge.connect_page((bytes: Uint8Array) => engine.send(bytes, peer));
+            gui.bridge.id_share(2 * CLIENT_SHARE.index + 1, 2 * CLIENT_SHARE.of);
+            return engine;
+        })();
+        hostEngines.set(gui.bridge, made);
+    }
+    return made;
 }
 
 /**
@@ -363,18 +394,29 @@ async function boot(
     audio?: ClaustersServer,
     idShare?: IdShare,
     url?: string,
+    ownEngine = false,
 ): Promise<ClaustersGui> {
-    const engine = url !== undefined ? null : (audio ?? await server());
-    const { init, start } = await hostGlue(() => audioContext(engine));
+    // **On its own applications' engine**, the page holds no engine of its
+    // own: the host's is the page's (`adoptPageEngine`), what its script,
+    // its workers and its applications all play on.
+    const own = ownEngine && audio === undefined && url === undefined;
+    const pageEngine = url !== undefined || own ? null : (audio ?? await server());
+    const { init, start } = await hostGlue(() => audioContext(pageEngine));
     await init();
     const bridge = start();
+    // the core first: the host's engine is spoken to in packets it encodes
+    await loadCore();
+    const engine = own ? await hostEngine({ bridge }) : pageEngine;
+    if (own && engine !== null) adoptPageEngine(engine);
     // The share of the engine's node ids, buses and buffers this host
     // allocates from, when a client allocates on that engine too. The page's
     // own host is on the page's engine, which the page's pools and handles
-    // allocate on: the page splits its space with it, as a script does.
-    await loadCore();
+    // allocate on: the page splits its space with it, as a script does --
+    // the clients' half of it, on the applications' engine.
     const share = idShare
-        ?? (audio === undefined && url === undefined ? splitPageIds() : undefined);
+        ?? (audio === undefined && url === undefined
+            ? splitPageIds(own ? CLIENT_SHARE : undefined)
+            : undefined);
     if (share !== undefined) bridge.id_share(share.index, share.of);
 
     // The page makes the canvas and hands it over, rather than waiting for one
@@ -407,6 +449,7 @@ async function boot(
     // tag is what used to make the two take the stream from each other, leaving
     // the host's meters frozen until a widget was added or removed.
     //
+    if (own && engine !== null) hostEngines.set(bridge, Promise.resolve(engine));
     if (engine === null) {
         // Over a socket the host is a client of its own: the server tells its
         // connections apart, so there is no tag to claim.

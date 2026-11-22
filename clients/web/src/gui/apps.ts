@@ -26,6 +26,27 @@ interface ThreadSays {
     said?: number;
 }
 
+/** **Where the applications' engine plays**, once the page made its worklet. */
+export interface AppsOutput {
+    context: AudioContext;
+    node: AudioWorkletNode;
+}
+
+let outputReady: (output: AppsOutput) => void = () => {};
+/** The applications' engine's output, made when the application opens it. */
+const output: Promise<AppsOutput> = new Promise((resolve) => {
+    outputReady = resolve;
+});
+
+/**
+ * **The applications' engine's output**, once the application opened its
+ * engine and the page made its worklet: what an engine over the host
+ * (`host-engine.ts`) plays on and reads its clock anchor from.
+ */
+export function appsOutput(): Promise<AppsOutput> {
+    return output;
+}
+
 /** A thread's stack, in bytes: a render decodes and writes on it. */
 const THREAD_STACK = 4 * 1024 * 1024;
 
@@ -142,5 +163,6 @@ async function startEngine(
         processorOptions: { module, memory, engine, channels, stack: THREAD_STACK },
     });
     node.connect(ctx.destination);
+    outputReady({ context: ctx, node });
     if (ctx.state === "suspended") await ctx.resume().catch(() => {});
 }
