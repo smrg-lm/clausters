@@ -1583,10 +1583,44 @@ holds what is open.
   **Decided** *(the user, 2026-11-22)*: the doors are the shared-memory
   segment and the IPC ring the embedded server already has, with no OSC
   port, and the engine boots with the host, so a session always finds it.
-  To settle: how the kernel learns of it (an environment the
-  host sets, read by `Session.live()` the way the config file is), and how
-  the default is overridden without the script and the host disagreeing
-  about which server an application opened by that script plays on.
+
+  **What stands in the way, read 2026-11-22.** The engine's command FIFO
+  has one producer, and `AppEngine` already repeats a part of the server's
+  serving loop for itself (its translator, its event lanes, its garbage,
+  its node ends), so a script's door beside it cannot be a second
+  translator: two mirrors of one node tree, two buffer tables and two id
+  allocators over one engine would disagree. The application's engine
+  becomes the server instead, and the application its client in the
+  process. The applications allocate from the whole id space today
+  (`IdShare::WHOLE`), which a client's share would collide with. The page
+  has the same two engines: the page's, which the session reaches, and the
+  applications' own worklet (`host/web/apps_engine.rs`).
+
+  **The sequence.** Each step closes with its tests and leaves the
+  applications playing as they did.
+  1. ⬜ **One serving loop.** `AppEngine` is built over the server's
+     serving loop (`OscServer` in pulled mode, its NRT jobs on a thread,
+     its time the engine's sample clock): one translator, one mirror, one
+     set of lanes and transports, one collection of garbage and node ends.
+     The server hands the application what is the application's (a
+     transport's cue being over), and the application's ids come from a
+     share of their own that the server never gives a client.
+  2. ⬜ **The host's engine serves a segment.** A mapped segment file the
+     engine runs over, its ring served by the loop on a thread of its own
+     that sleeps while nothing arrives; booted with the host (in a headless
+     host, at the first thing that asks for it), its path answered by the
+     host to a client that asks.
+  3. ⬜ **A client reaches it.** A command interface over the ring in both
+     clients' shape (Python), the session on the segment's sample clock,
+     `Session.live()` attaching to the segment the environment names, and a
+     host's client asking the host for its engine, so a script that booted
+     a host reaches its applications' engine.
+  4. ⬜ **clausters-editor's default.** The editor names its host's engine
+     to the session it runs, and `Session.live()` there attaches to it; a
+     script that names another server gets that one.
+  5. ⬜ **The page is one engine too.** A page's applications play on the
+     engine its session reaches, so the page holds one engine, as the native
+     host does.
 
 - ⬜ **Subpixel (LCD) antialiasing of text, where the desktop asks for
   it** *(found 2026-11-17, in `ST2`)*. The webview editor's text is drawn
