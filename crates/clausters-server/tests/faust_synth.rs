@@ -562,6 +562,7 @@ fn a_reset_instance_sounds_as_a_fresh_one() {
                 offset: 0,
                 frames: BLOCK_SIZE,
                 transport: Default::default(),
+                server: clausters::dsp::ServerFacts::default(),
             };
             synth.process(&mut ctx);
             out.extend_from_slice(&buses.audio(0)[..]);

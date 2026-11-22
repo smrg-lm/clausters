@@ -56,12 +56,14 @@ impl OscServer {
         // relative timing the timetags carry survives. Never before the
         // counter: that block is already processed, and the engine fires a
         // past target at the next one, as it always has.
-        let time = timetag_unix(bundle.timetag)
-            .and_then(|unix| self.device_sample_at(unix))
-            .map_or_else(
-                || counter + (delta * self.handle.sample_rate as f64) as u64,
-                |sample| sample.max(counter),
-            );
+        // The exact time, in samples, places the node at the nearest sample
+        // and tells its synths the fraction left (`SubsampleOffset`), as
+        // scsynth rounds and reports it.
+        let exact = timetag_unix(bundle.timetag)
+            .and_then(|unix| self.device_time_at(unix))
+            .unwrap_or(counter as f64 + delta * self.handle.sample_rate as f64);
+        let time = (exact.round() as u64).max(counter);
+        self.translator.set_subsample(Some(exact));
         let mut cmds = Vec::new();
         for packet in bundle.content {
             match packet {
@@ -78,6 +80,7 @@ impl OscServer {
                 }
             }
         }
+        self.translator.set_subsample(None);
         if !cmds.is_empty() && self.handle.send(Cmd::Schedule { time, cmds }).is_err() {
             self.translator.invalidate_compensation();
             self.fail(from, "#bundle", "command FIFO full");

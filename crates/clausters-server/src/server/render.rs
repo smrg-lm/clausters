@@ -462,7 +462,8 @@ impl OfflineRender {
         };
         let sr = self.r.sample_rate;
         while let Some(ev) = self.events.get(self.next) {
-            let target = ((ev.time * sr).round() as u64).min(total);
+            let exact = ev.time * sr;
+            let target = (exact.round() as u64).min(total);
             // The event lands in a future block: render up to it.
             while self.r.now + BLOCK_SIZE as u64 <= target {
                 if self.r.now >= until {
@@ -470,10 +471,10 @@ impl OfflineRender {
                 }
                 self.r.process_block(total, &mut measured)?;
             }
-            let cmds = self
-                .r
-                .event_cmds(&ev.messages)
-                .map_err(|e| format!("score event at {:.6}s: {e}", ev.time))?;
+            self.r.translator.set_subsample(Some(exact));
+            let cmds = self.r.event_cmds(&ev.messages);
+            self.r.translator.set_subsample(None);
+            let cmds = cmds.map_err(|e| format!("score event at {:.6}s: {e}", ev.time))?;
             let time = ev.time;
             self.next += 1;
             if cmds.is_empty() {

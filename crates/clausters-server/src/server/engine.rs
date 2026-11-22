@@ -1314,6 +1314,16 @@ impl Engine {
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
     }
 
+    /// The engine's facts for this slice's UGens; the tree sets the node.
+    fn server_facts(&self) -> crate::dsp::ServerFacts {
+        crate::dsp::ServerFacts {
+            node_id: 0,
+            output_channels: self.channels as u32,
+            input_channels: self.input_channels as u32,
+            running_synths: self.tree.synth_count() as u32,
+        }
+    }
+
     fn apply_done_actions(&mut self) {
         // Apply the freeing done actions collected during this block's walk
         // (`PauseSelf` was applied inline in the tree). Read id + action and act
@@ -1410,6 +1420,7 @@ impl Engine {
             offset,
             frames,
             transport: self.tree.transport_view(0),
+            server: self.server_facts(),
         };
         #[cfg(all(
             any(feature = "plugin-clap", feature = "plugin-vst3"),

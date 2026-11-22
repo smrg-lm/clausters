@@ -268,4 +268,15 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         &[inp("bufnum", 0.0), inp("signal", 0.0), inp("octave", 12.0)],
         |_, _| Box::new(DegreeToKey),
     ),
+    desc(
+        "BufSamples",
+        Fixed(1),
+        I_BUFNUM,
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(BufInfo(BufInfoKind::Samples)),
+    ),
 ];

@@ -518,6 +518,7 @@ impl Engine {
                         offset: 0,
                         frames: BLOCK_SIZE,
                         transport: self.tree.transport_view(k),
+                        server: self.server_facts(),
                     };
                     let ready = self.tree.cue_subtree(group, &ctx);
                     (ready || waited >= wait).then_some(ready)

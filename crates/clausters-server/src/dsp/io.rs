@@ -108,3 +108,109 @@ impl UGen for OutCtl {
         ctx.buses.control.set(idx, at(signal, 0));
     }
 }
+
+/// `InFeedback(bus)`: an audio bus read whatever the order of the nodes --
+/// this block's samples if the bus has been written this block, else the
+/// last block's, a block late: the feedback between synths `In` cannot read,
+/// since a bus written by a later node is read before it is written.
+pub struct InFeedback;
+
+impl UGen for InFeedback {
+    fn reset(&mut self) {}
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let bus = audio_bus(inputs[0]);
+        let from = ctx.offset;
+        output.copy_from_slice(&ctx.buses.audio_feedback(bus)[from..from + output.len()]);
+    }
+}
+
+/// `InTrig(bus)`: a control bus as a trigger -- its value in the block it was
+/// set, 0 in the others. A set is the server's (`/control_set`, an `Out` at
+/// control rate) even to the value the bus held, or any write that changes
+/// the value, the shared segment's included.
+#[derive(Default)]
+pub struct InTrig {
+    last: Option<(u32, u32)>,
+}
+
+impl UGen for InTrig {
+    fn reset(&mut self) {
+        self.last = None;
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let idx = inputs[0][0].max(0.0) as usize;
+        let value = ctx.buses.control.get(idx);
+        let now = (ctx.buses.control.stamp(idx), value.to_bits());
+        let set = self.last.is_some_and(|last| last != now);
+        self.last = Some(now);
+        output.fill(if set { value } else { 0.0 });
+    }
+}
+
+/// `LagIn(bus, lag)`: a control bus through a one-pole lag of `lag` seconds
+/// to -60 dB, starting at the bus's value.
+#[derive(Default)]
+pub struct LagIn {
+    y: Option<f32>,
+}
+
+impl UGen for LagIn {
+    fn reset(&mut self) {
+        self.y = None;
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let idx = inputs[0][0].max(0.0) as usize;
+        let x = ctx.buses.control.get(idx);
+        let lag = at(inputs[1], 0);
+        let b1 = if lag == 0.0 {
+            0.0
+        } else {
+            (0.001f64.ln() / (lag as f64 * ctx.sample_rate as f64)).exp() as f32
+        };
+        let mut y = *self.y.get_or_insert(x);
+        for s in output.iter_mut() {
+            y = x + b1 * (y - x);
+            *s = y;
+        }
+        self.y = Some(y);
+    }
+}
+
+/// `XOut(bus, xfade, signal)`: the signal crossfaded into the bus,
+/// `bus + xfade (signal - bus)` -- 1 replaces it, 0 leaves it. A
+/// control-rate `xfade` is a line across the block, as scsynth's is.
+#[derive(Default)]
+pub struct XOut {
+    xfade: crate::dsp::Ramp,
+}
+
+impl UGen for XOut {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let bus = audio_bus(inputs[0]);
+        let (xf, signal) = (inputs[1], inputs[2]);
+        let (mut k, step) = if xf.len() == 1 {
+            self.xfade.toward(xf[0] as f64, output.len())
+        } else {
+            (0.0, 0.0)
+        };
+        let from = ctx.offset;
+        let mut was = [0.0f32; crate::dsp::BLOCK_SIZE];
+        was[..output.len()].copy_from_slice(&ctx.buses.audio(bus)[from..from + output.len()]);
+        // SAFETY: same disjointness argument as `ReplaceOut`.
+        let dest = &mut unsafe { ctx.buses.audio_replace(bus) }[from..];
+        for (i, s) in output.iter_mut().enumerate() {
+            let x = if xf.len() == 1 { k as f32 } else { xf[i] };
+            let v = was[i] + x * (at(signal, i) - was[i]);
+            dest[i] = v;
+            *s = at(signal, i);
+            k += step;
+        }
+    }
+}

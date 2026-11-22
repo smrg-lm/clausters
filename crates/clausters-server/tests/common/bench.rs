@@ -305,6 +305,7 @@ pub fn render_def_with_done(def_json: &str, run: &Run) -> (Vec<Vec<f32>>, Vec<u8
                 offset,
                 frames,
                 transport: Default::default(),
+                server: clausters::dsp::ServerFacts::default(),
             };
             synth.process(&mut ctx);
         }

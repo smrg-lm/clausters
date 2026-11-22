@@ -548,6 +548,8 @@ pub enum BufInfoKind {
     Channels,
     /// Duration in seconds (`frames / file_sr`).
     Duration,
+    /// Sample count, every channel's: frames times channels.
+    Samples,
 }
 
 /// Reports a static property of a buffer (see [`BufInfoKind`]). Input 0 is the
@@ -580,6 +582,7 @@ impl UGen for BufInfo {
                     }
                     BufInfoKind::Frames => buf.frames() as f32,
                     BufInfoKind::Channels => buf.channels() as f32,
+                    BufInfoKind::Samples => (buf.frames() * buf.channels()) as f32,
                     BufInfoKind::Duration => {
                         if file_sr > 0.0 {
                             buf.frames() as f32 / file_sr

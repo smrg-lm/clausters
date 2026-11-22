@@ -34,6 +34,7 @@ fn step(synth: &mut UGenSynth, buses: &mut Buses) -> Vec<f32> {
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),
+        server: clausters::dsp::ServerFacts::default(),
     };
     synth.process(&mut ctx);
     buses.audio(0).to_vec()

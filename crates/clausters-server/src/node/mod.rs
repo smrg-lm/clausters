@@ -1677,6 +1677,7 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
+                ctx.server.node_id = slot.id;
                 let opened = self.costs.open();
                 if self.compensation_valid
                     && !self.compensation_pending
@@ -1734,6 +1735,7 @@ impl NodeTree {
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
+                ctx.server.node_id = slot.id;
                 let opened = self.costs.open();
                 if self.compensation_valid
                     && !self.compensation_pending

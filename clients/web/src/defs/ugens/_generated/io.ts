@@ -106,3 +106,26 @@ export const localIn = (channel: Channel = 0.0): Ugen => new Ugen("LocalIn", [ch
  */
 export const localOut = (channel: Channel, signal: Channel): Ugen =>
     new Ugen("LocalOut", [channel, signal]);
+
+/**
+ * Reads an audio bus whatever the order of the nodes: this block's samples
+ * if the bus has been written this block, else the last block's -- the
+ * feedback between synths `in_` cannot read.
+ */
+export const inFeedback = (bus: Channel = 0.0): Ugen => new Ugen("InFeedback", [bus]);
+
+/**
+ * A control bus as a trigger: its value in the block it was set (the same
+ * value included), 0 otherwise.
+ */
+export const inTrig = (bus: Channel = 0.0): Ugen => new Ugen("InTrig", [bus]);
+
+/** A control bus through a one-pole lag of `lag` seconds to -60 dB. */
+export const lagIn = (bus: Channel = 0.0, lag: Channel = 0.1): Ugen =>
+    new Ugen("LagIn", [bus, lag]);
+
+/**
+ * Reads a control bus: the server's control buses are the memory a client
+ * in another process maps, scsynth's shared controls.
+ */
+export const sharedIn = (bus: Channel = 0.0): Ugen => new Ugen("SharedIn", [bus]);

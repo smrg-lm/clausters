@@ -117,6 +117,7 @@ fn send_peak_rms_reports_peak_and_rms() {
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),
+            server: clausters::dsp::ServerFacts::default(),
         };
         let mut output = [0.0f32; BLOCK_SIZE];
         ugen.process(&mut ctx, &[&rate, &lag, &id, &x], &mut output);

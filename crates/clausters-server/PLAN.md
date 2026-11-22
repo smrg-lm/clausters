@@ -1669,7 +1669,12 @@ holds what is open.
     `TriggerUGens.cpp` and `RunningSum`: `Free`, `Pause`,
     `PauseSelfWhenDone`, `Peak`, `PeakFollower`, `RunningMax`, `RunningMin`,
     `RunningSum`, `LastValue`, `MostChange`, `LeastChange`, `ZeroCrossing`,
-    `SendPeakRMS`.
+    `SendPeakRMS`; the information UGens (`BlockSize`, `ControlRate`,
+    `ControlDur`, `SampleDur`, `RadiansPerSample`, `SubsampleOffset`,
+    `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`, `NumOutputBuses`,
+    `NumBuffers`, `NodeID`, `NumRunningSynths`, `BufSamples`) and the bus
+    readers and writers `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`,
+    `XOut`, `SharedIn`, `SharedOut`.
   - **Out of scope, with the reason:** the Bela UGens (`AnalogIn`,
     `AnalogOut`, `DigitalIn`, `DigitalOut`, `DigitalIO`,
     `MultiplexAnalogIn`, `BelaScopeOut`: a board's I/O); `MouseX`, `MouseY`,
@@ -1691,12 +1696,6 @@ holds what is open.
     names, 17 of them out of scope above, 190 to add. Each batch
     is one commit with its reference cases, builders, docs and reset
     coverage, and leaves this list when it lands.
-    - ⬜ **7. Information and bus I/O:** `BlockSize`, `ControlRate`,
-      `ControlDur`, `SampleDur`, `RadiansPerSample`, `SubsampleOffset`,
-      `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`,
-      `NumOutputBuses`, `NumBuffers`, `NodeID`, `NumRunningSynths`,
-      `BufSamples`; `InFeedback`, `InTrig`, `LagIn`, `OffsetOut`, `XOut`,
-      `SharedIn`, `SharedOut`.
     - ⬜ **8. Delays and buffers:** `Pluck`, `PitchShift`, `DelTapWr`,
       `DelTapRd`, `SimpleLoopBuf`, `LocalBuf`, `MaxLocalBufs`, `SetBuf`,
       `ClearBuf`, `ScopeOut`, `ScopeOut2`, `VDiskIn`.

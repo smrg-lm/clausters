@@ -1387,6 +1387,7 @@ mod offline_tests {
             offset,
             frames,
             transport: TransportCtx::default(),
+            server: crate::dsp::ServerFacts::default(),
         }
     }
 
@@ -1518,6 +1519,7 @@ mod offline_tests {
                         rolling: active,
                         ..Default::default()
                     },
+                    server: crate::dsp::ServerFacts::default(),
                 };
                 for synth in [&mut live, &mut offline] {
                     synth.plugin_tempo(if block < 7 { 90.0 } else { 150.0 });

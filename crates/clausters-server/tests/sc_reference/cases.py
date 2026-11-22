@@ -99,6 +99,7 @@ def cases() -> list[dict]:
         _chaos,
         _dynamics,
         _running,
+        _info,
     ]:
         out.extend(f())
     return out
@@ -1130,4 +1131,16 @@ def _running() -> list[dict]:
         x = g.add("Sine", "ar", f, sc={"kind": "SinOsc", "inputs": [f, 0]})
         g.add("ZeroCrossing", "ar", x)
         out.append(case(f"ZeroCrossing.{f}", g, 8, tol=1e-4, why="scsynth's SinOsc reads a table, which moves the crossings"))
+    return out
+
+
+def _info() -> list[dict]:
+    """The engine's timing facts. The bus and node counts are each server's
+    configuration, held by `tests/offline/info.rs`."""
+    out = []
+    for kind in ["BlockSize", "ControlRate", "ControlDur", "SampleDur", "RadiansPerSample", "SubsampleOffset"]:
+        # scsynth defines these at the initial rate only.
+        out.append(one(f"{kind}.ir", kind, "ir", blocks=2))
+    buf = [{"num": 0, "channels": 2, "frames": 37, "data": [0.0] * 74}]
+    out.append(one("BufSamples.kr", "BufSamples", "kr", 0, blocks=2, buffers=buf))
     return out

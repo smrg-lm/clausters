@@ -21,6 +21,7 @@ function outChannels(
     kind: string,
     bus: Channel,
     signal: ChannelList | readonly Channel[],
+    between: readonly Channel[] = [],
 ): ChannelList {
     if (typeof bus !== "number" && !(bus instanceof SynthLeaf)) {
         throw new TypeError(
@@ -31,9 +32,59 @@ function outChannels(
     const sig = new ChannelList(signal);
     return new ChannelList(
         sig.items.map(
-            (s, i) => new Ugen(kind, [i === 0 ? bus : channelBinop(bus, "add", i), s]),
+            (s, i) =>
+                new Ugen(kind, [i === 0 ? bus : channelBinop(bus, "add", i), ...between, s]),
         ),
     );
+}
+
+/**
+ * `out` under scsynth's name for a sample-accurate start: a synth starts at
+ * its bundle's sample here, so the two are one writer. A channel list writes
+ * consecutive buses.
+ */
+export function offsetOut(bus: Channel, signal: Channel): Ugen;
+export function offsetOut(bus: Channel, signal: ChannelList | readonly Channel[]): ChannelList;
+export function offsetOut(
+    bus: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
+): Ugen | ChannelList {
+    if (isList(signal)) return outChannels("OffsetOut", bus, signal);
+    return new Ugen("OffsetOut", [bus, signal]);
+}
+
+/**
+ * Crossfades `signal` into the audio `bus`: `bus + xfade (signal - bus)`, 1
+ * replacing it and 0 leaving it. A channel list crossfades consecutive buses.
+ */
+export function xOut(bus: Channel, xfade: Channel, signal: Channel): Ugen;
+export function xOut(
+    bus: Channel,
+    xfade: Channel,
+    signal: ChannelList | readonly Channel[],
+): ChannelList;
+export function xOut(
+    bus: Channel,
+    xfade: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
+): Ugen | ChannelList {
+    if (isList(signal)) return outChannels("XOut", bus, signal, [xfade]);
+    return new Ugen("XOut", [bus, xfade, signal]);
+}
+
+/**
+ * Writes a control bus, as `outCtl` does: the server's control buses are the
+ * memory a client in another process maps, scsynth's shared controls. A
+ * channel list writes consecutive buses.
+ */
+export function sharedOut(bus: Channel, signal: Channel): Ugen;
+export function sharedOut(bus: Channel, signal: ChannelList | readonly Channel[]): ChannelList;
+export function sharedOut(
+    bus: Channel,
+    signal: Channel | ChannelList | readonly Channel[],
+): Ugen | ChannelList {
+    if (isList(signal)) return outChannels("SharedOut", bus, signal);
+    return new Ugen("SharedOut", [bus, signal]);
 }
 
 /**

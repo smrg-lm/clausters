@@ -45,6 +45,20 @@ __all__ = [
     "index_in_between",
     "detect_index",
     "degree_to_key",
+    "block_size",
+    "control_rate",
+    "control_dur",
+    "sample_dur",
+    "radians_per_sample",
+    "subsample_offset",
+    "num_audio_buses",
+    "num_control_buses",
+    "num_input_buses",
+    "num_output_buses",
+    "num_buffers",
+    "node_id",
+    "num_running_synths",
+    "buf_samples",
 ]
 
 
@@ -351,3 +365,75 @@ def degree_to_key(bufnum, signal, octave=12.0) -> Ugen:
     down. Degree -1 is the last step an octave down.
     """
     return Ugen("DegreeToKey", [bufnum, signal, octave])
+
+
+def block_size() -> Ugen:
+    """The samples in a control period."""
+    return Ugen("BlockSize", [], rate="ir")
+
+
+def control_rate() -> Ugen:
+    """Control periods a second."""
+    return Ugen("ControlRate", [], rate="ir")
+
+
+def control_dur() -> Ugen:
+    """Seconds in a control period."""
+    return Ugen("ControlDur", [], rate="ir")
+
+
+def sample_dur() -> Ugen:
+    """Seconds in a sample."""
+    return Ugen("SampleDur", [], rate="ir")
+
+
+def radians_per_sample() -> Ugen:
+    """`2 pi` over the sample rate."""
+    return Ugen("RadiansPerSample", [], rate="ir")
+
+
+def subsample_offset() -> Ugen:
+    """Where within its first sample the timed bundle that started the synth fell, in `[0, 1)`: what places a grain between samples.
+    """
+    return Ugen("SubsampleOffset", [], rate="ir")
+
+
+def num_audio_buses() -> Ugen:
+    """The server's audio buses."""
+    return Ugen("NumAudioBuses", [], rate="ir")
+
+
+def num_control_buses() -> Ugen:
+    """The server's control buses."""
+    return Ugen("NumControlBuses", [], rate="ir")
+
+
+def num_input_buses() -> Ugen:
+    """The hardware inputs: the audio buses after the outputs."""
+    return Ugen("NumInputBuses", [], rate="ir")
+
+
+def num_output_buses() -> Ugen:
+    """The hardware outputs: audio buses from 0."""
+    return Ugen("NumOutputBuses", [], rate="ir")
+
+
+def num_buffers() -> Ugen:
+    """The slots of the server's buffer pool."""
+    return Ugen("NumBuffers", [], rate="ir")
+
+
+def node_id() -> Ugen:
+    """The id of the node this synth is."""
+    return Ugen("NodeID", [], rate="ir")
+
+
+def num_running_synths() -> Ugen:
+    """The synths in the server's tree when the synth starts."""
+    return Ugen("NumRunningSynths", [], rate="ir")
+
+
+def buf_samples(bufnum) -> Ugen:
+    """The number of samples in a buffer, every channel's: frames times channels.
+    """
+    return Ugen("BufSamples", [bufnum], rate="kr")

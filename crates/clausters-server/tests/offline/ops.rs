@@ -31,6 +31,7 @@ fn render_const(json: &str) -> f32 {
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),
+        server: clausters::dsp::ServerFacts::default(),
     };
     synth.process(&mut ctx);
     let blk = buses.audio(0);
@@ -56,6 +57,7 @@ fn render_block(json: &str) -> Vec<f32> {
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),
+        server: clausters::dsp::ServerFacts::default(),
     };
     synth.process(&mut ctx);
     buses.audio(0).to_vec()
@@ -404,6 +406,7 @@ fn rand_op_ugen_draws_per_sample_from_its_own_stream() {
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),
+            server: clausters::dsp::ServerFacts::default(),
         };
         synth.process(&mut ctx);
         buses.audio(0).to_vec()

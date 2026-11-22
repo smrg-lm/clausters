@@ -421,6 +421,11 @@
       ]
     },
     {
+      "name": "BlockSize",
+      "arity": 0,
+      "inputs": []
+    },
+    {
       "name": "BrownNoise",
       "arity": 0,
       "inputs": []
@@ -724,6 +729,16 @@
       ]
     },
     {
+      "name": "BufSamples",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "bufnum",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "BufWr",
       "arity": 5,
       "inputs": [
@@ -923,6 +938,16 @@
           "default": 0.10000000149011612
         }
       ]
+    },
+    {
+      "name": "ControlDur",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "ControlRate",
+      "arity": 0,
+      "inputs": []
     },
     {
       "name": "Conv",
@@ -2226,6 +2251,16 @@
       ]
     },
     {
+      "name": "InFeedback",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "InRange",
       "arity": 3,
       "inputs": [
@@ -2270,6 +2305,16 @@
         {
           "name": "bottom",
           "default": 1.0
+        }
+      ]
+    },
+    {
+      "name": "InTrig",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
         }
       ]
     },
@@ -2663,6 +2708,20 @@
         },
         {
           "name": "down",
+          "default": 0.10000000149011612
+        }
+      ]
+    },
+    {
+      "name": "LagIn",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
+        },
+        {
+          "name": "lag",
           "default": 0.10000000149011612
         }
       ]
@@ -3346,6 +3405,11 @@
       ]
     },
     {
+      "name": "NodeID",
+      "arity": 0,
+      "inputs": []
+    },
+    {
       "name": "Normalizer",
       "arity": 3,
       "inputs": [
@@ -3360,6 +3424,50 @@
         {
           "name": "dur",
           "default": 0.009999999776482582
+        }
+      ]
+    },
+    {
+      "name": "NumAudioBuses",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "NumBuffers",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "NumControlBuses",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "NumInputBuses",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "NumOutputBuses",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "NumRunningSynths",
+      "arity": 0,
+      "inputs": []
+    },
+    {
+      "name": "OffsetOut",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
         }
       ]
     },
@@ -4049,6 +4157,11 @@
       ]
     },
     {
+      "name": "RadiansPerSample",
+      "arity": 0,
+      "inputs": []
+    },
+    {
       "name": "Ramp",
       "arity": 2,
       "inputs": [
@@ -4335,6 +4448,11 @@
       ]
     },
     {
+      "name": "SampleDur",
+      "arity": 0,
+      "inputs": []
+    },
+    {
       "name": "SampleRate",
       "arity": 0,
       "inputs": []
@@ -4457,6 +4575,30 @@
       "inputs": [
         {
           "name": "bufnum",
+          "default": 0.0
+        },
+        {
+          "name": "signal",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "SharedIn",
+      "arity": 1,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "SharedOut",
+      "arity": 2,
+      "inputs": [
+        {
+          "name": "bus",
           "default": 0.0
         },
         {
@@ -4630,6 +4772,11 @@
           "default": 0.0
         }
       ]
+    },
+    {
+      "name": "SubsampleOffset",
+      "arity": 0,
+      "inputs": []
     },
     {
       "name": "Sum3",
@@ -5257,6 +5404,24 @@
         },
         {
           "name": "done_action",
+          "default": 0.0
+        }
+      ]
+    },
+    {
+      "name": "XOut",
+      "arity": 3,
+      "inputs": [
+        {
+          "name": "bus",
+          "default": 0.0
+        },
+        {
+          "name": "xfade",
+          "default": 1.0
+        },
+        {
+          "name": "signal",
           "default": 0.0
         }
       ]

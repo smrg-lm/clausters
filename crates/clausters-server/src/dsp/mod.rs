@@ -346,6 +346,11 @@ pub struct ControlBuses {
     ptr: *const AtomicU32,
     len: usize,
     _owner: Arc<dyn std::any::Any + Send + Sync>,
+    /// A count per bus of the server's writes to it ([`ControlBuses::set`]):
+    /// what tells `InTrig` a bus was set, even to the value it held. In this
+    /// process, beside the values, which may be a segment other processes
+    /// map; their writes change a value and leave the count.
+    stamps: Arc<Vec<AtomicU32>>,
 }
 
 // SAFETY: the pointee is a fixed array of atomics kept alive by `_owner`;
@@ -359,6 +364,7 @@ impl Clone for ControlBuses {
             ptr: self.ptr,
             len: self.len,
             _owner: Arc::clone(&self._owner),
+            stamps: Arc::clone(&self.stamps),
         }
     }
 }
@@ -381,7 +387,12 @@ impl ControlBuses {
             ptr,
             len: count,
             _owner: storage,
+            stamps: Self::stamps(count),
         }
+    }
+
+    fn stamps(count: usize) -> Arc<Vec<AtomicU32>> {
+        Arc::new((0..count).map(|_| AtomicU32::new(0)).collect())
     }
 
     /// Control buses backed by external memory (the IPC segment).
@@ -398,6 +409,7 @@ impl ControlBuses {
             ptr,
             len: count,
             _owner: owner,
+            stamps: Self::stamps(count),
         }
     }
 
@@ -426,7 +438,16 @@ impl ControlBuses {
     pub fn set(&self, index: usize, value: f32) {
         if let Some(b) = self.slot(index) {
             b.store(value.to_bits(), Ordering::Relaxed);
+            self.stamps[index].fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// How many times the server has set bus `index`: a count that moves on
+    /// every [`set`](Self::set), the same value included.
+    pub fn stamp(&self, index: usize) -> u32 {
+        self.stamps
+            .get(index)
+            .map_or(0, |s| s.load(Ordering::Relaxed))
     }
 }
 
@@ -660,6 +681,12 @@ impl StageMask {
 pub struct Buses {
     audio: Vec<UnsafeCell<Block>>,
     audio_written: Vec<AtomicBool>,
+    /// Each bus as the last block left it, and whether it was written then:
+    /// what `InFeedback` reads of a bus not yet written this block -- a
+    /// signal a block late, as scsynth's buses keep it. Kept only for the
+    /// buses written, so it costs a copy where the clear already costs a fill.
+    previous: Vec<UnsafeCell<Block>>,
+    previous_written: Vec<bool>,
     pub control: ControlBuses,
     /// This block's events, every event bus's ([`events::EventBuses`]).
     events: events::EventBuses,
@@ -686,6 +713,10 @@ impl Buses {
             audio_written: (0..audio_count.max(1))
                 .map(|_| AtomicBool::new(false))
                 .collect(),
+            previous: (0..audio_count.max(1))
+                .map(|_| UnsafeCell::new(Block::SILENCE))
+                .collect(),
+            previous_written: vec![false; audio_count.max(1)],
             control,
             events: events::EventBuses::new(event_count),
             view: None,
@@ -716,11 +747,34 @@ impl Buses {
     }
 
     pub fn clear_audio(&mut self) {
-        for (bus, written) in self.audio.iter_mut().zip(&mut self.audio_written) {
+        let buses = self.audio.iter_mut().zip(&mut self.audio_written);
+        let previous = self.previous.iter_mut().zip(&mut self.previous_written);
+        for ((bus, written), (prev, prev_written)) in buses.zip(previous) {
             if *written.get_mut() {
+                prev.get_mut().0.copy_from_slice(&bus.get_mut().0);
+                *prev_written = true;
                 bus.get_mut().0.fill(0.0);
                 *written.get_mut() = false;
+            } else if *prev_written {
+                prev.get_mut().0.fill(0.0);
+                *prev_written = false;
             }
+        }
+    }
+
+    /// What `InFeedback` reads of `bus`: this block's samples if it has been
+    /// written this block, else the last block's (silence where it was not
+    /// written then either) -- the bus read whatever the order of the nodes.
+    #[inline]
+    pub fn audio_feedback(&self, bus: usize) -> &[f32; BLOCK_SIZE] {
+        if let Some((parent, _)) = self.view {
+            return unsafe { (*parent).audio_feedback(bus) };
+        }
+        let bus = bus.min(self.audio.len() - 1);
+        if self.audio_written[bus].load(Ordering::Relaxed) {
+            unsafe { &(*self.audio[bus].get()).0 }
+        } else {
+            unsafe { &(*self.previous[bus].get()).0 }
         }
     }
 
@@ -791,6 +845,8 @@ impl Buses {
         Self {
             audio: Vec::new(),
             audio_written: Vec::new(),
+            previous: Vec::new(),
+            previous_written: Vec::new(),
             control: parent.control.clone(),
             events: events::EventBuses::none(),
             view: Some((parent, delay)),
@@ -830,6 +886,26 @@ pub struct ProcessCtx<'a> {
     pub frames: usize,
     /// Where the transport is, for a UGen that follows it.
     pub transport: TransportCtx,
+    /// The server around the slice: the node it runs in and the engine's
+    /// counts, for the information UGens (`NodeID`, `NumRunningSynths`,
+    /// `NumOutputBuses`, ...). A context built outside an engine has the
+    /// default, a node 0 in an engine of none.
+    pub server: ServerFacts,
+}
+
+/// The facts of the server a UGen runs in that no signal carries: the node
+/// it runs in, the hardware channels and how many synths are running. The
+/// engine fills them each slice and the tree sets the node as it walks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ServerFacts {
+    /// The id of the node the UGen runs in.
+    pub node_id: i32,
+    /// Hardware output channels: audio buses `0..outputs`.
+    pub output_channels: u32,
+    /// Hardware input channels: the audio buses after the outputs.
+    pub input_channels: u32,
+    /// The synths in the tree.
+    pub running_synths: u32,
 }
 
 /// The transport, as a slice sees it: where it stands, and whether it is

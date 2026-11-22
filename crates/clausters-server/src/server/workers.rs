@@ -61,6 +61,8 @@ struct Job {
     /// Carried so a worker's `ProcessCtx` is the conductor's: a stage runs in
     /// the same slice, so it is at the same place on the transport's axis.
     transport: TransportCtx,
+    /// The conductor's server facts, likewise.
+    server: crate::dsp::ServerFacts,
 }
 
 impl Job {
@@ -81,6 +83,12 @@ impl Job {
             fade_step: 0.0,
             looping: None,
             pending_looping: None,
+        },
+        server: crate::dsp::ServerFacts {
+            node_id: 0,
+            output_channels: 0,
+            input_channels: 0,
+            running_synths: 0,
         },
     };
 }
@@ -191,6 +199,7 @@ impl WorkerPool {
                 offset: ctx.offset,
                 frames: ctx.frames,
                 transport: ctx.transport,
+                server: ctx.server,
             };
         }
         shared.cursor.store(0, Ordering::Relaxed);
@@ -307,6 +316,7 @@ fn worker_main(shared: &Shared, meters: &Meters, me: usize) {
             offset: job.offset,
             frames: job.frames,
             transport: job.transport,
+            server: job.server,
         };
         // The bracket is the stage, not the subtree: two clock reads per
         // stage this worker joins, and what it measures is work rather than

@@ -71,6 +71,7 @@ fn exact_due_audio_slices_native_controls_maps_and_latency_without_allocations()
                     rolling: true,
                     ..TransportCtx::default()
                 },
+                server: clausters::dsp::ServerFacts::default(),
             };
             assert_no_alloc(|| {
                 synth.prepare_slice(&ctx, true);
@@ -116,6 +117,7 @@ fn capacity_and_process_death_latch_a_single_node_fault() {
                 offset: 0,
                 frames: 64,
                 transport: TransportCtx::default(),
+                server: clausters::dsp::ServerFacts::default(),
             };
             assert_no_alloc(|| {
                 synth.prepare_slice(&ctx, true);

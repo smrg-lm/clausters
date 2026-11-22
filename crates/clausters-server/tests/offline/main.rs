@@ -43,6 +43,7 @@ mod filters;
 mod golden;
 mod graphdef;
 mod group_nset;
+mod info;
 mod lfugens;
 mod mapping;
 mod meters;

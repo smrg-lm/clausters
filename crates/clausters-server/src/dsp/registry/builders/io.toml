@@ -148,3 +148,47 @@ why = "the path and its format are static fields"
 [[hand]]
 kind = "SendPeakRMS"
 why = "the channel list leads, and the rate, lag, id and command are options"
+
+[[ugen]]
+kind = "InFeedback"
+builder = "in_feedback"
+doc = '''
+Reads an audio bus whatever the order of the nodes: this block's samples
+if the bus has been written this block, else the last block's -- the
+feedback between synths `in_` cannot read.
+'''
+
+[[ugen]]
+kind = "InTrig"
+builder = "in_trig"
+doc = '''
+A control bus as a trigger: its value in the block it was set (the same
+value included), 0 otherwise.
+'''
+
+[[ugen]]
+kind = "LagIn"
+builder = "lag_in"
+doc = '''
+A control bus through a one-pole lag of `lag` seconds to -60 dB.
+'''
+
+[[ugen]]
+kind = "SharedIn"
+builder = "shared_in"
+doc = '''
+Reads a control bus: the server's control buses are the memory a client
+in another process maps, scsynth's shared controls.
+'''
+
+[[hand]]
+kind = "SharedOut"
+why = "a channel list is written over consecutive buses"
+
+[[hand]]
+kind = "OffsetOut"
+why = "a channel list is written over consecutive buses"
+
+[[hand]]
+kind = "XOut"
+why = "a channel list is written over consecutive buses"

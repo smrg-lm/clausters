@@ -1671,3 +1671,8 @@ What the comparison allows is part of the decision:
     line reaches it.
   - `PauseSelfWhenDone` outputs 0 once it has paused its synth; here its
     source still passes.
+  - `OffsetOut` exists to delay a writer to its synth's sample within the
+    block scsynth starts it at; here a synth starts at its sample, so
+    `OffsetOut` is `Out`. `SubsampleOffset` reports what is left of the
+    sample, scsynth's value, a timed bundle starting at the sample nearest
+    its time as scsynth rounds it.

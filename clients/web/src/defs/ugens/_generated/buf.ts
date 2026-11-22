@@ -335,3 +335,52 @@ export const degreeToKey = (
     signal: Channel,
     octave: Channel = 12.0,
 ): Ugen => new Ugen("DegreeToKey", [bufnum, signal, octave]);
+
+/** The samples in a control period. */
+export const blockSize = (): Ugen => new Ugen("BlockSize", [], { rate: "ir" });
+
+/** Control periods a second. */
+export const controlRate = (): Ugen => new Ugen("ControlRate", [], { rate: "ir" });
+
+/** Seconds in a control period. */
+export const controlDur = (): Ugen => new Ugen("ControlDur", [], { rate: "ir" });
+
+/** Seconds in a sample. */
+export const sampleDur = (): Ugen => new Ugen("SampleDur", [], { rate: "ir" });
+
+/** `2 pi` over the sample rate. */
+export const radiansPerSample = (): Ugen =>
+    new Ugen("RadiansPerSample", [], { rate: "ir" });
+
+/**
+ * Where within its first sample the timed bundle that started the synth fell, in `[0, 1)`: what places a grain between samples.
+ */
+export const subsampleOffset = (): Ugen =>
+    new Ugen("SubsampleOffset", [], { rate: "ir" });
+
+/** The server's audio buses. */
+export const numAudioBuses = (): Ugen => new Ugen("NumAudioBuses", [], { rate: "ir" });
+
+/** The server's control buses. */
+export const numControlBuses = (): Ugen =>
+    new Ugen("NumControlBuses", [], { rate: "ir" });
+
+/** The hardware inputs: the audio buses after the outputs. */
+export const numInputBuses = (): Ugen => new Ugen("NumInputBuses", [], { rate: "ir" });
+
+/** The hardware outputs: audio buses from 0. */
+export const numOutputBuses = (): Ugen => new Ugen("NumOutputBuses", [], { rate: "ir" });
+
+/** The slots of the server's buffer pool. */
+export const numBuffers = (): Ugen => new Ugen("NumBuffers", [], { rate: "ir" });
+
+/** The id of the node this synth is. */
+export const nodeId = (): Ugen => new Ugen("NodeID", [], { rate: "ir" });
+
+/** The synths in the server's tree when the synth starts. */
+export const numRunningSynths = (): Ugen =>
+    new Ugen("NumRunningSynths", [], { rate: "ir" });
+
+/** The number of samples in a buffer, every channel's: frames times channels. */
+export const bufSamples = (bufnum: Channel): Ugen =>
+    new Ugen("BufSamples", [bufnum], { rate: "kr" });

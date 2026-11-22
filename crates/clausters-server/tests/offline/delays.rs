@@ -389,6 +389,7 @@ fn a_modulated_delay_time_stays_finite_and_bounded() {
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),
+            server: clausters::dsp::ServerFacts::default(),
         };
         synth.process(&mut ctx);
         assert_finite(buses.audio(0), "AllpassC under a modulated delay time");

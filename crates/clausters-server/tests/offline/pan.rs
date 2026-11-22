@@ -66,6 +66,7 @@ fn run_len(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
         offset: 0,
         frames: n,
         transport: Default::default(),
+        server: clausters::dsp::ServerFacts::default(),
     };
     ugen.process(&mut ctx, inputs, &mut out);
     out

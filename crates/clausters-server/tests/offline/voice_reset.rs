@@ -94,6 +94,24 @@ const STATELESS: &[(&str, &str)] = &[
         "searches the buffer for its input; the last search is a cache",
     ),
     ("DegreeToKey", "reads the buffer at its degree input"),
+    ("BlockSize", "the engine's facts"),
+    ("ControlRate", "the engine's facts"),
+    ("ControlDur", "the engine's facts"),
+    ("SampleDur", "the engine's facts"),
+    ("RadiansPerSample", "the engine's facts"),
+    ("SubsampleOffset", "the engine's facts"),
+    ("NumAudioBuses", "the engine's facts"),
+    ("NumControlBuses", "the engine's facts"),
+    ("NumInputBuses", "the engine's facts"),
+    ("NumOutputBuses", "the engine's facts"),
+    ("NumBuffers", "the engine's facts"),
+    ("NodeID", "the engine's facts"),
+    ("NumRunningSynths", "the engine's facts"),
+    ("BufSamples", "a buffer's facts"),
+    ("InFeedback", "bus I/O"),
+    ("OffsetOut", "bus I/O"),
+    ("SharedIn", "bus I/O"),
+    ("SharedOut", "bus I/O"),
     ("Hasher", "arithmetic"),
     ("MantissaMask", "arithmetic"),
     (
@@ -345,6 +363,34 @@ fn cases() -> Vec<Case> {
             json!([input(), {"kind": "Lag", "inputs": [u(0), c(0.01)]}, out(1)]),
         )
         .source("noise"),
+        Case::new(
+            "xout",
+            json!([
+                input(),
+                {"kind": "LFTri", "rate": "kr", "inputs": [c(7.0), c(0.0)]},
+                {"kind": "MulAdd", "rate": "kr", "inputs": [u(1), c(0.5), c(0.5)]},
+                {"kind": "XOut", "inputs": [c(0.0), u(2), u(0)]}
+            ]),
+        )
+        .source("noise"),
+        Case::new(
+            "lagin",
+            json!([
+                {"kind": "LFPulse", "rate": "kr", "inputs": [c(5.0), c(0.0), c(0.5)]},
+                {"kind": "OutCtl", "inputs": [c(3.0), u(0)]},
+                {"kind": "LagIn", "inputs": [c(3.0), c(0.02)]},
+                out(2)
+            ]),
+        ),
+        Case::new(
+            "intrig",
+            json!([
+                {"kind": "LFPulse", "rate": "kr", "inputs": [c(40.0), c(0.0), c(0.5)]},
+                {"kind": "OutCtl", "inputs": [c(4.0), u(0)]},
+                {"kind": "InTrig", "inputs": [c(4.0)]},
+                out(2)
+            ]),
+        ),
         Case::new(
             "peak",
             json!([input(), {"kind": "Impulse", "inputs": [c(97.0), c(0.5)]},
@@ -914,6 +960,7 @@ fn a_reply_kind_fires_again_after_a_reset() {
                 offset: 0,
                 frames: BLOCK_SIZE,
                 transport: Default::default(),
+                server: clausters::dsp::ServerFacts::default(),
             };
             let mut output = [0.0f32; BLOCK_SIZE];
             ugen.process(&mut ctx, &inputs, &mut output[..1]);
@@ -942,6 +989,7 @@ fn what_a_kind_asks_restarts_after_a_reset() {
             offset: 0,
             frames: BLOCK_SIZE,
             transport: Default::default(),
+            server: clausters::dsp::ServerFacts::default(),
         };
         let mut output = [0.0f32; BLOCK_SIZE];
         let n = if kr { 1 } else { BLOCK_SIZE };

@@ -858,13 +858,16 @@ impl OscServer {
     /// wall-clock timetag: the counter moves once per callback, so pairing it
     /// with *now* is off by however far into the callback the packet arrived,
     /// differently for every bundle.
-    fn device_sample_at(&self, unix: f64) -> Option<u64> {
+    ///
+    /// The time is exact, in samples: a bundle starts at the sample nearest
+    /// it, and the fraction is its synths' subsample offset.
+    fn device_time_at(&self, unix: f64) -> Option<f64> {
         if !matches!(self.clock, TimeSource::Wall { .. }) {
             return None;
         }
         let epoch = self.handle.device_epoch().get()?;
         let secs = (unix - epoch).max(0.0);
-        Some((secs * self.handle.sample_rate as f64).round() as u64)
+        Some(secs * self.handle.sample_rate as f64)
     }
 }
 

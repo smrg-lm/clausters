@@ -432,7 +432,7 @@ A control bus lives permanently in the shared segment, so anyone can read its va
 
 ## Timed bundles
 
-OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on arrival; a **future** timetag is converted to a position on the server's sample clock and the whole bundle fires **sample-accurately**: the engine splits the audio block at the event's exact sample, so a `/synth_new` scheduled mid-block starts on that very frame. Bundles with equal times run in arrival order; late bundles run immediately (and are logged). Nested bundles are scheduled independently by their own timetags.
+OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on arrival; a **future** timetag is converted to a position on the server's sample clock and the whole bundle fires **sample-accurately**: the engine splits the audio block at the sample nearest the event, as scsynth rounds it, so a `/synth_new` scheduled mid-block starts on that very frame, and what is left of the sample is the synth's `SubsampleOffset`, scsynth's `[0, 1)` value. Bundles with equal times run in arrival order; late bundles run immediately (and are logged). Nested bundles are scheduled independently by their own timetags.
 
 Schedulable inside a timed bundle: `/synth_new`, `/node_set`, `/node_setRange`, `/node_fill`, `/node_map`, `/node_mapAudio`, `/node_mapRange`, `/node_mapAudioRange`, `/node_free`, `/node_before`, `/node_after`, `/node_order`, `/group_head`, `/group_tail`, `/group_new`, `/group_name`, `/group_freeAll`, `/group_deepFree`, `/bus_set`, `/bus_setRange`, `/bus_fill`, `/node_ugenCmd`, `/group_sortMode`, `/group_parallel`, `/graph_new`, `/graph_addSlot`, `/graph_moveSlot`, `/graph_newVoice`. Anything else (defs, buffers, queries, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
 
@@ -710,6 +710,12 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `OutCtl` | bus, signal | writes the signal's per-block value to a **control** bus — the value the block **starts** at, since a reader holds one number for the whole block and the block's last sample would reach a reader running later in that same block a block early (the write side of `InCtl`); passes the signal through as its output |
 | `Out` | bus, signal | **sums** the signal into an audio bus |
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
+| `OffsetOut` | bus, signal | `Out` under scsynth's name: scsynth starts a synth at a block boundary and delays this writer to its sample; here a synth starts at its sample, so the two are one |
+| `XOut` | bus, xfade, signal | crossfades into the bus, `bus + xfade·(signal − bus)`: 1 replaces, 0 leaves it; a control-rate `xfade` is a line across the block |
+| `InFeedback` | bus | an audio bus read whatever the node order: this block's samples if it has been written this block, else the last block's (the buses keep each written bus's last block) — feedback between synths |
+| `InTrig` | bus | a control bus as a trigger: its value in the block the server set it (`/bus_set`, an `OutCtl`), the same value included, or a write through the shared segment changed it; 0 otherwise |
+| `LagIn` | bus, lag (s) | a control bus through a one-pole lag to −60 dB |
+| `SharedIn`, `SharedOut` | bus [, signal] | read and write a control bus: the server's control buses are the memory another process maps, scsynth's shared controls |
 | `PlayBuf` | bufnum, chan, rate, loop, trigger, startPos, doneAction | buffer player with **cubic** interpolation, as scsynth's (at a rate of exactly 1 every frame plays verbatim); `rate` is frames per output sample (1.0 = the server rate — multiply by `BufRateScale(bufnum)`, i.e. `file_sr / server_sr`, for the file's pitch). A pass begins at `startPos` and a rising `trigger` re-cues there mid-play, so one player is a re-usable voice; without `loop`, reaching the last frame (or the first, playing backwards) stops it there, holding that frame, and fires `doneAction` (`2` frees the synth, so a one-shot leaves the tree by itself), and a looping player never finishes, so its action never fires. The last three come **after** `loop` rather than in scsynth's order (`rate, trigger, startPos, loop`): inputs are positional, so putting `startPos` before `loop` would silently re-read every existing `loop` argument as a cue frame |
 | `BufRd` | bufnum, chan, phase, loop, interpolation | reads the buffer at a `phase` signal in frames; `interpolation` is scsynth's 1 (none), 2 (linear, the default) or 4 (cubic). Out-of-range phases wrap when looping, clamp otherwise, and the frames past an end that interpolation reads are the other end when looping and the end frame when not |
 | `TransportBufRd` | bufnum, chan, offset, rate, start, loop | reads the buffer at the **transport's position**: `BufRd` at `(position - offset) * rate + start` frames, worked out in `f64` inside the UGen. `offset` is as `TransportPos` takes it, `rate` the buffer's frames per transport frame (`BufRateScale`, times a playrate). One UGen rather than `TransportPos` into `BufRd` because a phase passed between UGens is an `f32` signal, which past 2^24 frames repeats and drops frames, so a long take read that way distorts more the further it plays. Seeks, loops and holds with the transport. The audio editor and the multitrack read their takes with it |
@@ -721,6 +727,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `BufFrames` | bufnum | frame count, block-constant |
 | `BufChannels` | bufnum | channel count, block-constant |
 | `BufDur` | bufnum | duration in seconds (`frames / file_sr`), block-constant |
+| `BufSamples` | bufnum | the buffer's samples, frames times channels |
 | `Osc` | bufnum, freq (Hz), phase (rad) | interpolating wavetable oscillator; `bufnum` must hold a **wavetable-format** buffer (see `/buffer_gen` below); `phase` is an offset in radians |
 | `OscN` | bufnum, freq (Hz), phase (rad) | non-interpolating oscillator over a **plain** (non-wavetable) buffer; rawer/cheaper than `Osc` |
 | `VOsc` | bufpos, freq (Hz), phase (rad) | like `Osc` but the buffer number is a signal: reads wavetables `bufpos` and `bufpos+1` and crossfades by its fractional part, so sweeping `bufpos` morphs a bank of adjacent tables (allocate them contiguously, same size). A control-rate `bufpos` is a line across the block, as scsynth's is |
@@ -803,6 +810,10 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `LagUD` | signal, up, down | one-pole smoother with separate rise (`up`) and fall (`down`) times; what a control with a `lag_down` inserts |
 | `VarLag` | signal, time, start | a **straight line** to each new value of `signal`, taking `time` seconds, from `start` at the first sample; a new `time` rescales what is left of the line. Arrives exactly, where the one-poles approach |
 | `SampleRate` | — | the engine sample rate in Hz; init-rate (`ir`) by default |
+| `BlockSize`, `ControlRate`, `ControlDur`, `SampleDur`, `RadiansPerSample` | — | the engine's timing: 64, the blocks a second, a block's and a sample's seconds, `2π/sr`; initial rate by default |
+| `SubsampleOffset` | — | where within its first sample the timed bundle that started the synth fell, scsynth's `time + ½ − ⌊time + ½⌋` in samples; 0 for an untimed start |
+| `NumAudioBuses`, `NumControlBuses`, `NumInputBuses`, `NumOutputBuses`, `NumBuffers` | — | the server's configuration: its buses, its hardware inputs and outputs, its buffer slots |
+| `NodeID`, `NumRunningSynths` | — | the node the synth is, and the synths in the tree (at control rate, following it) |
 | `Rand` | lo, hi | one uniform random value in `[lo, hi)`, drawn once at synth init and held; init-rate only (its inputs must be constants/`ir`) |
 | `IRand` | lo, hi | one integer in `[lo, hi]` (bounds truncated), drawn once and held; `ir` |
 | `ExpRand` | lo, hi | one log-uniform value between `lo` and `hi` (one sign, nonzero), drawn once and held; `ir` |

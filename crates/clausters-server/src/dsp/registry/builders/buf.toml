@@ -385,3 +385,116 @@ down. Degree -1 is the last step an octave down.
 [[hand]]
 kind = "TWindex"
 why = "the weights' list leads, where it trails on the wire"
+
+[[ugen]]
+kind = "BlockSize"
+builder = "block_size"
+rate = "ir"
+doc = '''
+The samples in a control period.
+'''
+
+[[ugen]]
+kind = "ControlRate"
+builder = "control_rate"
+rate = "ir"
+doc = '''
+Control periods a second.
+'''
+
+[[ugen]]
+kind = "ControlDur"
+builder = "control_dur"
+rate = "ir"
+doc = '''
+Seconds in a control period.
+'''
+
+[[ugen]]
+kind = "SampleDur"
+builder = "sample_dur"
+rate = "ir"
+doc = '''
+Seconds in a sample.
+'''
+
+[[ugen]]
+kind = "RadiansPerSample"
+builder = "radians_per_sample"
+rate = "ir"
+doc = '''
+`2 pi` over the sample rate.
+'''
+
+[[ugen]]
+kind = "SubsampleOffset"
+builder = "subsample_offset"
+rate = "ir"
+doc = '''
+Where within its first sample the timed bundle that started the synth fell, in `[0, 1)`: what places a grain between samples.
+'''
+
+[[ugen]]
+kind = "NumAudioBuses"
+builder = "num_audio_buses"
+rate = "ir"
+doc = '''
+The server's audio buses.
+'''
+
+[[ugen]]
+kind = "NumControlBuses"
+builder = "num_control_buses"
+rate = "ir"
+doc = '''
+The server's control buses.
+'''
+
+[[ugen]]
+kind = "NumInputBuses"
+builder = "num_input_buses"
+rate = "ir"
+doc = '''
+The hardware inputs: the audio buses after the outputs.
+'''
+
+[[ugen]]
+kind = "NumOutputBuses"
+builder = "num_output_buses"
+rate = "ir"
+doc = '''
+The hardware outputs: audio buses from 0.
+'''
+
+[[ugen]]
+kind = "NumBuffers"
+builder = "num_buffers"
+rate = "ir"
+doc = '''
+The slots of the server's buffer pool.
+'''
+
+[[ugen]]
+kind = "NodeID"
+builder = "node_id"
+rate = "ir"
+doc = '''
+The id of the node this synth is.
+'''
+
+[[ugen]]
+kind = "NumRunningSynths"
+builder = "num_running_synths"
+rate = "ir"
+doc = '''
+The synths in the server's tree when the synth starts.
+'''
+
+[[ugen]]
+kind = "BufSamples"
+builder = "buf_samples"
+rate = "kr"
+required = ["bufnum"]
+doc = '''
+The number of samples in a buffer, every channel's: frames times channels.
+'''

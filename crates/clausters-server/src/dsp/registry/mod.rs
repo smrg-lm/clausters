@@ -33,7 +33,7 @@ use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::gendy::{Gendy, Gendy3, GendyKind};
 use crate::dsp::harmonic::{Blip, Formant};
 use crate::dsp::impulse::Impulse;
-use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
+use crate::dsp::io::{In, InCtl, InFeedback, InTrig, LagIn, Out, OutCtl, ReplaceOut, XOut};
 use crate::dsp::ladder::MoogFf;
 use crate::dsp::lag::{Lag, LagCascade, LagUD, VarLag};
 use crate::dsp::lfo::{LfGauss, Vibrato};
@@ -61,7 +61,7 @@ use crate::dsp::reply::{Poll, SendPeakRMS, SendReply, SendTrig};
 use crate::dsp::running::{
     Change, LastValue, PeakFollower, Running, RunningKind, RunningSum, ZeroCrossing,
 };
-use crate::dsp::scalar::SampleRate;
+use crate::dsp::scalar::{Info, InfoKind, SampleRate};
 use crate::dsp::sections::{
     Fir, FirKind, Flip, Fos, LineRamp, Median, SampleDelay, Slew, Sos, TwoZero,
 };
@@ -191,6 +191,10 @@ pub struct BuildCtx {
     /// a `DiskOut` for room -- which is scsynth's NRT reading. A render runs
     /// as fast as it can, so without this a stream would lose every race.
     pub offline: bool,
+    /// Where within its first sample the bundle that started the synth fell,
+    /// scsynth's subsample offset in `[0, 1)` (0 for a synth not started by
+    /// a timed bundle): what `SubsampleOffset` reports.
+    pub subsample: f32,
 }
 
 impl BuildCtx {
@@ -223,6 +227,7 @@ impl BuildCtx {
             rand,
             meters,
             offline: false,
+            subsample: 0.0,
         }
     }
 

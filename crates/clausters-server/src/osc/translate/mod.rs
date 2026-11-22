@@ -351,6 +351,12 @@ pub struct CmdTranslator {
     /// having no `/server_load` to answer.
     #[cfg_attr(not(feature = "synth"), allow(dead_code))]
     meters: Arc<Meters>,
+    /// Where within its first sample the bundle being translated falls,
+    /// scsynth's subsample offset (`[0, 1)`; 0 outside a timed bundle): what
+    /// a synth built for it reports through `SubsampleOffset`
+    /// ([`CmdTranslator::set_subsample`]).
+    #[cfg_attr(not(feature = "synth"), allow(dead_code))]
+    subsample: f32,
     /// Loaded SynthDefs; starts with the built-in "default".
     #[cfg(feature = "synth")]
     pub synth_defs: HashMap<String, Arc<SynthDef>>,
@@ -545,6 +551,7 @@ impl CmdTranslator {
             ))]
             offline_plugins: false,
             offline: false,
+            subsample: 0.0,
             #[cfg(all(
                 any(feature = "plugin-clap", feature = "plugin-vst3"),
                 target_os = "linux"
@@ -623,6 +630,17 @@ impl CmdTranslator {
         n
     }
 
+    /// Sets where within its first sample the bundle being translated falls,
+    /// for the synths it builds: `exact` is the bundle's time in samples, the
+    /// node starting at the sample nearest it, and the offset is scsynth's,
+    /// `exact + 1/2` less its floor. A bundle that is not timed is `None`, 0.
+    pub fn set_subsample(&mut self, exact: Option<f64>) {
+        self.subsample = exact.map_or(0.0, |t| {
+            let x = t + 0.5;
+            (x - x.floor()) as f32
+        });
+    }
+
     /// Builds a synth instance from either def table. Faust instantiation
     /// (`createCDSPInstance` + `init`) allocates -- fine, this never runs on
     /// the audio thread; the boxed instance reaches it fully built.
@@ -635,6 +653,7 @@ impl CmdTranslator {
                 &self.generators,
                 Arc::clone(&self.meters),
                 self.offline,
+                self.subsample,
             ));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }

@@ -12,7 +12,7 @@ from .graph import ChannelList, Ugen, _Node
 from ._generated.io import *  # noqa: F403 -- the builders that mirror the wire
 
 
-def _out_channels(kind, bus, signal):
+def _out_channels(kind, bus, signal, *between):
     """One writer per channel on consecutive buses (``bus``, ``bus+1``, ...) --
     the point where a channel list becomes buses. A constant ``bus`` is
     offset here; a control (or any single-channel node) takes the first
@@ -26,11 +26,11 @@ def _out_channels(kind, bus, signal):
     sig = ChannelList(signal)
     if isinstance(bus, _Node):
         return ChannelList(
-            [Ugen(kind, [bus if i == 0 else bus + float(i), s])
+            [Ugen(kind, [bus if i == 0 else bus + float(i), *between, s])
              for i, s in enumerate(sig.items)]
         )
     return ChannelList(
-        [Ugen(kind, [float(bus) + i, s]) for i, s in enumerate(sig.items)]
+        [Ugen(kind, [float(bus) + i, *between, s]) for i, s in enumerate(sig.items)]
     )
 
 
@@ -53,6 +53,33 @@ def out(bus, signal) -> SynthExpr:
     if isinstance(signal, (ChannelList, list, tuple)):
         return _out_channels("Out", bus, signal)
     return Ugen("Out", [bus, signal])
+
+
+def offset_out(bus, signal) -> SynthExpr:
+    """`out` under scsynth's name for a sample-accurate start: a synth starts
+    at its bundle's sample here, so the two are one writer. A channel list
+    writes consecutive buses."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("OffsetOut", bus, signal)
+    return Ugen("OffsetOut", [bus, signal])
+
+
+def x_out(bus, xfade, signal) -> SynthExpr:
+    """Crossfades ``signal`` into the audio ``bus``: ``bus + xfade (signal -
+    bus)``, 1 replacing it and 0 leaving it. A channel list crossfades
+    consecutive buses."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("XOut", bus, signal, xfade)
+    return Ugen("XOut", [bus, xfade, signal])
+
+
+def shared_out(bus, signal) -> SynthExpr:
+    """Writes a control bus, as `out_ctl` does: the server's control buses are
+    the memory a client in another process maps, scsynth's shared controls.
+    A channel list writes consecutive buses."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("SharedOut", bus, signal)
+    return Ugen("SharedOut", [bus, signal])
 
 
 def replace_out(bus, signal) -> SynthExpr:

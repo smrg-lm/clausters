@@ -27,6 +27,7 @@ fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'
         offset: 0,
         frames: BLOCK_SIZE,
         transport: Default::default(),
+        server: clausters::dsp::ServerFacts::default(),
     }
 }
 

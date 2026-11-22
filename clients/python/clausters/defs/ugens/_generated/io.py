@@ -18,6 +18,10 @@ __all__ = [
     "send_trig",
     "local_in",
     "local_out",
+    "in_feedback",
+    "in_trig",
+    "lag_in",
+    "shared_in",
 ]
 
 
@@ -113,3 +117,30 @@ def local_out(channel, signal) -> Ugen:
     SynthDef output to keep the write in the graph).
     """
     return Ugen("LocalOut", [channel, signal])
+
+
+def in_feedback(bus=0.0) -> Ugen:
+    """Reads an audio bus whatever the order of the nodes: this block's samples
+    if the bus has been written this block, else the last block's -- the
+    feedback between synths `in_` cannot read.
+    """
+    return Ugen("InFeedback", [bus])
+
+
+def in_trig(bus=0.0) -> Ugen:
+    """A control bus as a trigger: its value in the block it was set (the same
+    value included), 0 otherwise.
+    """
+    return Ugen("InTrig", [bus])
+
+
+def lag_in(bus=0.0, lag=0.1) -> Ugen:
+    """A control bus through a one-pole lag of `lag` seconds to -60 dB."""
+    return Ugen("LagIn", [bus, lag])
+
+
+def shared_in(bus=0.0) -> Ugen:
+    """Reads a control bus: the server's control buses are the memory a client
+    in another process maps, scsynth's shared controls.
+    """
+    return Ugen("SharedIn", [bus])

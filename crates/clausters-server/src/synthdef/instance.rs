@@ -174,7 +174,14 @@ impl UGenSynth {
     /// [`UGenSynth::new`] whose UGens that own a thread (`DiskIn`, `DiskOut`)
     /// account its work in `meters`, a server's load table.
     pub fn metered(def: Arc<SynthDef>, sample_rate: f32, seed: u64, meters: Arc<Meters>) -> Self {
-        Self::built(def, sample_rate, &Generators::seeded(seed), meters, false)
+        Self::built(
+            def,
+            sample_rate,
+            &Generators::seeded(seed),
+            meters,
+            false,
+            0.0,
+        )
     }
 
     /// The instance a server builds: its random UGens draw from
@@ -187,10 +194,12 @@ impl UGenSynth {
         generators: &Arc<Generators>,
         meters: Arc<Meters>,
         offline: bool,
+        subsample: f32,
     ) -> Self {
         let rand = SynthRand::new(Arc::clone(generators));
         let mut build_ctx = BuildCtx::metered(sample_rate, BLOCK_SIZE, rand, meters);
         build_ctx.offline = offline;
+        build_ctx.subsample = subsample;
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def

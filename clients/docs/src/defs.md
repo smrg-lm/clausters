@@ -464,6 +464,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `in_ctl(bus=0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
 | | `replace_out(bus, signal)` | **overwrites** an audio bus instead of summing |
+| | `offset_out`, `x_out(bus, xfade, signal)`, `shared_out` | `out` by scsynth's name; a crossfade into a bus; a control bus |
+| | `in_feedback(bus)`, `in_trig(bus)`, `lag_in(bus, lag)`, `shared_in(bus)` | a bus a block late when written later; a control bus as a trigger, lagged, shared |
 | Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0, trigger=0.0, start_pos=0.0, done_action=0)` | mono buffer player, linear interpolation; `rate` in frames per output sample. A pass begins at `start_pos` and a rising `trigger` re-cues there; without `loop`, the end fires `done_action` (2 frees the synth) |
 | | `buf_rd(bufnum, chan, phase, loop=0.0, interpolation=2.0)` | reads a buffer at a `phase` signal in frames; `interpolation` 1 none, 2 linear, 4 cubic |
 | Buffer info | `buf_sample_rate(bufnum)` / `buf_frames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
@@ -491,6 +493,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `amplitude`, `compander`, `normalizer`, `limiter` | an envelope follower, a compressor/expander, look-ahead gains |
 | | `var_lag(signal, time=0.1, start=None)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
+| | `block_size()`, `control_rate()`, `control_dur()`, `sample_dur()`, `radians_per_sample()`, `subsample_offset()` | the engine's timing, and where in its first sample the synth's bundle fell |
+| | `num_audio_buses()`, `num_control_buses()`, `num_input_buses()`, `num_output_buses()`, `num_buffers()`, `node_id()`, `num_running_synths()`, `buf_samples(bufnum)` | the server's configuration, the node, the synths, a buffer's samples |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
 | | `irand(lo=0.0, hi=127.0)`, `exp_rand(lo=0.01, hi=1.0)`, `lin_rand(lo, hi, minmax=0.0)`, `n_rand(lo=0.0, hi=1.0, n=0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
 | | `t_rand(lo, hi, trig)`, `ti_rand(...)`, `t_exp_rand(...)` | a random value drawn at the start and again at each trigger |
@@ -611,6 +615,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `inCtl(bus = 0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
 | | `replaceOut(bus, signal)` | **overwrites** an audio bus instead of summing |
+| | `offsetOut`, `xOut(bus, xfade, signal)`, `sharedOut` | `out` by scsynth's name; a crossfade into a bus; a control bus |
+| | `inFeedback(bus)`, `inTrig(bus)`, `lagIn(bus, lag)`, `sharedIn(bus)` | a bus a block late when written later; a control bus as a trigger, lagged, shared |
 | Buffers | `playBuf(bufnum, chan = 0.0, rate = 1.0, loop = 0.0, trigger = 0.0, startPos = 0.0, doneAction = 0)` | mono buffer player, linear interpolation; `rate` in frames per output sample. A pass begins at `startPos` and a rising `trigger` re-cues there; without `loop`, the end fires `doneAction` (2 frees the synth) |
 | | `bufRd(bufnum, chan, phase, loop = 0.0, interpolation = 2.0)` | reads a buffer at a `phase` signal in frames; `interpolation` 1 none, 2 linear, 4 cubic |
 | Buffer info | `bufSampleRate(bufnum)` / `bufFrames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
@@ -638,6 +644,8 @@ sd.controlNames().map((name) => knob(sd.control(name), { min: 0.0, max: 1.0 }));
 | | `amplitude`, `compander`, `normalizer`, `limiter` | an envelope follower, a compressor/expander, look-ahead gains |
 | | `varLag(signal, time = 0.1, start?)` | a straight line to each new value, taking `time` seconds, from `start` (the signal itself unless given) |
 | Scalar (`ir`) | `sampleRate()` | the engine sample rate in Hz, computed once at init |
+| | `blockSize()`, `controlRate()`, `controlDur()`, `sampleDur()`, `radiansPerSample()`, `subsampleOffset()` | the engine's timing, and where in its first sample the synth's bundle fell |
+| | `numAudioBuses()`, `numControlBuses()`, `numInputBuses()`, `numOutputBuses()`, `numBuffers()`, `nodeId()`, `numRunningSynths()`, `bufSamples(bufnum)` | the server's configuration, the node, the synths, a buffer's samples |
 | | `rand(lo = 0.0, hi = 1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
 | | `irand(lo = 0.0, hi = 127.0)`, `expRand(lo = 0.01, hi = 1.0)`, `linRand(lo, hi, minmax = 0.0)`, `nRand(lo = 0.0, hi = 1.0, n = 0.0)` | one integer, log-uniform, linear or mean-of-`n` value, drawn once and held |
 | | `tRand(lo, hi, trig)`, `tiRand(...)`, `tExpRand(...)` | a random value drawn at the start and again at each trigger |
