@@ -494,7 +494,9 @@ impl OscServer {
 /// else a turn carries.
 fn tap_window_cap(to: ClientId, max_frame: usize, buses: usize) -> usize {
     match to {
-        ClientId::Tcp(_) | ClientId::Ws(_) => max_frame.saturating_sub(256) / 4,
+        ClientId::Tcp(_) | ClientId::Ws(_) | ClientId::Local(_) => {
+            max_frame.saturating_sub(256) / 4
+        }
         ClientId::Udp(_) => MAX_TAP_WINDOW,
         ClientId::Ring(_) => {
             (clausters_core::shm::RING_CAPACITY / 2 / 4 / buses.max(1)).clamp(1, MAX_TAP_WINDOW)

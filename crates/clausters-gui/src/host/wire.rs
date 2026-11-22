@@ -77,7 +77,7 @@ impl Host {
         }
     }
 
-    /// `/gui_server <host:port> [shm] [i/of]` ([`GUI_SERVER`]): the share
+    /// `/gui_server <host:port | engine> [shm] [i/of]` ([`GUI_SERVER`]): the share
     /// of the server's ids taken here, the leg and the segment handed to the
     /// front, which holds the sockets and the mappings.
     pub(super) fn on_server(

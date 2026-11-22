@@ -607,6 +607,25 @@ with ServerProcess() as server_proc:            # clausters --shm <auto>
 
 Two clients on the **same** server — two scripts, a script and a GUI host, a page and the worker it started — allocate ids independently, so both allocators would start at the same base. They split the space instead, each taking one slice of it: {{alt `Server(share=IdShare(index=1, of=2))`, and the same `share=` on the `GuiHost` || `Session.embed({ share: { index: 1, of: 2 } })`}}, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree.<!-- web --> A session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike.<!-- /web -->
 
+<!-- python -->
+### A GUI host's engine
+
+Every application a GUI host opens (the audio editor, the multitrack, the roll, the score) plays on **one engine of the host's**, and that engine is a server too: `host.engine()` says where it is served, a shared-memory segment on this machine, and `Session.live(engine=host)` makes a session on it. What the script plays and what the applications play then sound through one engine, on one sample clock, with one node tree and one set of buses and buffers; the session's `gui()` is that host, and the host is pointed at its own engine for its bound widgets and its meters.
+
+```python
+from clausters import Session
+from clausters.gui import GuiHost
+
+host = GuiHost().boot()
+session = Session.live(engine=host).activate()   # the host's engine, over its segment
+window = host.open_app("multitrack")             # plays on the same engine
+```
+
+The applications allocate from one half of the engine's ids and a session on it from the other, which `host.engine()` answers with the segment. A segment's ring has one client, so a second session on the same engine is refused while the first is open. A host on a display opens its engine as it starts; a headless one opens it at the first thing that asks.
+
+**An editor's script plays on the editor's engine by default.** clausters-editor names its host's engine to the session it runs (`CLAUSTERS_ENGINE_SHM`), and `Session.live()` with no server named is made on it. It is a default and never a restriction: naming a server (`Session.live(host, port)`, or `boot=False` with an address) reaches that one.
+<!-- /python -->
+
 <!-- web -->
 ## A session in a worker
 

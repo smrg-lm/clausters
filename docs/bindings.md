@@ -797,7 +797,7 @@ and every difference is one of these shapes, listed name by name in
   Python client's `clausters.ipc`, `clausters.launch` and
   `clausters.config`; and inside a shared module, the transports and errors
   only a native process has (`OscUdpInterface`, `OscTcpInterface`,
-  `OscEmbedInterface`, `NetAddr`, `LibraryError`, `SegmentError`,
+  `OscEmbedInterface`, `OscShmInterface`, `NetAddr`, `LibraryError`, `SegmentError`,
   `CommandRingFull`);
 - **a record of a reply is a type in TypeScript, and its line a function**:
   Python's `NodeInfo`, `BufferInfo`, `DefInfo`, `ControlInfo`, `UgenInfo`,

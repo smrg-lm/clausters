@@ -297,6 +297,13 @@ pub enum ServerLink {
     /// sound goes to a player that is another process entirely.
     #[cfg(feature = "standalone")]
     Session(native::embed::EmbedSession),
+    /// **The applications' engine, in this process** (`/gui_server engine`):
+    /// what a script on the engine plays is what the host's bound widgets
+    /// and queries reach, handed to the engine's server by call
+    /// ([`clausters_app_engine::AppEngine::serve_local`]), its replies given
+    /// back through the sink the link was made with.
+    #[cfg(not(target_arch = "wasm32"))]
+    Engine(EngineLink),
     /// A browser WebSocket to a `--ws` audio server (the only carrier a browser
     /// can open to a separate process). Bound widgets forward through it.
     #[cfg(target_arch = "wasm32")]
@@ -306,6 +313,34 @@ pub enum ServerLink {
     /// back through `GuiBridge::server_reply`. No process, no socket.
     #[cfg(target_arch = "wasm32")]
     Page(web::PageServerLink),
+}
+
+/// The tag the host is the applications' engine's client in the process by
+/// ([`ServerLink::Engine`]), beside a script on the engine's ring.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const ENGINE_TAG: u32 = 1;
+
+/// **The host's link to the applications' engine** in its own process
+/// ([`ServerLink::Engine`]).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct EngineLink {
+    engine: std::sync::Arc<std::sync::Mutex<clausters_app_engine::AppEngine>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl EngineLink {
+    /// Hands one message to the engine's server, as its client tagged
+    /// [`ENGINE_TAG`].
+    fn send(&self, msg: OscMessage) -> std::io::Result<()> {
+        let bytes = clausters_core::osc::encode(&OscPacket::Message(msg))
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        let mut engine = self
+            .engine
+            .lock()
+            .map_err(|_| std::io::Error::other("the engine's lock is poisoned"))?;
+        engine.serve_local(&bytes, ENGINE_TAG);
+        Ok(())
+    }
 }
 
 impl ServerLink {
@@ -337,6 +372,8 @@ impl ServerLink {
                     Err(std::io::Error::other("session command ring full"))
                 }
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            ServerLink::Engine(link) => link.send(msg),
             #[cfg(target_arch = "wasm32")]
             ServerLink::Ws(link) => link.send(msg),
             #[cfg(target_arch = "wasm32")]
@@ -352,6 +389,7 @@ impl ServerLink {
             ServerLink::Udp(leg) => Some(leg.socket()),
             #[cfg(feature = "standalone")]
             ServerLink::Embed(_) | ServerLink::Session(_) => None,
+            ServerLink::Engine(_) => None,
         }
     }
 
@@ -802,7 +840,11 @@ pub const GUI_DOCK_QUIT: &str = "/gui_dock_quit";
 /// audio server** -- its client leg, the shared segment it maps (an empty
 /// string for none) and its share of the server's ids -- what `--server`,
 /// `--shm` and `--id-share` give a host at boot. How a session attaches to a
-/// host it did not boot (an editor's) and wires it to its own server.
+/// host it did not boot (an editor's) and wires it to its own server. The
+/// address `engine` names the applications' engine in the host's own
+/// process ([`GUI_ENGINE`]): a session playing on it points the host there,
+/// and the host is then the engine's client in its process, its segment
+/// mapped for the buses.
 pub const GUI_SERVER: &str = "/gui_server";
 
 /// What handling a packet asks the host's *front* to do, beyond mutating the

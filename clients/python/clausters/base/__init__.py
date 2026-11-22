@@ -59,6 +59,7 @@ from ._midiinterface import (
 )
 from ._oscinterface import (
     OscEmbedInterface,
+    OscShmInterface,
     OscInterface,
     OscNrtInterface,
     OscReceiver,
@@ -129,6 +130,7 @@ __all__ = [
     "OscWsInterface",
     "OscNrtInterface",
     "OscEmbedInterface",
+    "OscShmInterface",
     "OscReceiver",
     "OscScore",
     "MidiRtInterface",

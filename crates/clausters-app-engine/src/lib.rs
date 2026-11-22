@@ -23,6 +23,9 @@
 //! nodes, buses, buffers and transport commands.
 
 pub mod app;
+/// Where the replies to a client of the engine in its own process go
+/// ([`AppEngine::set_local_sink`]).
+pub use clausters::osc::server::LocalSink;
 /// What an engine publishes, read without its handle ([`AppEngine::reading`]).
 pub use clausters::server::engine::EngineReading;
 /// The engine's processing half, and the frames it processes a block at a
@@ -272,6 +275,21 @@ impl AppEngine {
     ) -> std::io::Result<()> {
         use clausters::server::ipc::{IpcPeer, Role};
         self.server.attach_ipc(IpcPeer::new(segment, Role::Server))
+    }
+
+    /// **Serves one packet from a client in this process** tagged `tag`, as
+    /// a ring's client is served, its replies handed to the sink set for the
+    /// tag ([`Self::set_local_sink`]): how the program that holds the engine
+    /// (the GUI host, for its bound widgets and its queries) is its client
+    /// beside a script on the ring.
+    pub fn serve_local(&mut self, bytes: &[u8], tag: u32) {
+        self.server.serve_local(bytes, tag);
+    }
+
+    /// **Where the replies to the client in this process tagged `tag` go**
+    /// ([`Self::serve_local`]), its notifications included.
+    pub fn set_local_sink(&mut self, tag: u32, sink: LocalSink) {
+        self.server.set_local_sink(tag, sink);
     }
 
     /// **One turn of the server's loop for its clients**: what arrived on the

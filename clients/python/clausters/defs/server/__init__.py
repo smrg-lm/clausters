@@ -183,6 +183,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         port = port if port is not None else cfg.get("port", 57110)
         latency = latency if latency is not None else cfg.get("latency", None)
         self.target = NetAddr(host, port)
+        #: whether this handle reaches a GUI host's applications' engine
+        #: (`on_engine`); set by `clausters.Session.live`.
+        self._on_engine = False
         #: the communication interface (RT/TCP by default, NRT/score, ...). The
         #: Server owns it; swapping it is the RT/NRT seam. ``transport`` picks
         #: the default carrier when no explicit ``interface`` is given:
@@ -425,9 +428,20 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
 
     @property
     def shm(self) -> "str | None":
-        """The shared-memory segment path of the server this handle `boot`-ed, or
-        ``None`` (attached, or booted without a segment). A GUI maps this."""
+        """The shared-memory segment path of the server this handle `boot`-ed
+        or reaches over its ring, or ``None`` (attached over a socket, or
+        booted without a segment). A GUI maps this."""
+        path = getattr(self.interface, "path", None)
+        if path is not None:
+            return path
         return getattr(self._process, "shm", None)
+
+    @property
+    def on_engine(self) -> bool:
+        """Whether this handle reaches **a GUI host's applications' engine**
+        (`clausters.Session.live` with ``engine``): the host is then pointed
+        at its own engine rather than at an address."""
+        return self._on_engine
 
     # ---- raw OSC: immediate and timed ----
 
@@ -1179,13 +1193,15 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         configure the reader the **first** call builds; later calls return that
         one and ignore them.
         """
-        from ...base._oscinterface import OscEmbedInterface
+        from ...base._oscinterface import OscEmbedInterface, OscShmInterface
         from ..clocksync import EmbedSampleClock, UdpSampleClock
 
         if self._sample_clock is None:
+            # a counter in this process, or in a segment mapped here, is read
+            # directly; one across a socket is tracked
             self._sample_clock = (
                 EmbedSampleClock(self.interface.server)
-                if isinstance(self.interface, OscEmbedInterface)
+                if isinstance(self.interface, (OscEmbedInterface, OscShmInterface))
                 else UdpSampleClock(self, window=window, timeout=timeout)
             )
         return self._sample_clock

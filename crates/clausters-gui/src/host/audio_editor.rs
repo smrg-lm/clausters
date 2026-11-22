@@ -59,6 +59,9 @@ pub(crate) struct AudioHost {
     /// segment it reaches the engine through once it is open, or why it
     /// could not be opened; and the clients waiting for it meanwhile.
     pub(super) door: EngineDoor,
+    /// **The engine itself**, once its thread opened it: what the host's own
+    /// link to it sends through ([`super::ServerLink::Engine`]).
+    pub(super) engine: Option<Arc<Mutex<AppEngine>>>,
 }
 
 /// What a client asking for the applications' engine is answered
@@ -172,6 +175,7 @@ impl AudioHost {
             source: None,
             next_structure: 0,
             door: EngineDoor::default(),
+            engine: None,
         }
     }
 
@@ -254,6 +258,26 @@ impl Host {
         if let Err(e) = self.audio_host().start() {
             diag::warn!("the applications' engine was not opened: {e}");
         }
+    }
+
+    /// **The host's own link to the applications' engine**, as a client of
+    /// it ([`super::ServerLink::Engine`]): its replies handed to `sink`, and
+    /// the file of the engine's segment, which the host maps for its buses.
+    /// Refused while the engine is not open.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn engine_link(
+        &mut self,
+        sink: Option<clausters_app_engine::LocalSink>,
+    ) -> Result<(super::ServerLink, Option<String>), String> {
+        let audio = self.audio.as_ref().ok_or("the engine is not open")?;
+        let engine = audio.engine.clone().ok_or("the engine is not open")?;
+        let shm = audio.door.open.clone().flatten();
+        if let Some(sink) = sink
+            && let Ok(mut held) = engine.lock()
+        {
+            held.set_local_sink(super::ENGINE_TAG, sink);
+        }
+        Ok((super::ServerLink::Engine(super::EngineLink { engine }), shm))
     }
 
     /// **Answers every client waiting for the engine**, now that it is open
@@ -739,10 +763,15 @@ impl Host {
                     self.saved_all(saved, &mut fx);
                     self.pending_effects.extend(fx);
                 }
-                FromApp::Engine { reading, shm } => {
+                FromApp::Engine {
+                    reading,
+                    shm,
+                    engine,
+                } => {
                     if let Some(audio) = self.audio.as_mut() {
                         audio.source = Some(Arc::new(EngineSource(reading)));
                         audio.door.open = Some(shm);
+                        audio.engine = Some(engine);
                     }
                     self.answer_engine_waiting();
                 }

@@ -289,6 +289,7 @@ pub(super) enum FromApp {
     Engine {
         reading: clausters_app_engine::EngineReading,
         shm: Option<String>,
+        engine: Arc<Mutex<AppEngine>>,
     },
     /// The engine could not be opened, and why: every open asked of the
     /// application says so, and so does every client that asks for it.
@@ -495,7 +496,14 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
     {
         super::diag::warn!("the engine's ring has no thread, and no client reaches it: {e}");
     }
-    out.send(Vec::new(), FromApp::Engine { reading, shm });
+    out.send(
+        Vec::new(),
+        FromApp::Engine {
+            reading,
+            shm,
+            engine: Arc::clone(&engine),
+        },
+    );
     let app = Application::new(engine);
     let mut editing = Editing::new();
     app.hold(&mut editing);

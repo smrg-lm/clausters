@@ -138,6 +138,9 @@ class Session(Environment):
         #: The server works the same way (see `Server.boot` / `Server.attach`),
         #: stopped via ``server.close``.
         self._gui = gui
+        #: Whether this session made its host (`gui`), and so stops it on
+        #: `close`: a host it was given is the giver's, and stays.
+        self._own_gui = False
         #: external OSC destinations opened by `destination`, closed with the
         #: session.
         self._destinations = []
@@ -262,7 +265,8 @@ class Session(Environment):
              latency: "float | None" = None,
              boot: bool = True, options=None, shm="auto", transport: "str | None" = None,
              verbose: int = 0, workers: "int | None" = None,
-             data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
+             data_dir=None, server_args=(), ready_timeout: float = 10.0,
+             engine=None) -> "Session":
         """Build a real-time session, **starting a server if none is up**.
 
         The probe (and the boot handshake) ride UDP -- discovery stays
@@ -281,6 +285,19 @@ class Session(Environment):
 
         Pass ``boot=False`` for the plain attach-only behavior (never start a
         process): connect to a server you launched yourself, possibly remote.
+
+        **A GUI host's engine.** Every application a GUI host opens plays on
+        one engine of the host's, and that engine is a server too
+        (`clausters.gui.GuiHost.engine`). ``engine=host`` makes the session on
+        it, over its shared-memory segment and on its sample clock, so what
+        the script plays and what the applications play sound through one
+        engine; the session's `gui` is then that host. **Where the
+        environment names an engine** (``CLAUSTERS_ENGINE_SHM``, which an
+        editor sets for the sessions it runs) and the call names no server
+        (no ``host``, ``port`` or ``engine``), the session is made on it the
+        same way: an editor's script plays on the editor's engine by default.
+        Naming a server, or ``boot=False`` with an address, reaches that one
+        instead; this is a default and never a restriction.
 
         Args:
             host: the server's host; ``None`` takes the config file's
@@ -327,11 +344,20 @@ class Session(Environment):
                 everything above) -- an escape hatch for flags newer than this
                 client; prefer `clausters.defs.ServerOptions` fields.
             ready_timeout: seconds to wait for a launched server to answer.
+            engine: a `clausters.gui.GuiHost`, or what its `engine` answered
+                (``{"shm": path, "share": [index, of]}``): the session is made
+                on that host's applications' engine, booting nothing.
 
         Returns:
             A `Session` you drive with `run` (or `start` / `stop`).
         """
         from .launch import server_is_up
+
+        if engine is None and host is None and port is None:
+            engine = named_engine()
+        if engine is not None:
+            return cls._on_engine(engine, clock=clock, timebase=timebase,
+                                  latency=latency, options=options)
 
         server = Server(host, port, latency=latency, options=options, transport=transport)
         if boot and not server_is_up(server.target.host, server.target.port):
@@ -341,6 +367,29 @@ class Session(Environment):
                         data_dir=data_dir, server_args=server_args,
                         ready_timeout=ready_timeout, adopt_default=False)
         return cls(server, clock=clock, timebase=_live_timebase(server, clock, timebase))
+
+    @classmethod
+    def _on_engine(cls, engine, *, clock, timebase, latency, options) -> "Session":
+        """`live` on a GUI host's applications' engine: ``engine`` is the
+        host, or what its `clausters.gui.GuiHost.engine` answered."""
+        from .base._oscinterface import OscShmInterface
+        from .base.ids import IdShare
+
+        host = None
+        if not isinstance(engine, dict):
+            host = engine
+            engine = host.engine()
+        index, of = engine.get("share", (0, 1))
+        server = Server(interface=OscShmInterface(str(engine["shm"])), latency=latency,
+                        options=options, share=IdShare(int(index), int(of)))
+        server._on_engine = True
+        session = cls(server, clock=clock, timebase=_live_timebase(server, clock, timebase),
+                      gui=host)
+        if host is not None:
+            # the host is the engine's client too, in its own process: its
+            # bound widgets and meters reach the engine the script plays on
+            host.server("engine", shm=server.shm, id_share=server.split_share())
+        return session
 
     @classmethod
     def embed(cls, clock: "TempoClock | None" = None, latency: "float | None" = None,
@@ -437,7 +486,9 @@ class Session(Environment):
             return self._gui
         from .gui import GuiHost
 
-        server_addr = f"{self.server.target.host}:{self.server.target.port}"
+        # a session on a host's engine points the host at its own engine
+        server_addr = ("engine" if self.server.on_engine
+                       else f"{self.server.target.host}:{self.server.target.port}")
         from .gui.host import DEFAULT_PORT
 
         # The session's share of the host's widget ids is the one it has on
@@ -458,9 +509,11 @@ class Session(Environment):
             self._gui = GuiHost(
                 host=named[0], port=named[1], transport=transport, share=widgets,
             ).attach()
+            self._own_gui = True
             self._gui.server(server_addr, shm=self.server.shm,
                              id_share=self.server.split_share())
             return self._gui
+        self._own_gui = True
         self._gui = GuiHost(
             port=DEFAULT_PORT if port is None else port, transport=transport,
             share=widgets,
@@ -665,10 +718,10 @@ class Session(Environment):
         and, for launched processes, on interpreter exit."""
         self.deactivate()      # a closed session is nobody's ambient one
         _OPEN.discard(self)
-        if self._gui is not None:
+        if self._gui is not None and self._own_gui:
             self._gui.stop()   # its process too, if that host booted one
                                # (and gives up the ambient registration)
-            self._gui = None
+        self._gui = None
         for dest in self._destinations:
             dest.close()
         self._destinations.clear()
@@ -692,6 +745,32 @@ class Session(Environment):
 #: Every session not closed yet, for what stops them all at once: the editor's
 #: interrupt key (`clausters._editor.interrupt`).
 _OPEN = weakref.WeakSet()
+
+
+#: The environment variable an editor names its host's applications' engine
+#: in, for the sessions it runs: the segment's file. `Session.live` makes a
+#: session that names no server on it.
+ENGINE_VARIABLE = "CLAUSTERS_ENGINE_SHM"
+#: Beside it, the share of the engine's ids a client allocates from,
+#: ``index/of``.
+ENGINE_SHARE_VARIABLE = "CLAUSTERS_ENGINE_SHARE"
+
+
+def named_engine() -> "dict | None":
+    """The engine the environment names (`ENGINE_VARIABLE`), as
+    `clausters.gui.GuiHost.engine` answers one, or ``None`` when it names
+    none or its segment is not there."""
+    import os
+
+    shm = os.environ.get(ENGINE_VARIABLE, "")
+    if not shm or not os.path.exists(shm):
+        return None
+    index, _, of = os.environ.get(ENGINE_SHARE_VARIABLE, "0/2").partition("/")
+    try:
+        share = [int(index), int(of)]
+    except ValueError:
+        share = [0, 2]
+    return {"shm": shm, "share": share}
 
 
 def _live_timebase(server, clock, timebase):

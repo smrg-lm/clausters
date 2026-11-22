@@ -29,6 +29,13 @@ pub enum ClientId {
     /// subscriptions and their replies apart; an embedder that never asks for a
     /// tag is `ipc::DEFAULT_PEER`.
     Ring(u32),
+    /// A client in the server's own process with no carrier at all: a
+    /// program that holds the server ([`server::OscServer::embedded`]) and
+    /// hands it packets by call ([`server::OscServer::serve_local`]), its
+    /// replies given to the sink it set for its tag
+    /// ([`server::OscServer::set_local_sink`]). The GUI host that holds the
+    /// applications' engine is one, beside a script on the engine's ring.
+    Local(u32),
 }
 
 impl std::fmt::Display for ClientId {
@@ -38,6 +45,7 @@ impl std::fmt::Display for ClientId {
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Ws(id) => write!(f, "ws client {id}"),
             ClientId::Ring(peer) => write!(f, "ring client {peer}"),
+            ClientId::Local(tag) => write!(f, "local client {tag}"),
         }
     }
 }

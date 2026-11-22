@@ -165,6 +165,7 @@ impl OscServer {
             ipc: None,
             handed: None,
             ring_packets: 0,
+            local_sinks: Vec::new(),
             segment: None,
             shm_path: None,
             owns_samples: false,

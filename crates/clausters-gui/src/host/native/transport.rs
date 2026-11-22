@@ -161,6 +161,13 @@ fn perform(
             HostEffect::Retitle(_) => {}
             // the leg opened as `--server` opens it here: what it sends goes
             // out, and nothing draws what would read the segment
+            HostEffect::Server { addr, .. } if addr == "engine" => match host.engine_link(None) {
+                Ok((link, _)) => {
+                    host.set_server_link(link);
+                    host.on_link_attached();
+                }
+                Err(e) => diag::warn!("/gui_server engine: {e}"),
+            },
             HostEffect::Server { addr, .. } => {
                 use std::net::ToSocketAddrs;
                 match addr

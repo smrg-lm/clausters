@@ -40,7 +40,8 @@ web = ["clausters.page", "clausters.runtime"]
 # module's dotted name, which is the web subpath with dots).
 [platform.python]
 "clausters" = ["ipc", "launch"]
-"clausters.base" = ["NetAddr", "OscEmbedInterface", "OscTcpInterface", "OscUdpInterface"]
+"clausters.base" = ["NetAddr", "OscEmbedInterface", "OscShmInterface", "OscTcpInterface",
+                    "OscUdpInterface"]
 "clausters.errors" = ["AbiMismatchError", "CommandRingFull", "LibraryError",
                       "LibraryFeatureError", "LibraryNotFoundError", "SegmentError"]
 

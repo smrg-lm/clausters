@@ -547,6 +547,88 @@ class OscNrtInterface(OscInterface):
                            rms=rms, seed=used, samples=samples)
 
 
+class OscShmInterface(OscInterface):
+    """Real-time, same machine: a server **served at a shared-memory
+    segment**, reached over the segment's ring.
+
+    It encodes exactly like `OscUdpInterface` -- the same wire bytes, the
+    same NTP-timetagged bundles -- and delivers each packet through the
+    segment's command ring (`clausters.ipc.ShmClient`), reading replies off its
+    reply ring. Nothing is lost and nothing is reordered: a full ring is
+    backpressure, raised as `clausters.errors.CommandRingFull`, not a dropped
+    datagram. A packet is bounded as a datagram is, so ``stream`` is false.
+
+    It is how a session reaches **a GUI host's applications' engine**
+    (`clausters.gui.GuiHost.engine`), the server every application of that
+    host plays on, which has a segment and no socket. ``interface.server`` is
+    the `ShmClient`, whose sample clock and control buses are read and
+    written in the mapping directly.
+
+    **A segment's ring has one client.** Its rings are single-producer and
+    single-consumer, so a second interface on the same segment, in this
+    process or another, is refused with `RuntimeError` while the first is
+    open (a lock on the segment's file, which the system lets go of when the
+    process ends): the session that holds the ring is the one to use.
+    """
+
+    time_mode = "unix"
+
+    def __init__(self, path: str):
+        import fcntl
+
+        from .. import ipc
+
+        #: the segment's file.
+        self.path = path
+        self._lock = open(path, "rb")
+        try:
+            fcntl.flock(self._lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._lock.close()
+            raise RuntimeError(
+                f"another client holds the ring of {path}: a segment's ring has "
+                f"one client, so use the session that holds it") from None
+        #: the `clausters.ipc.ShmClient` mapping it: the counter a sample
+        #: clock reads, and the ring this interface sends on.
+        self.server = ipc.ShmClient(path)
+
+    def _push(self, packet: bytes):
+        if self.server is None:
+            raise OSError("this interface is closed")
+        if not self.server.send(packet):
+            from ..errors import CommandRingFull
+
+            raise CommandRingFull(f"the command ring of {self.path} is full")
+
+    def send_msg(self, target, addr, *args):
+        self._push(_osclib.message(addr, *args))
+
+    def send_bundle(self, target, when, *messages):
+        packets = [_osclib.message(*m) for m in messages]
+        self._push(_osclib.bundle_at(when, *packets))
+
+    def recv(self, timeout):
+        """One reply packet off the segment's reply ring, or ``None`` within
+        ``timeout``. Polls: the segment has no signal to wait on."""
+        deadline = time.monotonic() + timeout
+        while self.server is not None:
+            reply = self.server.poll()
+            if reply is not None:
+                return reply
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.001)
+        return None
+
+    def close(self):
+        if self.server is not None:
+            self.server.close()
+            self.server = None
+        if self._lock is not None:
+            self._lock.close()   # the ring's lock goes with it
+            self._lock = None
+
+
 class OscEmbedInterface(OscInterface):
     """Real-time, in-process: the embedded server as just another OSC
     destination.

@@ -217,6 +217,9 @@ pub struct OscServer {
     /// what tells a loop that drives this server ([`OscServer::step`])
     /// whether a turn served anyone ([`OscServer::ring_packets`]).
     ring_packets: u64,
+    /// **Where the replies to a client in this process go**, by its tag
+    /// ([`ClientId::Local`], [`OscServer::set_local_sink`]).
+    local_sinks: Vec<(u32, LocalSink)>,
     /// The segment itself, whether or not this server serves its rings. A
     /// server that attached to somebody else's segment reads the samples out
     /// of it and has no ring at all, so the two cannot be one field.
@@ -333,6 +336,10 @@ pub struct OscServer {
     /// of them binds (so `set_max_clients` can still change the ceiling).
     client_slots: Option<std::sync::Arc<crate::osc::ClientSlots>>,
 }
+
+/// Where the replies to a client in the server's own process go: called with
+/// each encoded packet, on the thread that served the request.
+pub type LocalSink = Box<dyn Fn(&[u8]) + Send>;
 
 /// **What the engine handed back that is the embedding application's**
 /// ([`OscServer::embedded`]): a transport's cue over, a transport that stopped
@@ -623,6 +630,29 @@ impl OscServer {
         self.ring_packets
     }
 
+    /// **Says where the replies to the client in this process tagged `tag`
+    /// go** ([`ClientId::Local`]): each packet the server answers it, a
+    /// notification included, is handed to `sink`. Set again, it replaces
+    /// the last.
+    pub fn set_local_sink(&mut self, tag: u32, sink: LocalSink) {
+        self.local_sinks.retain(|(t, _)| *t != tag);
+        self.local_sinks.push((tag, sink));
+    }
+
+    /// **Serves one packet from the client in this process tagged `tag`**,
+    /// as the ring's are served: decoded through the one door, its replies
+    /// handed to the sink set for the tag. A packet that does not decode is
+    /// said in the log and dropped; a `/server_quit` does not end a server a
+    /// program holds.
+    pub fn serve_local(&mut self, bytes: &[u8], tag: u32) {
+        match crate::osc::decode_packet(bytes) {
+            Ok(packet) => {
+                let _ = self.handle_packet(packet, ClientId::Local(tag));
+            }
+            Err(e) => warn!("malformed OSC packet from local client {tag}: {e}"),
+        }
+    }
+
     /// Keeps `handed` for the embedding application, when there is one.
     pub(in crate::osc::server) fn hand(&mut self, handed: Handed) {
         if let Some(kept) = &mut self.handed {
@@ -716,7 +746,9 @@ impl OscServer {
     /// reason.
     pub(in crate::osc::server) fn stream_bus_cap(&self, to: ClientId) -> usize {
         let carrier = match to {
-            ClientId::Tcp(_) | ClientId::Ws(_) => self.max_frame.saturating_sub(256),
+            ClientId::Tcp(_) | ClientId::Ws(_) | ClientId::Local(_) => {
+                self.max_frame.saturating_sub(256)
+            }
             ClientId::Udp(_) | ClientId::Ring(_) => MAX_STREAM_BYTES,
         };
         self.max_stream_buses.min(carrier / STREAM_BUS_BYTES).max(1)
@@ -837,6 +869,12 @@ impl OscServer {
             // No WebSocket hub exists on wasm32; the variant is unreachable.
             #[cfg(target_arch = "wasm32")]
             ClientId::Ws(_) => {}
+            // handed to the sink its program set, in this process
+            ClientId::Local(tag) => {
+                if let Some((_, sink)) = self.local_sinks.iter().find(|(t, _)| *t == tag) {
+                    sink(&bytes);
+                }
+            }
             ClientId::Ring(peer) => {
                 // Tagged for the peer that asked, so the embedder's demux hands
                 // it to that client and not to whoever else shares the segment.

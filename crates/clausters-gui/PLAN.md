@@ -1610,7 +1610,7 @@ holds what is open.
      that sleeps while nothing arrives; booted with the host (in a headless
      host, at the first thing that asks for it), its path answered by the
      host to a client that asks.
-  3. ⬜ **A client reaches it.** A command interface over the ring in both
+  3. ✅ **A client reaches it.** A command interface over the ring in both
      clients' shape (Python), the session on the segment's sample clock,
      `Session.live()` attaching to the segment the environment names, and a
      host's client asking the host for its engine, so a script that booted

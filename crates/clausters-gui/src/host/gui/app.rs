@@ -1605,6 +1605,9 @@ impl App {
     /// samples drawn in place.
     pub(super) fn attach_server(&mut self, addr: &str, shm: Option<String>) {
         use std::net::ToSocketAddrs;
+        if addr == "engine" {
+            return self.attach_engine();
+        }
         if addr.contains("://") {
             return warn!(
                 "/gui_server {addr}: a native host reaches its server over UDP, at host:port"
@@ -1651,6 +1654,41 @@ impl App {
         #[cfg(not(unix))]
         if let Some(bus) = super::open_shm(shm) {
             self.shm = Some(bus);
+        }
+    }
+
+    /// **The applications' engine, as this host's server** (`/gui_server
+    /// engine`): the host its client in the process, the replies it is
+    /// given read as a server's are, and the engine's segment mapped for the
+    /// buses the meters read.
+    fn attach_engine(&mut self) {
+        let sink = self.proxy.clone().map(|proxy| {
+            let proxy = std::sync::Mutex::new(proxy);
+            Box::new(move |bytes: &[u8]| {
+                if let Ok(proxy) = proxy.lock() {
+                    let _ = proxy.send_event(UserEvent::ServerOsc {
+                        leg: crate::host::instance::Leg::Server,
+                        bytes: bytes.to_vec(),
+                    });
+                }
+            }) as clausters_app_engine::LocalSink
+        });
+        match self.host.engine_link(sink) {
+            Ok((link, shm)) => {
+                self.host.set_server_link(link);
+                self.host.on_link_attached();
+                tracing::info!("client leg ready: host -> the applications' engine");
+                #[cfg(unix)]
+                {
+                    let (bus, _) = super::open_shm_buffers(shm);
+                    if bus.is_some() {
+                        self.shm = bus;
+                    }
+                }
+                #[cfg(not(unix))]
+                let _ = shm;
+            }
+            Err(e) => warn!("/gui_server engine: {e}"),
         }
     }
 }
