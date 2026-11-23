@@ -102,10 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The spectrogram's settings read as two panels**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. One panel with two
-  sections; best taken with the panel below.
-
 - ⬜ **The pager's tabs name the applications by their short names**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Code, Roll, Score,
   Audio, Tracks; with the cut names above, one visit to the pager.

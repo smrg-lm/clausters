@@ -207,7 +207,7 @@ impl Display {
                 })
             })
             .collect();
-        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Spaced)
+        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Joined)
     }
 
     /// **What the panel's widgets are corrected with**: each one's value and

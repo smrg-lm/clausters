@@ -365,7 +365,7 @@ impl Settings {
                 })
             })
             .collect();
-        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Spaced)
+        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Joined)
     }
 }
 
@@ -441,6 +441,23 @@ mod tests {
         assert!(s.set(&json!({"range": 5.0})).is_err());
         assert!(s.set(&json!({"gain": -10.0})).is_err());
         assert_eq!(s, before);
+    }
+
+    /// **The settings are one panel of two sections**: Analysis and
+    /// Display, joined -- no frame of their own and no room between them --
+    /// so the column reads as one panel, not two.
+    #[test]
+    fn the_settings_are_one_panel_of_two_sections() {
+        let panel = Settings::default().panel(&ids()).expect("a panel");
+        assert_eq!(panel["margin"], 0);
+        assert_eq!(panel["gap"], 0);
+        let sections = panel["children"].as_array().unwrap();
+        let titles: Vec<&str> = sections
+            .iter()
+            .filter_map(|s| s["title"].as_str())
+            .collect();
+        assert_eq!(titles, ["Analysis", "Display"]);
+        assert!(sections.iter().all(|s| s["frame"] == false), "{panel}");
     }
 
     /// **The panel shows the settings, and a widget's report is the request

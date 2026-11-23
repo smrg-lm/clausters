@@ -8,6 +8,12 @@
 //! it and numbered by the caller, as the tools and the dialogs are, so a
 //! window composed without them has no panel. The score editor's palettes
 //! are its first one, the audio editor's spectrogram settings its second.
+//!
+//! **A panel of several sections stands joined** ([`Spacing::Joined`]): the
+//! spectrogram's settings (Analysis, Display), the roll's inspector
+//! (Selection, Events) and its display panel are each one panel, and read as
+//! one, as a dock's panels in a column do. The score's palettes are a
+//! column of palettes, each its own, and stand apart.
 
 use serde_json::{Map, Value, json};
 

@@ -3998,3 +3998,17 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   beside the multitrack's), `a_client_s_roll_has_new_open_and_close_file_and_a_view_none`
   and, through the host, `a_client_s_roll_hands_its_sequence_back_on_new`.
 
+- ✅ **The spectrogram's settings read as two panels** *(found by the
+  user, 2026-11-22; fixed 2026-11-23)*. `audio::settings` built Analysis
+  and Display as two framed sections of a spaced column, each with its own
+  title strip, so they looked like two panels. The column stands joined
+  (`panels::Spacing::Joined`): the sections lose their frames and the room
+  between them, and each section's bar is the line that parts it from the
+  one above, so the settings read as one panel of two sections. The rule is
+  the panels' and not the spectrogram's: every application panel of
+  several sections stands joined, so the roll's inspector (Selection,
+  Events) and its display panel took the same look, and the score's
+  palettes, a column of palettes each its own, stay apart. Checked by
+  `the_settings_are_one_panel_of_two_sections` and a headless capture of
+  the audio editor with its settings shown.
+

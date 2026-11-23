@@ -3488,16 +3488,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The spectrogram's settings read as two panels** *(found by the user,
-  2026-11-22)*. `audio::settings` builds Analysis and Display as two framed
-  sections of the column, each with its own title strip, so they look like
-  two panels. They are one panel, the spectrogram's, with two sections
-  inside it. The joined spacing of a column (`panels::Spacing::Joined`) is
-  that look, built with the one panel. **Related:** "One panel, in the
-  dock and in an application's window" (done, in
-  `docs/history/plans/gui.md`, Future directions), which this is a case
-  of.
-
 - ⬜ **The pager's tabs name the applications by their short names** *(the
   user, 2026-11-22)*. The pages are to read **Code** (the code editor),
   **Roll** (the notes editor), **Score**, **Audio** and **Tracks** (the
