@@ -321,6 +321,14 @@ code that keeps it lives.
   the same way: a window whose menu the dock's bar shows goes on showing it
   there and draws no bar of its own, not even for a frame, and the dock's
   bar shows the menu as the new tree has it.
+- **The dock's bar shows an application's menu, never its tools.** On an
+  application's page the bar shows that application's menu in place of its
+  own, and the tools that are entries of its own menu (the code editor's
+  evaluate, interrupt and restart) are put away until its own menu is shown
+  again; the buttons that open an application stay on every page. A verb
+  asked of the bar is still the bar's: it is read in the bar's own menu,
+  never at the same place of the menu it shows, which is another verb of
+  another window.
 - **A spectrogram shows only magnitudes the analysis measured.** A pixel
   inside one bin or one column shows that value, so a bin taller than a pixel
   is a block as tall as its band and a column wider than a pixel a block as

@@ -143,6 +143,18 @@ fn report_pick(
         // its state flipped in its own menu (which the bar then shows)
         def_id = menubar::owner_of(host.window_def(def_id), def_id);
     }
+    report_in(host, ctx, out, def_id, owner, path);
+}
+
+/// [`report_pick`] in the menu of window `def_id`, whose entry `path` names.
+fn report_in(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    owner: Owner,
+    path: &[usize],
+) {
     let Some(tree) = host.window_def_mut(def_id) else {
         return;
     };
@@ -191,8 +203,11 @@ pub(super) fn pick_verb(
     let entries = host.window_def(ctx.def_id).and_then(menubar::own_entries)?;
     let (path, live) = menu::find_verb(entries, verb)?;
     if live {
+        // the path is in the window's own menu, so the pick is reported from
+        // the window itself, even while its bar shows another window's menu
+        // (where the same path names another entry)
         let owner = Owner::Bar(Title::Entry(path[0]));
-        report_pick(host, ctx, out, owner, &path);
+        report_in(host, ctx, out, ctx.def_id, owner, &path);
         out.push(GestureEffect::Redraw(ctx.def_id));
     }
     Some(live)

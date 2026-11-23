@@ -281,6 +281,10 @@ pub struct App {
     after_save: HashMap<i32, Ask>,
     docs: Option<Docs>,
     docs_shown: bool,
+    /// **Whether the bar shows the editor's own menu**: on an
+    /// application's page it shows that application's, and the session's
+    /// tools, which are entries of the editor's menu, go with it.
+    bar_own: bool,
     /// **The applications the bar's buttons opened**: the editor's, not
     /// the session's, so a restart leaves them open.
     apps: Vec<i32>,
@@ -332,6 +336,7 @@ impl App {
             after_save: HashMap::new(),
             docs: None,
             docs_shown: true,
+            bar_own: true,
             apps: Vec::new(),
             system_dark: false,
             dock_calls: HashMap::new(),
@@ -514,6 +519,7 @@ impl App {
         if self.is_window(id) {
             return match tag {
                 "close" => self.close_pane(id),
+                "menu_from" if id == BAR_WIN => self.bar_shows(wire::int(args, 0)),
                 "menu" => self.verb(id, &wire::text(args, 0), args.get(1).is_some_and(on)),
                 "save" => self.save(self.file_win(id), false),
                 verb if !verb.is_empty() => self.verb(id, verb, true),
@@ -1558,15 +1564,21 @@ impl App {
             json!({"id": id, "type": "button", "icon": icon, "flat": 1, "w": TOOL, "h": TOOL,
                 "verb": verb, "tip": tip})
         };
+        // the session's tools, shown beside the editor's menu alone
+        let session = |id: i32, icon: &str, verb: &str, tip: &str| {
+            let mut t = tool(id, icon, verb, tip);
+            t["shown"] = json!(self.bar_own);
+            t
+        };
         tree["children"] = json!([{
             "id": BAR_WIN + 1, "type": "layout", "flow": "row", "pack": 1,
             "margin": 4, "gap": 0, "children": [
                 // the line between the menu's titles and the tools
-                {"id": BAR_LINE, "type": "separator"},
-                tool(BAR_WIN + 2, "play", "evaluate_line", "Evaluate line or selection"),
-                tool(BAR_WIN + 3, "list-video", "evaluate_block", "Evaluate block"),
-                tool(BAR_WIN + 4, "square", "interrupt", "Interrupt"),
-                tool(BAR_WIN + 5, "rotate-ccw", "restart", "Restart the session"),
+                {"id": BAR_LINE, "type": "separator", "shown": self.bar_own},
+                session(BAR_WIN + 2, "play", "evaluate_line", "Evaluate line or selection"),
+                session(BAR_WIN + 3, "list-video", "evaluate_block", "Evaluate block"),
+                session(BAR_WIN + 4, "square", "interrupt", "Interrupt"),
+                session(BAR_WIN + 5, "rotate-ccw", "restart", "Restart the session"),
                 // the applications, at the bar's end
                 {"id": BAR_SPACE, "type": "layout", "weight": 1, "margin": 0},
                 tool(APPS[0].0, APPS[0].2, &format!("app:{}", APPS[0].1), APPS[0].3),
@@ -1578,6 +1590,21 @@ impl App {
             ],
         }]);
         self.link.def(BAR_WIN, &tree);
+    }
+
+    /// **The bar shows the menu of window `from`**: its own, or an
+    /// application's on the page shown. The session's tools are entries of
+    /// the editor's menu, so they are shown beside it alone, and their line
+    /// with them; the buttons that open an application stay on every page.
+    fn bar_shows(&mut self, from: i64) {
+        let own = from == i64::from(BAR_WIN);
+        if own == self.bar_own {
+            return;
+        }
+        self.bar_own = own;
+        for id in [BAR_LINE, BAR_WIN + 2, BAR_WIN + 3, BAR_WIN + 4, BAR_WIN + 5] {
+            self.link.set(id, &[("shown", json!(own))]);
+        }
     }
 
     /// **The application's footer**: a window along the dock's bottom, across

@@ -411,6 +411,7 @@ try {
   at = await run('const docked = await host.dockCall({ verb: "layout" });\ndocked.members.filter((id) => id < 2 ** 24).length');
   check(await waitFor("-> 2", at), "an application's window is a pane of the dock, and the session's dock calls are answered to it");
 
+
   // **One engine**: the page's engine is its host's applications' engine,
   // what the session's synths and the applications both play on.
   const one = await evaluate(`(async () => {
@@ -576,6 +577,24 @@ try {
   // The documentation: the editor's book and the package's.
   const documents = await host(`return (await host.query(${DOCS})).props.documents`);
   check(documents > 3, "the documentation holds the editor's book and the package's");
+
+  // An application the bar opens is on a page of its own, where the bar
+  // shows its menu: the session's tools, entries of the editor's menu, go
+  // with the editor's menu, and are there again on the editor's page.
+  {
+    const interrupt = () => host(`return (await host.query(${BAR + 4})).props.shown`);
+    const shownTool = async (want) => {
+      for (let i = 0; i < 30; i++) {
+        if (Boolean(await interrupt()) === want) return true;
+        await sleep(100);
+      }
+      return false;
+    };
+    await host(`host.verb(${BAR}, "app:notes")`);
+    check(await shownTool(false), "the session's tools are not on an application's page");
+    await host(`await host.dockCall({ verb: "page", name: "Code" })`);
+    check(await shownTool(true), "and are back on the editor's page");
+  }
 
   console.log(failures ? `${failures} failed` : "all passed");
   await finish(failures ? 1 : 0);

@@ -4,6 +4,7 @@
 
 use super::{Dock, Edge};
 use crate::host::Host;
+use crate::host::gestures::GestureEffect;
 use crate::host::menu::Entry;
 use crate::host::menubar::{MenuShown, entries_of, own_entries, shown_from};
 use crate::host::widget::WidgetKind;
@@ -13,9 +14,12 @@ impl Host {
     /// bar (a window along its top edge with a menu) shows the menu of the
     /// application on the page shown -- a panel's window with a menu, the
     /// one that last had the keyboard -- and that window draws no bar of its
-    /// own; with none, the bar shows its own. Answers the windows whose bar
-    /// changed, to be drawn again.
-    pub fn show_menus(&mut self, dock: &Dock) -> Vec<i32> {
+    /// own; with none, the bar shows its own. Answers what the front carries
+    /// out: each window whose bar changed drawn again, and **the bar's owner
+    /// told whose menu it shows** (`"menu_from" <window>`, its own id when
+    /// its own) each time that changes -- so an owner whose bar holds tools
+    /// of its own menu shows them only beside it.
+    pub fn show_menus(&mut self, dock: &Dock) -> Vec<GestureEffect> {
         let has_menu = |host: &Host, id: i32| host.window_def(id).and_then(own_entries).is_some();
         let shown: Vec<i32> = dock.placed().map(|(id, _)| id).collect();
         let bar = shown
@@ -37,7 +41,9 @@ impl Host {
             self.menu_chosen = source;
         }
         let mut changed = Vec::new();
+        let mut told = Vec::new();
         for id in dock.panes() {
+            let was = self.window_def(id).and_then(shown_from);
             let want = match (bar, source) {
                 (Some(b), Some(src)) if id == b => {
                     // copied only when it is not the one shown already: this
@@ -57,10 +63,27 @@ impl Host {
                 (Some(_), Some(src)) if id == src => MenuShown::Away,
                 _ => MenuShown::Own,
             };
+            let from = match &want {
+                MenuShown::From { window, .. } => Some(*window),
+                _ => None,
+            };
             if self.set_menu_shown(id, want) {
-                changed.push(id);
+                changed.push(GestureEffect::Redraw(id));
+                if from != was {
+                    let seq = self.outbox.borrow_mut().stamp(id, id);
+                    told.push(GestureEffect::Emit {
+                        def_id: id,
+                        widget_id: id,
+                        seq,
+                        args: vec![
+                            clausters_core::osc::OscType::String("menu_from".into()),
+                            clausters_core::osc::OscType::Int(from.unwrap_or(id)),
+                        ],
+                    });
+                }
             }
         }
+        changed.extend(told);
         changed
     }
 
@@ -146,9 +169,27 @@ mod tests {
         let mut dock = Dock::new((600, 440), host.metrics.resolved(1.0));
         dock.add_edge(2, Edge::Top, 40);
         dock.add(1);
-        let mut changed = host.show_menus(&dock);
+        let effects = host.show_menus(&dock);
+        let mut changed: Vec<i32> = effects
+            .iter()
+            .filter_map(|e| match e {
+                GestureEffect::Redraw(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
         changed.sort();
         assert_eq!(changed, [1, 2]);
+        let told = |effects: &[GestureEffect]| -> Vec<(i32, Vec<OscType>)> {
+            effects
+                .iter()
+                .filter_map(|e| match e {
+                    GestureEffect::Emit { def_id, args, .. } => Some((*def_id, args.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+        let from = |id| vec![OscType::String("menu_from".into()), OscType::Int(id)];
+        assert_eq!(told(&effects), [(2, from(1))], "the bar's owner is told");
         let shown =
             |host: &Host, id| menubar::entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
         let own = |host: &Host, id| own_entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
@@ -163,8 +204,56 @@ mod tests {
             "settled: nothing changes again"
         );
         dock.remove(1);
-        host.show_menus(&dock);
+        let effects = host.show_menus(&dock);
         assert_eq!(shown(&host, 2).unwrap()[0].label, "Code");
+        assert_eq!(told(&effects), [(2, from(2))], "its own again");
+    }
+
+    /// **A verb of the bar's own menu is its own, while it shows another
+    /// window's**: a tool of the bar names an entry of the bar's menu, and
+    /// the same place in the menu it shows is another verb of another
+    /// window. Found by the path in one menu and read in the other, the
+    /// code editor's Interrupt performed an application's display settings.
+    #[test]
+    fn a_verb_of_the_bar_s_own_menu_stays_its_own() {
+        use crate::host::gestures::{GestureCtx, Gestures};
+        let mut host = Host::new();
+        def(
+            &mut host,
+            1,
+            r#"{"type":"window","menu":[{"label":"File","menu":[{"label":"Open","verb":"open"}]}],
+                "children":[]}"#,
+        );
+        def(
+            &mut host,
+            2,
+            r#"{"type":"window","dock_edge":"top","h":40,
+                "menu":[{"label":"Code","menu":[{"label":"New","verb":"new_file"}]}],
+                "children":[]}"#,
+        );
+        let mut dock = Dock::new((600, 440), host.metrics.resolved(1.0));
+        dock.add_edge(2, Edge::Top, 40);
+        dock.add(1);
+        host.show_menus(&dock);
+        let ctx = GestureCtx::new(2, 600, 40);
+        let told: Vec<(i32, Vec<OscType>)> = Gestures::default()
+            .command(&mut host, &ctx, "new_file")
+            .into_iter()
+            .filter_map(|e| match e {
+                GestureEffect::Emit { def_id, args, .. } => Some((def_id, args)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            told,
+            [(
+                2,
+                vec![
+                    OscType::String("menu".into()),
+                    OscType::String("new_file".into())
+                ]
+            )]
+        );
     }
 
     /// **A window redefined keeps what the dock decided of its bar**: an

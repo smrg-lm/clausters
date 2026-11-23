@@ -319,6 +319,8 @@ impl App {
             ..
         } = self;
         let mut handed = Handed::default();
+        // what the bars show, carried out once the shells are let go
+        let mut told = Vec::new();
         for shell in dock.iter_mut().chain(floats.values_mut()) {
             let dirty = shell.layout.take_dirty();
             if dirty.layout {
@@ -361,11 +363,7 @@ impl App {
                 shell.gpu.request_redraw();
             }
             // the bar shows the menu of the application on the page shown
-            for id in host.show_menus(&shell.layout) {
-                if let Some(ws) = windows.get(&id) {
-                    ws.repaint();
-                }
-            }
+            told.extend(host.show_menus(&shell.layout));
             // the chrome under the pointer, or the pane, says what a press does
             let cursor = shell.layout.pointer_shape(|id| {
                 windows
@@ -381,6 +379,7 @@ impl App {
             }
             handed.take(dirty);
         }
+        self.apply_gesture_effects(told);
         handed
     }
 

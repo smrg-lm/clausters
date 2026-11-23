@@ -92,7 +92,9 @@ the panels where they were left.
 
 The buttons at the end of the bar open a new multitrack, score, notes or audio
 editor, each on a page of its own; the strip of pages switches between them,
-and an application's menu takes the bar's place while its page is shown.
+and an application's menu takes the bar's place while its page is shown,
+with the session's tools (evaluate, interrupt, restart) put away until the
+editor's page is shown again.
 
 A tab with unsaved changes shows a dot; closing it, or closing the window, asks
 before those changes are lost. Undoing back to the saved text clears the dot.
