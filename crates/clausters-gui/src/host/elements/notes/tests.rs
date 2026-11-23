@@ -1678,3 +1678,37 @@ fn a_beat_grid_quantizes_through_the_tempo_map() {
     let refused = bare.verb(Verb::Quantize, input).expect("an answer");
     assert!(format!("{refused:?}").contains("no grid"), "{refused:?}");
 }
+
+/// **A note drawn and let go after a few pixels is a click's note**: the
+/// pencil's end drag never leaves the note it is drawing shorter than the
+/// one a click makes, on the grid or off it, so a hand that wanders before
+/// the release still leaves a note seen and heard. Dragged further, it
+/// grows as before.
+#[test]
+fn a_note_drawn_with_a_small_wander_keeps_a_click_s_length() {
+    let m = Metrics::default();
+    for json in [
+        r#"{"min":48,"max":72,"snap":100.0}"#,
+        r#"{"min":48,"max":72}"#,
+    ] {
+        let mut r = roll(json);
+        let mut ctrl = input(&m, rect(), axis(1000.0));
+        ctrl.mods = Mods {
+            ctrl: true,
+            ..Mods::default()
+        };
+        let at = (x_of(&r, &m, 250.0, 1000.0), y_of(&r, &m, 60.0));
+        assert!(matches!(r.press(at, &ctrl), Claim::Take(_)));
+        let clicked = r.notes[0].dur;
+        assert!(clicked > 0.0);
+        // a few pixels to the right, then back to the left of the start
+        for wander in [3.0, -3.0] {
+            r.drag((at.0 + wander, at.1), &ctrl);
+            assert_eq!(r.notes[0].dur, clicked, "{json}: wandered {wander}");
+        }
+        // pulled well past the click's end, it grows
+        let far = (x_of(&r, &m, 700.0, 1000.0), at.1);
+        r.drag(far, &ctrl);
+        assert!(r.notes[0].dur > clicked * 2.0, "{json}");
+    }
+}

@@ -301,6 +301,11 @@ enum Drag {
         press_time: f64,
         orig_start: f64,
         orig_dur: f64,
+        /// **The shortest the note's end drag leaves it**: a note the pencil
+        /// is drawing is never shorter than the one a click makes, so a
+        /// press that wanders a few pixels before the release still leaves
+        /// a note seen and heard. None for a note that was already there.
+        least: f64,
     },
     /// The whole selection moving rigidly: `orig` is `(index, start, pitch)`
     /// per selected note, the grabbed note leading (it is the snap anchor).
@@ -1427,6 +1432,7 @@ impl Element for Notes {
                 press_time,
                 orig_start,
                 orig_dur,
+                least,
             }) => {
                 let bounds = self.edit_bounds(input);
                 match part {
@@ -1453,6 +1459,11 @@ impl Element for Notes {
                             0.0,
                             bounds,
                         );
+                    }
+                    // a note being drawn ends no sooner than a click's would
+                    boxes::Part::End => {
+                        let end = time.max(orig_start + least);
+                        notes::resize_note(&mut self.notes, index, boxes::Part::End, end, bounds);
                     }
                     other => notes::resize_note(&mut self.notes, index, other, time, bounds),
                 }
@@ -2098,6 +2109,7 @@ impl Notes {
             press_time,
             orig_start,
             orig_dur,
+            least: 0.0,
         });
         Claim::take().edge_scrolling()
     }
@@ -2120,6 +2132,7 @@ impl Notes {
             press_time: time,
             orig_start: time,
             orig_dur: dur,
+            least: dur,
         });
         // **The edit leaves at the release**, once: a report at the press
         // would bring the owner's correction mid-drag, its notes in its own
