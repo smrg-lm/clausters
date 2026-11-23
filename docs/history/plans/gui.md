@@ -10363,3 +10363,21 @@ module of its own.
   they are measured in the face they are drawn in. Checked by
   `a_tab_measured_to_fit_draws_its_name_whole`, which fails without the
   slack.
+
+- ✅ **A page's tab closes an application with unsaved changes without
+  asking** *(found by the user, 2026-11-22; fixed 2026-11-23)*. Every
+  close reached the same door (`close_request`, which honours `ask_close`),
+  so the defect was the rule, not a path: a window asked only where no
+  client held it, and any `/gui_app_open` made the window the client's.
+  The code editor opens its menu's applications through that door, as a
+  client of the host in its process, so none of them asked; a script's
+  sound file did not either, though the window alone writes it. Fixed in
+  general: the opener says whether it keeps the work (`keeps` in the
+  options, sent by the multitrack, score and roll handlers of both clients,
+  which take their structure back), and without it the window is the
+  work's only holder and asks, whichever close it is. `client_owned` stays
+  the record of who hears the window's changes and its close. Recorded in
+  `docs/decisions/apps.md` ("A window asks before a close unless its
+  client says it keeps the work"); checked by
+  `an_audio_window_asks_unless_its_client_keeps_the_work`.
+

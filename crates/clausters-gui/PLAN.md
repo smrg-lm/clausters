@@ -1597,18 +1597,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **A page's tab closes an application with unsaved changes without
-  asking** *(found by the user, 2026-11-22)*. A page's cross goes
-  `Dock::close_page` -> `Dirty::close` -> the front's close of the window
-  (`user_close` natively, `close_by_hand` in a page), which is the window's
-  own close mark and asks only where the window carries `ask_close`. By
-  `clausters_apps::closing` a window asks only when it is its work's only
-  holder; one a script opened (`edit`, `open_app`) asks nothing, since the
-  script keeps the work. Which case the user hit is the first thing to
-  find: a window that should have carried `ask_close` and did not, or the
-  rule itself, which in the code editor leaves work unsaved when the
-  script that held it has already ended.
-
 - ⬜ **The host's window and drawing libraries are updated before the next
   release** (2026-11-20, the user, building the editor). Cargo warns that
   `naga`, `wgpu`, `wgpu-core`, `wgpu-hal` 29.0.4 and `winit` 0.30.13 hold

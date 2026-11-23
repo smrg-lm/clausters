@@ -1855,3 +1855,29 @@ fix to the loop is a fix for both. A script playing on the applications'
 engine shares its transport 0 with the multitrack, which plays on it, as two
 clients of one server share it.
 
+## A window asks before a close unless its client says it keeps the work (2026-11-23)
+
+**Context.** A window asked before a close lost unsaved work only where no
+client held it, and "a client held it" was read from who opened it: any
+`/gui_app_open` made the window the client's. The code editor opens its
+menu's applications through that door, as a client of the host in its
+process, so none of them ever asked: closing a page with unsaved changes
+lost them (found by the user). A script's sound file is the same: the
+audio editor writes it only when it is saved, and the script keeps no copy
+of the edits, yet the window asked nothing either.
+
+**Decision.** Who opened the window is not the question; whether anyone
+keeps the work is. The opener says so: `keeps` in the options of
+`/gui_app_open`, which a client's handler sends when it takes its structure
+back as the window goes (the multitrack, the score and the roll editors of
+both clients), and the audio editor does not. Without it the window is the
+work's only holder, as a standalone host's is, and a close of unsaved work
+asks, whichever close it is. Asking is the default because a question too
+many costs a click and a question too few costs the work.
+
+**Consequences.** A raw `open_app` from a script asks unless it says
+`keeps`, and an application the code editor opens asks as the standalone
+host's does. A client that opened a window still hears its changes and its
+close (`client_owned` stays the host's record of who to tell); what moved
+is only what a close asks.
+

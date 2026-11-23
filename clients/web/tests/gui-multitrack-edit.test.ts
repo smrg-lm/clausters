@@ -185,12 +185,12 @@ test("openApp opens a saved session in the multitrack application", async () => 
     const host = new FakeHost();
     const editor = await openApp(aSession(), { host: host as unknown as GuiHost });
     assert.ok(editor instanceof MultitrackEditor);
-    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "song.json", path: "/songs/song.json" }]);
+    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "song.json", path: "/songs/song.json", keeps: true }]);
     assert.ok(editor.window !== null && !editor.closed);
     assert.equal(await openApp(aSession(), { host: host as unknown as GuiHost }), editor, "a second call finds it");
     const view = await edit(aSession(), { host: host as unknown as GuiHost });
     assert.deepEqual(host.calls.filter((c) => c[0] === "open").at(-1), [
-        "open", "multitrack", { title: "song.json", path: "/songs/song.json", chrome: false },
+        "open", "multitrack", { title: "song.json", path: "/songs/song.json", chrome: false, keeps: true },
     ]);
     assert.equal(view.chrome, false);
 });
@@ -340,7 +340,7 @@ test("an editor can open without a session", async () => {
     const host = new FakeHost();
     const editor = new MultitrackEditor();
     await editor.open(host as unknown as GuiHost);
-    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "Multitrack" }]);
+    assert.deepEqual(host.calls[0], ["open", "multitrack", { title: "Multitrack", keeps: true }]);
     assert.equal(editor.multitrack, null);
     assert.equal(editor.path, null);
     host.closeWindow();

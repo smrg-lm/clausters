@@ -158,6 +158,13 @@ export abstract class HostedEditor {
 
     /** Which application it is. */
     protected abstract readonly app: string;
+    /**
+     * Whether the page keeps what the window edits, taking its structure back
+     * when the window goes ({@link HostedEditor.settle}): the window's close then
+     * loses nothing and asks nothing. An editor whose window alone writes its
+     * work (the audio editor's file) does not, and its window asks.
+     */
+    protected readonly keeps: boolean = true;
     /** What the application opens with, `beside` the window it opens next to when another already has the structure. */
     protected abstract openingOptions(beside: HostedEditor | null): Record<string, unknown>;
     /** What says who has this editor's structure. */
@@ -198,6 +205,7 @@ export abstract class HostedEditor {
         if (this.size[1] !== undefined) options.h = Math.trunc(this.size[1]);
         if (!this.chrome) options.chrome = false;
         if (beside !== null) options.over = beside.id;
+        if (this.keeps) options.keeps = true;
         const window = await resolved.openApp(this.app, options, 5.0, { element: stage });
         return this.hold(resolved, window);
     }

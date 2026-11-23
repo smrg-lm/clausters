@@ -2307,10 +2307,13 @@ fn a_score_window_lets_its_document_go_and_stays() {
     );
 }
 
-/// **An audio window asks only where no client holds its file**: the
-/// host's own carries `ask_close`, and a client's goes at once.
+/// **An audio window asks unless its client keeps the work**: the host's
+/// own asks, and so does one a client opened without saying it keeps what
+/// the window edits -- an editor's menu, a script over a sound file the
+/// window alone writes -- while one whose client says so (`keeps`) goes at
+/// once.
 #[test]
-fn an_audio_window_asks_only_where_no_client_holds_it() {
+fn an_audio_window_asks_unless_its_client_keeps_the_work() {
     use std::net::{Ipv4Addr, SocketAddr};
 
     let mut host = host();
@@ -2320,23 +2323,32 @@ fn an_audio_window_asks_only_where_no_client_holds_it() {
     });
     assert!(!host.close_request(own), "its owner is asked first");
     let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_993)));
-    let asked = door(
-        &mut host,
-        GUI_APP_OPEN,
-        vec![
-            OscType::Int(1),
-            OscType::String("audio".into()),
-            OscType::String(json!({"title": "client"}).to_string()),
-        ],
-        client,
+    let open = |host: &mut Host, seq: i32, options: Value| {
+        let asked = door(
+            host,
+            GUI_APP_OPEN,
+            vec![
+                OscType::Int(seq),
+                OscType::String("audio".into()),
+                OscType::String(options.to_string()),
+            ],
+            client,
+        );
+        let window = answered(host, asked, seq)["ok"]["window"]
+            .as_i64()
+            .expect("a window") as i32;
+        until(host, "the window was never drawn", |h| {
+            h.window_def(window).is_some()
+        });
+        window
+    };
+    let told = open(&mut host, 1, json!({"title": "told nothing"}));
+    assert!(
+        !host.close_request(told),
+        "the window is the work's only holder"
     );
-    let window = answered(&mut host, asked, 1)["ok"]["window"]
-        .as_i64()
-        .expect("a window") as i32;
-    until(&mut host, "the window was never drawn", |h| {
-        h.window_def(window).is_some()
-    });
-    assert!(host.close_request(window), "it goes at once");
+    let kept = open(&mut host, 2, json!({"title": "kept", "keeps": true}));
+    assert!(host.close_request(kept), "it goes at once");
 }
 
 /// **The audio window's close form, the whole way through this host**: its

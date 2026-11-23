@@ -624,7 +624,7 @@ impl Host {
             .own_widget(structure, AUDIO, "window")
             .ok_or("out of widget ids for the audio editor")?;
         let opener = match &reply {
-            Some(Reply::Client(to, _)) => Some(*to),
+            Some(Reply::Client(to, ..)) => Some(*to),
             _ => None,
         };
         let audio = self.audio_host();
@@ -676,7 +676,7 @@ impl Host {
         });
         let answered = match open {
             Some((def_id, window)) => {
-                if let Some(Reply::Client(to, _)) = &reply {
+                if let Some(Reply::Client(to, ..)) = &reply {
                     window.opener.get_or_insert(*to);
                 }
                 Ok(json!({ "window": def_id }))
@@ -693,7 +693,7 @@ impl Host {
             }
         };
         match reply {
-            Some(Reply::Client(to, seq)) => {
+            Some(Reply::Client(to, seq, _)) => {
                 let msg = super::apps::app_reply(seq, answered);
                 self.pending_effects.push(HostEffect::Send { to, msg });
             }
@@ -796,7 +796,7 @@ impl Host {
         let asked = self.audio_host().ask(ToApp::Call {
             def_id,
             call: call.clone(),
-            reply: Reply::Client(from, seq),
+            reply: Reply::Client(from, seq, false),
         });
         if let Err(e) = asked {
             effects.push(HostEffect::Reply(super::apps::app_reply(
@@ -950,11 +950,11 @@ impl Host {
     ) {
         // whoever opened it, answered once the window is there (below)
         let opener = match &reply {
-            Some(Reply::Client(to, seq)) => Some((*to, *seq)),
+            Some(Reply::Client(to, seq, _)) => Some((*to, *seq)),
             _ => None,
         };
         let answer = |host: &mut Host, answer: Result<Value, (String, String)>| match reply {
-            Some(Reply::Client(to, seq)) => {
+            Some(Reply::Client(to, seq, _)) => {
                 let msg = super::apps::app_reply(seq, answer);
                 host.pending_effects.push(HostEffect::Send { to, msg });
             }
@@ -1499,7 +1499,7 @@ impl Host {
             format!("{path} is open in window {window}"),
         );
         match reply {
-            Some(Reply::Client(to, seq)) => {
+            Some(Reply::Client(to, seq, keeps)) => {
                 let answer = match audio.windows.get_mut(&window) {
                     Some(held) if adopt && (held.opener.is_none() || held.released) => {
                         // **the client that let it go hears it gone**, as
@@ -1516,7 +1516,10 @@ impl Host {
                                 },
                             });
                         }
-                        let _ = audio.ask(ToApp::Adopt { def_id: window });
+                        let _ = audio.ask(ToApp::Adopt {
+                            def_id: window,
+                            keeps,
+                        });
                         Ok(json!({"window": window}))
                     }
                     _ => Err(refused),

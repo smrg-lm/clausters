@@ -5,16 +5,22 @@
 //! Escape, or by a File menu's Close. Whether anything is lost depends on who
 //! holds the work, and only that:
 //!
-//! - **A client holds it** in its own objects -- the score, the take, the
-//!   sequence the editor edits -- and the handle keeps it: the client can
-//!   save it, read it, or open the window again, with its chrome or without.
-//!   Closing loses nothing, so nothing is asked, and what becomes of the
-//!   edited data is the client's to decide.
-//! - **The window is the only holder** in a standalone host, which has no
-//!   client beside it. There an editor with changes its file does not hold
-//!   asks first -- Don't save, Cancel, Save -- and the window carries
-//!   `ask_close`, so the host holds its close mark for the editor's answer.
+//! - **A client keeps it** in its own objects -- the score, the sequence,
+//!   the multitrack its handler takes back when the window goes -- and says
+//!   so when it opens the window (`keeps`): the client can save it, read it,
+//!   or open the window again, with its chrome or without. Closing loses
+//!   nothing, so nothing is asked, and what becomes of the edited data is
+//!   the client's to decide.
+//! - **The window is the only holder** otherwise: in a standalone host, in
+//!   one opened from a menu (the code editor's), and in one a client opened
+//!   without keeping the work -- a sound file the window alone writes. There
+//!   an editor with changes its file does not hold asks first -- Don't save,
+//!   Cancel, Save -- and the window carries `ask_close`, so the host holds
+//!   its close mark for the editor's answer, whichever close it is: the
+//!   frame's mark, a dock's tab or its page's.
 //!
+//! Who opened the window is not the question: a client that keeps nothing
+//! leaves the window as alone as a host's own, so the default is to ask.
 //! The holder says which when it opens the editor
 //! ([`Converse::asks_to_close`]); what each application adds is whether it
 //! has something to lose ([`Converse::unsaved`]) and the form it asks in

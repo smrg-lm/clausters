@@ -139,6 +139,8 @@ class AudioEditor(HostedEditor):
     """
 
     _app = "audio"
+    # the window alone writes the file, so its close asks
+    _keeps = False
 
     def __init__(self, file=None, *, title: str = "Audio", layers=None,
                  chrome: bool = True):

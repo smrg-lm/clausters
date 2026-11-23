@@ -26,6 +26,16 @@ pub(super) fn app_reply(seq: i32, answer: Result<Value, (String, String)>) -> Os
     }
 }
 
+/// **Who an open answers**, and whether it keeps what the window edits:
+/// the `keeps` option, a handler's word that it takes its structure back
+/// when the window goes. Without it the window is the work's only holder and
+/// asks before a close loses it ([`clausters_apps::closing`]).
+#[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+fn opener(from: ClientId, seq: i32, options: &Value) -> super::audio_app::Reply {
+    let keeps = options["keeps"].as_bool().unwrap_or(false);
+    super::audio_app::Reply::Client(from, seq, keeps)
+}
+
 /// A request the door could not take, as an answer of kind `value`.
 fn refused(seq: i32, message: impl Into<String>) -> HostEffect {
     HostEffect::Reply(app_reply(seq, Err(("value".into(), message.into()))))
@@ -102,7 +112,7 @@ impl Host {
         let title = options["title"].as_str().unwrap_or("Audio");
         let chrome = options["chrome"].as_bool().unwrap_or(true);
         // answered once the application opened the file, or could not
-        let reply = super::audio_app::Reply::Client(from, seq);
+        let reply = opener(from, seq, options);
         let opened = self.open_app_dressed(
             super::audio_app::AppKind::Audio,
             path,
@@ -134,7 +144,7 @@ impl Host {
         let path = options["path"].as_str();
         let title = options["title"].as_str().unwrap_or("Multitrack");
         let chrome = options["chrome"].as_bool().unwrap_or(true);
-        let reply = super::audio_app::Reply::Client(from, seq);
+        let reply = opener(from, seq, options);
         use super::audio_app::{AppData, AppKind};
         // a multitrack handed over whole is an untitled session; a path, the
         // session at it
@@ -183,7 +193,7 @@ impl Host {
         from: ClientId,
         effects: &mut Vec<HostEffect>,
     ) {
-        let reply = super::audio_app::Reply::Client(from, seq);
+        let reply = opener(from, seq, options);
         let over = options["over"].as_i64().map(|over| over as i32);
         let opened = self.open_app_notes_for(
             over,
@@ -212,7 +222,7 @@ impl Host {
         from: ClientId,
         effects: &mut Vec<HostEffect>,
     ) {
-        let reply = super::audio_app::Reply::Client(from, seq);
+        let reply = opener(from, seq, options);
         let opened = self.open_app_score_for(
             options["path"].as_str(),
             options["mei"].as_str().map(str::to_string),

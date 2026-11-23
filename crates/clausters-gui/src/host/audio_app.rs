@@ -45,8 +45,15 @@ pub(super) type MakeEngine = Box<dyn FnOnce() -> Result<Arc<Mutex<AppEngine>>, S
 /// **Who waits for an answer**: a client of the host's application door,
 /// answered through the host, or a test in the host's own process, answered
 /// on its own channel.
+///
+/// A client's carries whether it **keeps** what the window it opens edits
+/// (the `keeps` option of `/gui_app_open`): a handler that takes its
+/// structure back when the window goes loses nothing by a close, so the
+/// window asks nothing. One that did not say so leaves the window the work's
+/// only holder, and it asks. An answer to anything but an open keeps
+/// nothing.
 pub(super) enum Reply {
-    Client(ClientId, i32),
+    Client(ClientId, i32, bool),
     #[cfg(test)]
     Local(Sender<Result<Value, (String, String)>>),
 }
@@ -54,7 +61,7 @@ pub(super) enum Reply {
 impl std::fmt::Debug for Reply {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Reply::Client(to, seq) => write!(f, "Client({to}, {seq})"),
+            Reply::Client(to, seq, keeps) => write!(f, "Client({to}, {seq}, {keeps})"),
             #[cfg(test)]
             Reply::Local(_) => f.write_str("Local"),
         }
@@ -259,9 +266,9 @@ pub(super) enum ToApp {
     /// folder removed.
     Forget { def_id: i32 },
     /// **A client is window `def_id`'s holder now**, which held none: the
-    /// window it asked to open again. It is the client's to keep, as one it
-    /// opened, and asks nothing before a close.
-    Adopt { def_id: i32 },
+    /// window it asked to open again, held as one it opened -- asking
+    /// nothing before a close where the client keeps its work (`keeps`).
+    Adopt { def_id: i32, keeps: bool },
     /// **What a quit would lose** ([`clausters_apps::quitting`]): answered
     /// with [`FromApp::Unsaved`].
     Unsaved,
@@ -388,6 +395,10 @@ struct Window {
     session: Option<String>,
     snapshot: Option<Box<clausters_apps::multitrack::operations::Snapshot>>,
     client_owned: bool,
+    /// **Whether the client holding it keeps its work** (`keeps`), so a
+    /// close loses nothing and asks nothing: what a window asks by
+    /// ([`Window::asks`]).
+    keeps: bool,
     /// Where its Save writes, when the host said.
     save_to: Option<Option<String>>,
     /// The ids its tree is drawn with, once the host bound them.
@@ -404,6 +415,16 @@ struct Window {
     told_title: Option<String>,
     /// Whether it opened over no file.
     empty: bool,
+}
+
+impl Window {
+    /// **Whether the window asks before a close loses its work**: unless the
+    /// client holding it keeps that work. Who opened it is not the question:
+    /// an application opened from a menu or over a file by a client that
+    /// takes nothing back is the work's only holder, as the host's own is.
+    fn asks(&self) -> bool {
+        !self.keeps
+    }
 }
 
 /// **The application on its thread**.
@@ -694,6 +715,7 @@ impl App {
                 };
                 if let Some(window) = self.windows.get_mut(&def_id) {
                     window.client_owned = matches!(reply, Some(Reply::Client(..)));
+                    window.keeps = matches!(reply, Some(Reply::Client(_, _, true)));
                 }
                 self.out.send(
                     self.editing.said(),
@@ -771,13 +793,14 @@ impl App {
                 self.said(def_id, ran, false);
             }
             ToApp::Forget { def_id } => self.forget(def_id),
-            ToApp::Adopt { def_id } => {
+            ToApp::Adopt { def_id, keeps } => {
                 let Some(window) = self.windows.get_mut(&def_id) else {
                     return;
                 };
                 window.client_owned = true;
-                let member = window.member;
-                self.member_call(member, json!({"verb": "sync", "asks": false}));
+                window.keeps = keeps;
+                let (member, asks) = (window.member, window.asks());
+                self.member_call(member, json!({"verb": "sync", "asks": asks}));
                 self.say_actions(def_id);
             }
         }
@@ -913,6 +936,7 @@ impl App {
                 session: None,
                 snapshot: None,
                 client_owned: false,
+                keeps: false,
                 save_to: None,
                 ids: None,
                 widgets: Vec::new(),
@@ -976,6 +1000,7 @@ impl App {
                 session: path,
                 snapshot,
                 client_owned: false,
+                keeps: false,
                 save_to,
                 ids: None,
                 widgets: Vec::new(),
@@ -1099,6 +1124,7 @@ impl App {
                 session,
                 snapshot: None,
                 client_owned: false,
+                keeps: false,
                 save_to,
                 ids: None,
                 widgets: Vec::new(),
@@ -1237,6 +1263,7 @@ impl App {
                 session: path,
                 snapshot: None,
                 client_owned: false,
+                keeps: false,
                 save_to,
                 ids: None,
                 widgets: Vec::new(),
@@ -1302,6 +1329,7 @@ impl App {
                 session: None,
                 snapshot: None,
                 client_owned: false,
+                keeps: false,
                 save_to: None,
                 ids: None,
                 widgets: Vec::new(),
@@ -1345,10 +1373,7 @@ impl App {
         // **A window that saves its session asks before a close loses
         // work**: one over a file, or told where it writes. An untitled one
         // goes back to the script that handed it over, which keeps it.
-        let asks = !self
-            .windows
-            .get(&def_id)
-            .is_some_and(|window| window.client_owned);
+        let asks = self.windows.get(&def_id).is_none_or(Window::asks);
         // **It saves unless it was opened read-only**: an untitled one too,
         // whose first Save asks where in the Save as form
         let saves = !matches!(save_to, Some(None));
@@ -1413,11 +1438,8 @@ impl App {
                 // a file and asks before a close loses work; a box's roll is
                 // its multitrack's. Its Save writes where the host said, or
                 // to the file it read.
-                let asks = kind == AppKind::Notes
-                    && !self
-                        .windows
-                        .get(&def_id)
-                        .is_some_and(|window| window.client_owned);
+                let asks =
+                    kind == AppKind::Notes && self.windows.get(&def_id).is_none_or(Window::asks);
                 let file = save_to.unwrap_or(session);
                 self.member_call(
                     member,
@@ -1439,10 +1461,7 @@ impl App {
             }
             #[cfg(feature = "notation")]
             AppKind::Score => {
-                let asks = !self
-                    .windows
-                    .get(&def_id)
-                    .is_some_and(|window| window.client_owned);
+                let asks = self.windows.get(&def_id).is_none_or(Window::asks);
                 // where its Save writes: the host's word when it said, or
                 // the file it read
                 let file = save_to.unwrap_or(session);
@@ -1465,10 +1484,7 @@ impl App {
         }
         // **A window no client holds is the work's only holder**, and asks
         // before unsaved work goes
-        let asks = !self
-            .windows
-            .get(&def_id)
-            .is_some_and(|window| window.client_owned);
+        let asks = self.windows.get(&def_id).is_none_or(Window::asks);
         self.member_call(
             member,
             json!({"verb": "sync", "window": def_id, "title": title, "asks": asks}),
@@ -1683,6 +1699,7 @@ impl App {
                         window.session = None;
                     }
                     let handed = std::mem::take(&mut window.client_owned);
+                    window.keeps = false;
                     effect["handed"] = json!(handed);
                     if handed {
                         let member = window.member;
@@ -1881,7 +1898,7 @@ impl App {
             Reply::Local(tx) => {
                 let _ = tx.send(answer);
             }
-            Reply::Client(to, seq) => {
+            Reply::Client(to, seq, _) => {
                 self.out
                     .send(self.editing.said(), FromApp::Reply { to, seq, answer });
             }

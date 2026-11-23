@@ -195,6 +195,8 @@ export class AudioEditor extends HostedEditor {
     /** The file it opens on, which `edit` finds an open editor by. */
     readonly opening: SoundFile | null;
     protected readonly app = "audio";
+    // the window alone writes the file, so its close asks
+    protected override readonly keeps = false;
     private readonly openLayers: readonly unknown[] | null;
     private readonly holders = new Held();
 

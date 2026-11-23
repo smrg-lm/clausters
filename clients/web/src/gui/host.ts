@@ -1198,7 +1198,9 @@ export class GuiHost {
      * `app` names which (`"audio"`, the audio editor) and `options` how it
      * opens (`{ path, title }`). The window is the host's: its gestures are
      * answered by the application, in the host's process, and reach no
-     * script; the script is told `/gui_closed` when it goes.
+     * script; the script is told `/gui_closed` when it goes. A close of the
+     * window with unsaved work asks first, unless the options say
+     * `keeps: true`: the script keeps what the window edits.
      *
      * In a page, `element` is the box the window takes, as {@link GuiHost.open}'s
      * is; with none, the window gets a canvas of its own at the size it

@@ -152,7 +152,8 @@ def test_open_app_opens_a_saved_session_in_the_multitrack_application():
     application = open_app(a_session(), host=host)
     assert isinstance(application, MultitrackEditor)
     assert host.calls[0] == ("open", "multitrack",
-                             {"title": "song.json", "path": "/songs/song.json"})
+                             {"title": "song.json", "path": "/songs/song.json",
+                              "keeps": True})
     assert application.window is not None and not application.closed
     assert open_app(a_session(), host=host) is application, "a second call finds it"
 
@@ -161,7 +162,7 @@ def test_open_app_opens_an_application_over_nothing_and_edit_the_view():
     host = FakeHost()
     empty = open_app(app="multitrack", host=host)
     assert isinstance(empty, MultitrackEditor)
-    assert host.calls[-1] == ("open", "multitrack", {"title": "Multitrack"})
+    assert host.calls[-1] == ("open", "multitrack", {"title": "Multitrack", "keeps": True})
     with pytest.raises(ValueError, match="no application"):
         open_app(app="spreadsheet", host=host)
     with pytest.raises(ValueError, match="not both"):
@@ -169,7 +170,7 @@ def test_open_app_opens_an_application_over_nothing_and_edit_the_view():
     view = edit(a_session(), host=host)
     assert host.calls[-1] == ("open", "multitrack", {"title": "song.json",
                                                      "path": "/songs/song.json",
-                                                     "chrome": False})
+                                                     "chrome": False, "keeps": True})
     assert not view.chrome
 
 
@@ -293,7 +294,7 @@ def test_an_editor_can_open_without_a_session():
     host = FakeHost()
     editor = MultitrackEditor()
     editor.open(host)
-    assert host.calls[0] == ("open", "multitrack", {"title": "Multitrack"})
+    assert host.calls[0] == ("open", "multitrack", {"title": "Multitrack", "keeps": True})
     assert editor.multitrack is None
     assert editor.path is None
     host.close_window()

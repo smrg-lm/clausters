@@ -957,6 +957,8 @@ class GuiHost:
         it opens (``{"path": ..., "title": ...}``). The window is the host's:
         its gestures are answered by the application, in the host's process,
         and reach no script; the script is told ``/gui_closed`` when it goes.
+        A close of the window with unsaved work asks first, unless the
+        options say ``"keeps": True``: the script keeps what the window edits.
 
         Raises the error the host answered with (`ValueError` for options it
         cannot take), and `clausters.errors.ReplyTimeout` past ``timeout``.

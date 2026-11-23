@@ -92,8 +92,15 @@ code that keeps it lives.
   work's only holder (it asks before a close), its title is led by `*`
   while the work differs from its file, in every application, and loses
   the mark when a save lands or an undo walks back to what was saved
-  (`closing::shown_title`, read after every run). A window a client holds
-  wears no mark, since a close loses nothing there.
+  (`closing::shown_title`, read after every run). A window whose client
+  keeps the work (it opened it saying `keeps`) wears no mark, since a close
+  loses nothing there.
+  **A close of unsaved work asks, whichever close it is.** The frame's
+  mark, a dock's tab, a page's tab, Escape and File > Close all reach the
+  same question while the window is the work's only holder: a host's own
+  window, one opened from a menu (the code editor's applications), and one
+  a client opened without keeping the work (a sound file the window alone
+  writes). Only a client that takes the work back says it keeps it.
   **A document is open once in a host.** Opening a session file a window
   already holds brings that window forward and opens nothing: from the
   window's File > Open, from a client (`/gui_app_open`), or from the host's

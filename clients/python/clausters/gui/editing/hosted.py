@@ -185,6 +185,11 @@ class HostedEditor(WindowVerbs):
     """
 
     _app = ""
+    #: Whether the script keeps what the window edits, taking its structure
+    #: back when the window goes (``_settle``): the window's close then loses
+    #: nothing and asks nothing. An editor whose window alone writes its work
+    #: (the audio editor's file) does not, and its window asks.
+    _keeps = True
 
     def __init__(self, *, title: str, width: "int | None" = None,
                  height: "int | None" = None, chrome: bool = True):
@@ -264,6 +269,8 @@ class HostedEditor(WindowVerbs):
             options["chrome"] = False
         if beside is not None:
             options["over"] = int(beside.window)
+        if self._keeps:
+            options["keeps"] = True
         window = host.open_app(self._app, options)
         return self._hold(host, int(window))
 
