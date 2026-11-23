@@ -742,7 +742,8 @@ impl Host {
     }
 
     /// **The person closed window `def_id`**, which asked its owner nothing
-    /// first (no `ask_close`: a roll, a multitrack with nowhere to save):
+    /// first (no `ask_close`: a window whose work a client keeps, or one
+    /// with no form to ask in):
     /// when an application holds it, the application is told, lets it go,
     /// and its opener hears what it left. A front calls this for every
     /// window it closes on the person's word.

@@ -153,6 +153,10 @@ impl Converse for MultitrackEditor {
         self.asks
     }
 
+    fn has_close_form(&self) -> bool {
+        self.close_form.is_some()
+    }
+
     fn unsaved(&self) -> bool {
         self.unsaved && self.has_session()
     }

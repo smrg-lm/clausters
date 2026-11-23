@@ -1823,6 +1823,14 @@ impl App {
             tree["title"] = json!(title);
             window.told_title = Some(title);
         }
+        // **whether it asks before a close loses its work**, read the one
+        // way for every application ([`clausters_apps::closing::window_asks`]):
+        // a window drawn without it closed at once, whatever it held
+        if let Some(asks) = self.editing.window_asks(member)
+            && tree.is_object()
+        {
+            tree["ask_close"] = json!(asks);
+        }
         tree
     }
 

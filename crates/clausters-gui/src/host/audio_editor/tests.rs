@@ -111,6 +111,19 @@ fn a_roll_opened_over_nothing_is_an_empty_sequence() {
         )
     };
     assert_eq!(call(&mut host, "len")["len"], 0);
+    // **the roll asks before its close loses work**, as every application
+    // the host opens with nobody keeping its work: drawn without
+    // `ask_close`, the cross of its page closed it unasked
+    let asks = |host: &mut Host| {
+        matches!(
+            host.window_def(roll).map(|w| &w.kind),
+            Some(crate::host::widget::WidgetKind::Window {
+                ask_close: true,
+                ..
+            })
+        )
+    };
+    until(&mut host, "the roll never said it asks", asks);
 }
 
 /// A mono float file of `frames` frames, each told apart.

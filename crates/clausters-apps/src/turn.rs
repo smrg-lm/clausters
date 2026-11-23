@@ -218,6 +218,11 @@ pub trait Converse {
     fn asks_to_close(&self) -> bool {
         false
     }
+    /// **Whether it has a form to ask in**: the close form, numbered by its
+    /// holder. A window that asks without one could not ask at all.
+    fn has_close_form(&self) -> bool {
+        false
+    }
     /// Whether the structure holds changes its file does not.
     fn unsaved(&self) -> bool {
         false

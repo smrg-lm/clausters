@@ -321,6 +321,12 @@ code that keeps it lives.
   the same way: a window whose menu the dock's bar shows goes on showing it
   there and draws no bar of its own, not even for a frame, and the dock's
   bar shows the menu as the new tree has it.
+- **Every application's window asks before a close loses its work**, by
+  one reading (`closing::window_asks`): it asks where it holds its work
+  alone and has its close form, whichever way it is closed (its own close,
+  its tab, its page's cross, a quit). The host writes that reading on every
+  application's window it draws, so no application leaves it out; the roll
+  did, and the cross of its page closed it unasked.
 - **The dock's bar shows an application's menu, never its tools.** On an
   application's page the bar shows that application's menu in place of its
   own, and the tools that are entries of its own menu (the code editor's

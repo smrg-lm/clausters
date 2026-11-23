@@ -1301,6 +1301,10 @@ fn a_roll_with_a_file_saves_and_asks_before_a_close_loses_work() {
     let sequence = shared();
     let (mut e, ids) = holder(sequence.clone());
     assert!(e.actions(false, false)["save"].enabled);
+    // its window asks before a close, as every application's that holds
+    // its work alone; a client's roll does not
+    assert_eq!(e.window(40)["ask_close"], true);
+    assert_eq!(editor(shared()).window(40)["ask_close"], false);
     let file = e.window(40)["menu"][0]["menu"].to_string();
     assert!(
         file.contains("open_file") && file.contains("save_as"),

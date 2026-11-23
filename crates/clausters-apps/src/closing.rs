@@ -284,6 +284,14 @@ pub fn asks(holder_asks: bool, has_form: bool) -> bool {
     holder_asks && has_form
 }
 
+/// **Whether `editor`'s window asks before it closes**, by [`asks`]: the
+/// one reading of it, which the host writes on every application's window
+/// as it draws it, so no application's window can leave it out.
+#[must_use]
+pub fn window_asks<E: Converse + ?Sized>(editor: &E) -> bool {
+    asks(editor.asks_to_close(), editor.has_close_form())
+}
+
 /// **A close asked of `editor`'s window**: at once, unless the window is the
 /// work's only holder and has something to lose -- then the editor's form
 /// asks. The reason it could not ask, or the corrections that show the form.

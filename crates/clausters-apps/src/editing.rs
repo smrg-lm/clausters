@@ -923,6 +923,22 @@ impl Editing {
         Some(crate::closing::shown_title(&title, asks, unsaved))
     }
 
+    /// **Whether member `member`'s window asks before it closes**
+    /// ([`crate::closing::window_asks`]): what the host writes on every
+    /// application's window it draws. `None` for a member that has no
+    /// window of its own to close.
+    pub fn window_asks(&self, member: MemberId) -> Option<bool> {
+        use crate::closing::window_asks;
+        Some(match self.member(member)? {
+            Member::Audio(editor) => window_asks(editor.as_ref()),
+            Member::Multitrack(editor) => window_asks(editor.as_ref()),
+            #[cfg(feature = "notation")]
+            Member::Score(editor) => window_asks(editor.as_ref()),
+            Member::Notes(editor) => window_asks(editor.as_ref()),
+            _ => return None,
+        })
+    }
+
     /// **What a quit would lose** ([`crate::quitting`]): every member whose
     /// window is the work's only holder and holds work its file does not, by
     /// its window, named by its own title.

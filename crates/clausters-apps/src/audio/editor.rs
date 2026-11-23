@@ -362,6 +362,10 @@ impl Converse for AudioEditor {
         self.window_state.asks
     }
 
+    fn has_close_form(&self) -> bool {
+        self.has_dialogs()
+    }
+
     /// Any file of the window with changes, but those the hand already said
     /// to let go of on the way out.
     fn unsaved(&self) -> bool {
@@ -1543,13 +1547,7 @@ impl AudioEditor {
         self.refresh_files();
         self.compose_files(&mut tree);
         if let Some(root) = tree.as_object_mut() {
-            root.insert(
-                "ask_close".into(),
-                json!(crate::closing::asks(
-                    self.window_state.asks,
-                    self.has_dialogs()
-                )),
-            );
+            root.insert("ask_close".into(), json!(crate::closing::window_asks(self)));
         }
         tree
     }

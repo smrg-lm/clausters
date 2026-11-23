@@ -1001,6 +1001,9 @@ impl NotesEditor {
                 children.push(stack);
             }
         }
+        // **asked before it closes** only where it is the sequence's one
+        // holder and has its form ([`crate::closing`])
+        window["ask_close"] = json!(crate::closing::window_asks(self));
         window
     }
 
@@ -1541,6 +1544,10 @@ impl Converse for NotesEditor {
 
     fn asks_to_close(&self) -> bool {
         self.asks
+    }
+
+    fn has_close_form(&self) -> bool {
+        self.dialogs.numbered(dialogs::forms())
     }
 
     fn unsaved(&self) -> bool {

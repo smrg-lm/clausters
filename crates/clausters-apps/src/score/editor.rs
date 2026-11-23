@@ -609,7 +609,7 @@ impl ScoreEditor {
             menu: (!self.bare).then(|| self.menu()),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
             dialogs: self.dialogs.stack(dialogs::forms()),
-            ask_close: crate::closing::asks(self.asks, self.dialogs.numbered(dialogs::forms())),
+            ask_close: crate::closing::window_asks(self),
             palettes: palettes::column(&self.palettes, &outlines),
             glyphs: &outlines,
         })
@@ -2257,6 +2257,10 @@ impl Converse for ScoreEditor {
 
     fn asks_to_close(&self) -> bool {
         self.asks
+    }
+
+    fn has_close_form(&self) -> bool {
+        self.dialogs.numbered(dialogs::forms())
     }
 
     fn unsaved(&self) -> bool {
