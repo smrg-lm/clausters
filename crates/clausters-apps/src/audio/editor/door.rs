@@ -176,7 +176,12 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
             render: false,
         };
         (Some(file), false)
+    } else if facts.untitled == Some(true) && frames == 0 {
+        // **a new file has no samples**: an empty take of its channels and
+        // rate, written nowhere yet, which the edits fill
+        (None, false)
     } else if facts.untitled == Some(true) {
+        // a file not written yet, of a length: silence a script asked for
         let path = made("new")?;
         let file = FileSource {
             peaks: sources::peaks_beside(&path),
@@ -199,6 +204,16 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     // without a stamp, the first look takes the file as it is
     editor.file.disk = path.clone().map(|path| (path, facts.stamp));
     editor.file.sample_format = facts.sample_format.clone();
+    if facts.untitled == Some(true) && path.is_none() {
+        // **a file is saved in the format it was made in**: a new one's,
+        // which its form chose, and a take is held in 32-bit float
+        editor.file.written_format = Some(
+            facts
+                .sample_format
+                .clone()
+                .unwrap_or_else(|| crate::audio::dialogs::FLOAT.into()),
+        );
+    }
     if decoded {
         // what the take is now is the decoded copy, not written anywhere the
         // user named: no codec of its own, and the opened file's name

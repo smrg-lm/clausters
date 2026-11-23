@@ -648,6 +648,11 @@ code that keeps it lives.
   view chosen, a sheet to read. It is the convention of the platforms' menu
   guidelines, the same in every application; a switch or a choice never ends
   in one (`verbs` tests), and the audio editor's forms are the verbs that do.
+- **A new file has no samples, and is saved in the format it was made in.**
+  The audio editor's New... asks the channels, the rate and the sample
+  format, never a length: the file starts empty, written nowhere, and an
+  edit (a paste, a drawn stroke) puts samples in it. Its format is 32-bit
+  float, the one a take is held in, and its saves write that format.
 - **A file is handled alike in every application.** The File menu is built
   once (`chrome::file_menu`), the score's and the code editor's with the
   others': New, Open..., Open Recent where the application keeps its recent

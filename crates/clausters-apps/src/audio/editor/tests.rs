@@ -896,10 +896,13 @@ fn a_save_as_with_no_path_is_refused_and_cancel_closes_it() {
 }
 
 /// **A new file is the client's to open**: the form opens on the window's
-/// shape, and its `OK` names the shape asked for in the outcome.
+/// shape, in 32-bit float, and its `OK` names the shape asked for in the
+/// outcome -- with no frames, since a new file has no samples, and no
+/// length to ask.
 #[test]
 fn the_new_file_form_names_a_shape_for_the_client() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    assert!(!ids.contains_key("new:seconds"), "no length is asked");
     let shown = event(&mut editor, json!([900, 1, 0, "new_file"]));
     let text = shown["answer"]["corrections"].to_string();
     assert!(
@@ -907,17 +910,42 @@ fn the_new_file_form_names_a_shape_for_the_client() {
         "{text}"
     );
     event(&mut editor, json!([ids["new:channels"], 2, 0, "4"]));
-    event(&mut editor, json!([ids["new:seconds"], 3, 0, "1.5"]));
     let made = event(&mut editor, json!([ids["new:ok"], 4, 0, "click"]));
     assert_eq!(
         made["newFile"],
-        json!({"channels": 4, "frames": 66150, "rate": 44100.0})
+        json!({"channels": 4, "frames": 0, "rate": 44100.0, "format": "float"})
     );
     event(&mut editor, json!([900, 5, 0, "new_file"]));
-    event(&mut editor, json!([ids["new:seconds"], 6, 0, "long"]));
+    event(&mut editor, json!([ids["new:rate"], 6, 0, "fast"]));
     let refused = event(&mut editor, json!([ids["new:ok"], 7, 0, "click"]));
     assert!(refused.get("newFile").is_none());
     assert!(refused["answer"]["reason"].is_string());
+}
+
+/// **A new file has no samples, and is saved in the format it was made
+/// in**: an open, empty take, written nowhere yet, whose first save asks
+/// for a path and writes 32-bit float.
+#[test]
+fn a_new_file_is_an_empty_take_in_its_format() {
+    let mut editor = new_json(
+        &json!({"workspace": "/work", "frames": 0, "channels": 2, "rate": 48000,
+                "untitled": true, "sample_format": "float"})
+        .to_string(),
+    )
+    .unwrap();
+    assert!(
+        walk(&open(&mut editor)["steps"]).is_empty(),
+        "nothing to write"
+    );
+    assert!(spans(&mut editor).is_empty(), "no samples");
+    let file = editor.file.file();
+    assert_eq!(file["untitled"], true);
+    assert_eq!(file["format"], "float");
+    assert_eq!(file["channels"], 2);
+    assert_eq!(
+        call(&mut editor, json!({"verb": "binding"}))["empty"],
+        Value::Null
+    );
 }
 
 /// A window composed without the dialogs saves an untitled file nowhere and

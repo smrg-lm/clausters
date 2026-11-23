@@ -192,7 +192,7 @@ An editor holds several files, listed in an independent widget on the left.
 {{alt `editor.files` || `await editor.files()`}} lists the open SoundFiles,
 and {{alt `editor.file` || `await editor.file()`}} is the focused one. {{alt `editor.open_file(path)` || `await editor.openFile(path)`}} or
 {{alt `editor.open_file([path_a, path_b])` || `await editor.openFile([pathA, pathB])`}} adds files to the same editor;
-{{alt `editor.new_file(channels, || `await editor.newFile(channels,}} frames, rate)` adds an empty one.
+{{alt `editor.new_file(channels, || `await editor.newFile(channels,}} rate)` adds a new one, as File -> New... does: it has no samples until an edit puts them there, and it is made in 32-bit float, the format a take is held in and the one its save writes.
 {{alt `editor.focus_file(index)` || `await editor.focusFile(index)`}} and {{alt `editor.close_file(index)` || `await editor.closeFile(index)`}} use zero-based
 list indices; omitting the close index closes the focused file. Each file
 keeps its cursor, selection, edits and undo/redo history. Switching files

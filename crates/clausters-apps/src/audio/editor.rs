@@ -182,6 +182,9 @@ pub struct Shape {
     pub frames: u64,
     /// Its rate.
     pub rate: f64,
+    /// The sample format it is made in, and saved in
+    /// ([`crate::audio::dialogs::FORMATS`]).
+    pub format: &'static str,
 }
 
 /// **The files to look at on disk**, the window having come back: the

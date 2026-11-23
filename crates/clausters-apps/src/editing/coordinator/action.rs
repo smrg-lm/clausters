@@ -155,6 +155,8 @@ impl AudioAction {
                     channels: action["shape"]["channels"].as_u64().unwrap_or(1) as u32,
                     frames: action["shape"]["frames"].as_u64().unwrap_or(0),
                     rate: action["shape"]["rate"].as_f64().unwrap_or(0.0),
+                    // what a take is held in, and so what it is saved in
+                    format: crate::audio::dialogs::FLOAT,
                 },
             },
             "sound" => AudioAction::Sound,

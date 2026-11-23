@@ -228,14 +228,16 @@ def many_channels():
 # %% [markdown]
 # ## A file not written yet
 #
-# A new file is silence of a shape, added to this editor and written nowhere
-# yet: its first save -- Ctrl+S, or File -> Save as... -- asks where it goes.
-# `open_app(SoundFile.empty(2, frames, rate))` opens the same in a window of its own.
+# A new file has no samples: its channels and its rate, in 32-bit float,
+# added to this editor and written nowhere yet. A paste or a drawn stroke
+# puts samples in it, and its first save -- Ctrl+S, or File -> Save as... --
+# asks where it goes. `open_app(SoundFile.empty(2, frames, rate))` opens a
+# file of silence of a length in a window of its own.
 
 # %%
 def new_file():
-    """Add two seconds of stereo silence to this editor."""
-    editor.new_file(2, frames, rate)
+    """Add a new stereo file, with no samples, to this editor."""
+    editor.new_file(2, rate)
 
 
 def open_files():

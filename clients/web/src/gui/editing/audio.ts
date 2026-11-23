@@ -234,7 +234,7 @@ export class AudioEditor extends HostedEditor {
             // silence not written anywhere yet: a new file of its shape
             if (this.opening !== null && this.opening.path === null) {
                 const { channels, frames, sampleRate } = this.opening;
-                await this.newFile(channels, frames, sampleRate);
+                await this.shaped(channels, frames, sampleRate);
             }
             if (this.openLayers !== null) await this.setLayers(this.openLayers);
         }
@@ -396,8 +396,17 @@ export class AudioEditor extends HostedEditor {
         return String(answer.destination.path);
     }
 
-    /** Add and focus an empty file of that shape. */
-    async newFile(channels: number, frames: number, rate: number): Promise<void> {
+    /**
+     * Add and focus a new file of `channels` at `rate`, as File -> New... does:
+     * it has no samples until an edit puts them there, and is made and saved
+     * in 32-bit float.
+     */
+    async newFile(channels: number, rate: number): Promise<void> {
+        await this.shaped(channels, 0, rate);
+    }
+
+    /** A file not written yet, of `frames` of silence. */
+    private async shaped(channels: number, frames: number, rate: number): Promise<void> {
         await this.act("newFile", {
             shape: { channels: Math.trunc(channels), frames: Math.trunc(frames), rate: Number(rate) },
         });

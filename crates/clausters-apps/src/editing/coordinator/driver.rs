@@ -284,7 +284,7 @@ fn shape(file: Wanted, caller: &mut dyn Caller) -> Result<Value, String> {
     match file {
         Wanted::Shape(shape) => Ok(json!({"frames": shape.frames, "channels": shape.channels,
             "rate": shape.rate, "path": null, "untitled": true,
-            "codec": null, "sample_format": null})),
+            "codec": null, "sample_format": shape.format})),
         Wanted::Path(path) => {
             let info = caller.header(&path)?;
             Ok(json!({

@@ -169,7 +169,7 @@ class AudioEditor(HostedEditor):
         if opening:
             # silence not written anywhere yet: a new file of its shape
             if self._file is not None and self._file.path is None:
-                self.new_file(self._file.channels, self._file.frames, self._file.sample_rate)
+                self._new(self._file.channels, self._file.frames, self._file.sample_rate)
             if self._layers is not None:
                 self.layers = self._layers
         return window
@@ -322,8 +322,14 @@ class AudioEditor(HostedEditor):
             request["path"] = str(path)
         return str(self._do("save", request=request)["destination"]["path"])
 
-    def new_file(self, channels: int, frames: int, rate: float) -> None:
-        """Add and focus an empty file of that shape."""
+    def new_file(self, channels: int, rate: float) -> None:
+        """Add and focus a new file of ``channels`` at ``rate``, as File ->
+        New... does: it has no samples until an edit puts them there, and is
+        made and saved in 32-bit float."""
+        self._new(channels, 0, rate)
+
+    def _new(self, channels: int, frames: int, rate: float) -> None:
+        """A file not written yet, of ``frames`` of silence."""
         self._do("newFile", shape={"channels": int(channels), "frames": int(frames),
                                    "rate": float(rate)})
 

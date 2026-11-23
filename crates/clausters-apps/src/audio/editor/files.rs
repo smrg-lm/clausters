@@ -649,11 +649,13 @@ impl AudioEditor {
             Said::Picked(..) => return (None, Vec::new()),
             Said::Accept => match open.form {
                 Form::New => match dialogs::new_shape(&open) {
-                    Ok((channels, frames, rate)) => {
+                    // a new file has no samples
+                    Ok((channels, rate, format)) => {
                         out.new_file = Some(Shape {
                             channels,
-                            frames,
+                            frames: 0,
                             rate,
+                            format,
                         });
                         None
                     }
