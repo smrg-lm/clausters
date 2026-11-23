@@ -102,10 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The pager's tabs name the applications by their short names**
-  *(`crates/clausters-apps/PLAN.md`, Found by use)*. Code, Roll, Score,
-  Audio, Tracks; with the cut names above, one visit to the pager.
-
 - ⬜ **The host's window and drawing libraries are updated before the next
   release** *(`crates/clausters-gui/PLAN.md`, Found by use)*. wgpu, naga and
   winit carry code a future Rust rejects; raised before the release is cut.

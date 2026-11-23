@@ -79,6 +79,12 @@ pub type Docs = (
     BTreeMap<String, String>,
 );
 
+/// **The name of the editor's page in the dock**, the code editor's short
+/// name beside the applications' (`Roll`, `Score`, `Audio`, `Tracks`): the
+/// editor names the page its panes are on, which the host opens under a
+/// name of its own for every dock.
+const PAGE: &str = "Code";
+
 // -- the fixed windows, and the ids of what is inside them
 
 /// **Where the editor's ids start**: past the window a client allocates its
@@ -705,7 +711,12 @@ impl App {
             self.menus();
         }
         match purpose {
-            DockFor::Arrange => self.arrange(&groups),
+            DockFor::Arrange => {
+                if let Some(call) = page_rename(state) {
+                    self.link.dock(&call);
+                }
+                self.arrange(&groups)
+            }
             DockFor::Split => self.split_or_join(&groups),
             DockFor::MoveTab => self.move_tab(&groups),
             DockFor::Quit => {
@@ -1318,14 +1329,7 @@ impl App {
     /// the dock answered it, every pane named by its role
     /// ([`role_of`](Self::role_of)) and the ones with none left out.
     fn keep_arrangement(&mut self, state: &Value) {
-        let page = state["pages"].as_array().and_then(|pages| {
-            pages.iter().find(|p| {
-                arrangement::panes(&p["layout"])
-                    .iter()
-                    .any(|id| id.as_i64() == Some(i64::from(POST_WIN)))
-            })
-        });
-        let Some(layout) = page.map(|p| &p["layout"]) else {
+        let Some(layout) = post_page(state).map(|p| &p["layout"]) else {
             return;
         };
         self.settings.layout = arrangement::rename(layout, &|id| {
@@ -2518,6 +2522,24 @@ fn on(v: &OscType) -> bool {
     }
 }
 
+/// **The call that names the editor's page [`PAGE`]**, from a dock's
+/// state: the page the post window is on, renamed when it is named
+/// otherwise; none once it is, or while the post window is on no page.
+fn page_rename(state: &Value) -> Option<Value> {
+    let name = post_page(state)?["name"].as_str()?;
+    (name != PAGE).then(|| json!({"verb": "page_rename", "name": name, "to": PAGE}))
+}
+
+/// The page of a dock's state the post window is on, as the dock answered
+/// it (its `name` and its `layout`).
+fn post_page(state: &Value) -> Option<&Value> {
+    state["pages"].as_array()?.iter().find(|p| {
+        arrangement::panes(&p["layout"])
+            .iter()
+            .any(|id| id.as_i64() == Some(i64::from(POST_WIN)))
+    })
+}
+
 /// The groups of a dock's state, each its panes in tab order.
 fn groups(state: &Value) -> Vec<Vec<i32>> {
     state
@@ -2587,6 +2609,24 @@ mod tests {
         assert_eq!(tree["children"][0]["id"], 100);
         assert_eq!(tree["children"][1]["id"], 9);
         assert_eq!(tree["children"][1]["children"][0]["id"], 101);
+    }
+
+    /// **The editor's page is named Code**: the page the post window is on
+    /// is renamed while it has another name, and left alone once it has.
+    #[test]
+    fn the_post_window_s_page_is_named_code() {
+        let state = |name: &str| {
+            json!({"pages": [
+                {"name": "Tracks", "layout": {"tabs": [7], "active": 7}},
+                {"name": name, "layout": {"tabs": [POST_WIN], "active": POST_WIN}},
+            ]})
+        };
+        assert_eq!(
+            page_rename(&state("Main")),
+            Some(json!({"verb": "page_rename", "name": "Main", "to": "Code"}))
+        );
+        assert_eq!(page_rename(&state("Code")), None);
+        assert_eq!(page_rename(&json!({"pages": []})), None);
     }
 
     /// The groups of a dock's state are read from its bars, in tab order.

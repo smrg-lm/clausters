@@ -494,7 +494,7 @@ mod tests {
         for scale in [1.0, 1.25, 1.5, 2.0] {
             let m = Metrics::default().resolved(scale);
             for size in [1.0, 1.25, 1.5, 2.0, 2.5, 3.0] {
-                for name in ["Score", "Audio", "Multitrack", "Multitrack 2", "Notes"] {
+                for name in ["Code", "Roll", "Score", "Audio", "Tracks", "Tracks 2"] {
                     for closes in [true, false] {
                         let w = tab_width(name, size, &m, closes);
                         let (before, after) = tab_ends(&m, closes);

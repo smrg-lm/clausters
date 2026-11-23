@@ -3488,19 +3488,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The pager's tabs name the applications by their short names** *(the
-  user, 2026-11-22)*. The pages are to read **Code** (the code editor),
-  **Roll** (the notes editor), **Score**, **Audio** and **Tracks** (the
-  multitrack). The names are `chrome::App::page`, the score's `dock_page`
-  in `score.rs` and the dock's first page, `FIRST_PAGE` ("Main"), which is
-  the code editor's page there: the editor names its own page rather than
-  the host's constant changing for every dock. `App::page` is also the
-  `remember` key the host keeps a window's size under, so a rename either
-  keeps the old key or lets the remembered sizes go once; decide which.
-  A second window still takes a number ("Tracks 2"). The window titles
-  ("Notes", "Multitrack" in `host/apps.rs`) are not pages and are not
-  part of this.
-
 - ⬜ **A roll reads its marks' symbols from the score's palettes** *(found
   2026-11-12, measuring the crate's modules by reference)*.
   `notes::Symbols` asks `score::palettes::symbol` for the codepoint and the

@@ -4012,3 +4012,20 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   `the_settings_are_one_panel_of_two_sections` and a headless capture of
   the audio editor with its settings shown.
 
+- ✅ **The pager's tabs name the applications by their short names** *(the
+  user, 2026-11-22; fixed 2026-11-23)*. The pages read Multitrack, Notes
+  and Main for the multitrack, the roll and the code editor, the names the
+  rest of the code uses for them. They now read **Code**, **Roll**,
+  **Score**, **Audio** and **Tracks**. `chrome::App::page` was both the
+  page's name and the `remember` key the host keeps a window's size under,
+  so the two are now apart: `App::page` is the short name and
+  `App::remember` the application's kind, which stays what it was, so the
+  sizes the host remembered before the rename are still read (the score
+  keeps `Score` for both). The code editor names the page its panes are on
+  `Code` through the dock's `page_rename`, once the dock answers its
+  first arrangement, rather than the host's `FIRST_PAGE` changing for
+  every dock. A second window still takes a number (`Tracks 2`), and the
+  window titles are not pages and did not change. Checked by
+  `a_page_is_the_short_name_and_the_size_key_the_kind`,
+  `the_post_window_s_page_is_named_code` and a headless run of the code
+  editor with the multitrack open.

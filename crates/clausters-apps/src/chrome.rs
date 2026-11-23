@@ -632,10 +632,23 @@ pub fn channel_entries(menu: &mut Value, channels: u32) {
 }
 
 impl App {
-    /// **The page an application's window opens on in a dock**: a window
-    /// with the application's chrome is the application, alone on a page of
-    /// its own; one with none is a view, a panel among others.
+    /// **The page an application's window opens on in a dock**, named by
+    /// the application's short name: a window with the application's chrome
+    /// is the application, alone on a page of its own; one with none is a
+    /// view, a panel among others.
     pub fn page(self) -> &'static str {
+        match self {
+            App::Audio => "Audio",
+            App::Multitrack => "Tracks",
+            App::Notes => "Roll",
+            App::Points => "Points",
+        }
+    }
+
+    /// **The key the host keeps the application's window size under**
+    /// (`remember`): the application's kind, apart from the name its page
+    /// shows, so renaming a page never loses the sizes the host remembers.
+    pub fn remember(self) -> &'static str {
         match self {
             App::Audio => "Audio",
             App::Multitrack => "Multitrack",
@@ -647,15 +660,15 @@ impl App {
 
 /// **A window dressed as `app`**: its menu bar, its toolbar on top, the
 /// view the menu acts on (`main`), the chrome's symbols, and the page of its
-/// own it opens on in a dock ([`App::page`]), whose name is also the key
-/// the host keeps the window's size under (`remember`), so an editor opens
-/// at the size it was last left at.
+/// own it opens on in a dock ([`App::page`]), and the key the host keeps
+/// the window's size under ([`App::remember`]), so an editor opens at the
+/// size it was last left at.
 pub fn dress(window: &mut Value, app: App, menu: Value, toolbar: Value, main: i32) {
     let Some(map) = window.as_object_mut() else {
         return;
     };
     map.insert("dock_page".into(), json!(app.page()));
-    map.insert("remember".into(), json!(app.page()));
+    map.insert("remember".into(), json!(app.remember()));
     map.insert("menu".into(), menu);
     map.insert("main".into(), json!(main));
     map.insert("glyphs".into(), glyphs());
@@ -855,6 +868,17 @@ pub(crate) mod tests {
         }
     }
 
+    /// **A page shows the application's short name, and the size is kept
+    /// under its kind**: the key the host remembered a window's size under
+    /// before the pages were renamed is the one it still reads.
+    #[test]
+    fn a_page_is_the_short_name_and_the_size_key_the_kind() {
+        let pages = [App::Audio, App::Multitrack, App::Notes].map(App::page);
+        assert_eq!(pages, ["Audio", "Tracks", "Roll"]);
+        let kept = [App::Audio, App::Multitrack, App::Notes, App::Points].map(App::remember);
+        assert_eq!(kept, ["Audio", "Multitrack", "Notes", "Points"]);
+    }
+
     #[test]
     fn a_dressed_window_holds_the_bar_on_top_and_names_its_view() {
         let mut window = json!({"type": "window", "children": [{"type": "notes", "id": 4}]});
@@ -866,7 +890,7 @@ pub(crate) mod tests {
             4,
         );
         assert_eq!(window["main"], 4);
-        assert_eq!(window["dock_page"], "Notes");
+        assert_eq!(window["dock_page"], "Roll");
         assert_eq!(window["remember"], "Notes");
         assert_eq!(window["children"][0]["type"], "layout");
         assert_eq!(window["children"][1]["id"], 4);
