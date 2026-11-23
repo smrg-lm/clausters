@@ -102,10 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A page's tab cuts a name that was measured to fit**
-  *(`crates/clausters-gui/PLAN.md`, Found by use)*. The measure and the cut
-  are two formulas that meet only up to rounding.
-
 - ⬜ **A page's tab closes an application with unsaved changes without
   asking** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Which window,
   and whether it is the closing rule or a missing `ask_close`, first.

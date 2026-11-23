@@ -81,10 +81,11 @@ pub enum Part {
     More(usize),
 }
 
-/// The width one tab takes: its name with a panel tab's inset on either
-/// side, so every row of tabs spaces its names as a panel's bar does.
+/// The width one tab takes: its name, measured in the face it is drawn in
+/// ([`draw_tab_list`]), with a panel tab's inset on either side, so every
+/// row of tabs spaces its names as a panel's bar does.
 fn tab_w(option: &str, size: f32, m: &Metrics) -> f32 {
-    font::width(option, size) + 2.0 * m.tab_inset
+    font::width_in(Family::UiMedium, option, size) + 2.0 * m.tab_inset
 }
 
 /// The side of a pager's arrow cell.

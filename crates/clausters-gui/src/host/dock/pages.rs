@@ -16,6 +16,7 @@
 //! A page's tab is shown by a click and closed by its cross; the first page
 //! has none, since it is the dock's own.
 
+use crate::host::graphics::bar;
 use clausters_gui_draw::font;
 use serde_json::{Value, json};
 
@@ -316,14 +317,7 @@ impl Dock {
         let widths: Vec<f32> = names
             .iter()
             .enumerate()
-            .map(|(i, name)| {
-                let around = if self.page_closable(i) {
-                    m.tab_inset + 2.0 * m.tab_end + close
-                } else {
-                    2.0 * m.tab_inset
-                };
-                (font::width(name, size) + around).min(m.tab_w)
-            })
+            .map(|(i, name)| bar::tab_width(name, size, m, self.page_closable(i)))
             .collect();
         let more = font::width(&font::symbol::MENU.to_string(), size) + 2.0 * m.tab_inset;
         let total: f32 = widths.iter().sum();

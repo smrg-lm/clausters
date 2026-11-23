@@ -1597,17 +1597,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **A page's tab cuts a name that was measured to fit** *(found by the
-  user, 2026-11-22)*. The pager shows "Sco..." and "Multitra..." where a
-  second multitrack's "Multitrack 2" is shown whole. `Dock::page_parts`
-  makes a closable tab the name's width plus its inset, its ends and its
-  cross, and `chrome::tab` draws the name in that width minus the same
-  terms, so the room left is the name's width only up to float rounding,
-  and `text_ellipsis` cuts when the name is wider by any amount. Which way
-  the rounding goes depends on the name, which is why one is cut and the
-  other is not. The measure and the cut want one formula with no exact
-  equality in it (the tab's text room computed once and used by both).
-
 - ⬜ **A page's tab closes an application with unsaved changes without
   asking** *(found by the user, 2026-11-22)*. A page's cross goes
   `Dock::close_page` -> `Dirty::close` -> the front's close of the window

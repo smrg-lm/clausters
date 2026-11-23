@@ -1001,6 +1001,25 @@ pub fn fit_chars(max_w: f32, scale: f32) -> usize {
     (max_w / advance(scale)) as usize
 }
 
+/// **How far past its room a text may measure and still fit**, in pixels:
+/// far below what a pixel shows, far above what float arithmetic loses. A
+/// room is a width taken back apart from a sum (a tab measured as its name
+/// plus its ends, then drawn in its width minus them), and the two meet only
+/// up to rounding: compared exactly, a name measured to fit was cut by a
+/// millionth of a pixel.
+pub const FIT_SLACK: f32 = 1.0 / 64.0;
+
+/// **Whether `s` fits `max_w`** at `scale`, as every cut and wrap here
+/// decides it: measured as drawn, within [`FIT_SLACK`].
+pub fn fits(s: &str, max_w: f32, scale: f32) -> bool {
+    fits_in(Family::Ui, s, max_w, scale)
+}
+
+/// [`fits`] in `family`.
+pub fn fits_in(family: Family, s: &str, max_w: f32, scale: f32) -> bool {
+    width_in(family, s, scale) <= max_w + FIT_SLACK
+}
+
 /// Appends `s` clipped to `max_w`: text that fits draws whole; longer text is
 /// cut where the ellipsis still fits and ends in one, instead of bleeding past
 /// the edge into a neighbor.
@@ -1032,7 +1051,7 @@ pub fn text_ellipsis_in(
     scale: f32,
     color: Color,
 ) {
-    if width_in(family, s, scale) <= max_w {
+    if fits_in(family, s, max_w, scale) {
         text_in(mesh, family, s, x, y, scale, color);
         return;
     }
@@ -1052,9 +1071,8 @@ pub fn ellipsized(s: &str, max_w: f32, scale: f32) -> Option<String> {
 /// [`ellipsized`] in `family`.
 pub fn ellipsized_in(family: Family, s: &str, max_w: f32, scale: f32) -> Option<String> {
     use unicode_segmentation::UnicodeSegmentation;
-    let width = |s: &str, scale: f32| width_in(family, s, scale);
     let ellipsis = '\u{2026}';
-    if width(&ellipsis.to_string(), scale) > max_w {
+    if !fits_in(family, &ellipsis.to_string(), max_w, scale) {
         return None;
     }
     let ends: Vec<usize> = s
@@ -1064,7 +1082,7 @@ pub fn ellipsized_in(family: Family, s: &str, max_w: f32, scale: f32) -> Option<
     let fits = |end: usize| {
         let mut cut = s[..end].to_string();
         cut.push(ellipsis);
-        width(&cut, scale) <= max_w
+        fits_in(family, &cut, max_w, scale)
     };
     // the widths of the starts grow with them, so the longest that fits is
     // found by halving
@@ -1094,8 +1112,8 @@ pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
 /// card.
 pub fn wrap_in(family: Family, s: &str, max_w: f32, scale: f32) -> Vec<String> {
     use unicode_segmentation::UnicodeSegmentation;
-    let width = |s: &str, scale: f32| width_in(family, s, scale);
     let max_w = max_w.max(advance(scale));
+    let fits = |s: &str| fits_in(family, s, max_w, scale);
     let mut lines = Vec::new();
     let mut line = String::new();
     for word in s.split_whitespace() {
@@ -1106,7 +1124,7 @@ pub fn wrap_in(family: Family, s: &str, max_w: f32, scale: f32) -> Vec<String> {
             } else {
                 format!("{line} {rest}")
             };
-            if width(&joined, scale) <= max_w {
+            if fits(&joined) {
                 line = joined;
                 rest = "";
             } else if line.is_empty() {
@@ -1114,7 +1132,7 @@ pub fn wrap_in(family: Family, s: &str, max_w: f32, scale: f32) -> Vec<String> {
                 // grapheme that still fits (at least one, or nothing ends).
                 let mut end = 0;
                 for (at, g) in rest.grapheme_indices(true) {
-                    if end > 0 && width(&rest[..at + g.len()], scale) > max_w {
+                    if end > 0 && !fits(&rest[..at + g.len()]) {
                         break;
                     }
                     end = at + g.len();

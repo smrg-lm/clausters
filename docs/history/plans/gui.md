@@ -10342,3 +10342,24 @@ module of its own.
   shows changed. Checked by
   `a_window_redefined_keeps_its_bar_away`, which failed before the fix
   with the rebuilt window answering its own entries.
+
+- ✅ **A page's tab cuts a name that was measured to fit** *(found by the
+  user, 2026-11-22; fixed 2026-11-23)*. The pager showed "Sco..." and
+  "Multitra..." where "Multitrack 2" was shown whole. A tab was measured as
+  its name plus its ends and drawn in its width minus them, and with the
+  host's face (fractional advances) the two met only up to rounding: the
+  room came out a millionth of a pixel short of the name, and
+  `text_ellipsis` compared exactly, so which name was cut depended on its
+  width's last bits. The fix is at the root rather than per row of tabs:
+  every cut and wrap of the font decides "fits" through one test
+  (`font::fits`), within `FIT_SLACK` (a sixty-fourth of a pixel: far below
+  what a pixel shows, far above what the arithmetic loses), so no text
+  measured to fit anywhere in the host is cut. A tab's geometry is one
+  function beside it (`bar::tab_ends` and `bar::tab_width`), which the
+  panel bar's tabs, the page strip and the drawing of a tab all use, so a
+  non-closable panel tab is no longer measured with a cross it does not
+  draw. The same pass found the `choice` widget's tabs measured in the
+  regular face and drawn in the medium one, which cut by a whole letter;
+  they are measured in the face they are drawn in. Checked by
+  `a_tab_measured_to_fit_draws_its_name_whole`, which fails without the
+  slack.

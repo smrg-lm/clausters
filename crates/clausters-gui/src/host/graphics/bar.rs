@@ -144,14 +144,13 @@ pub fn parts(bar: &Bar, r: Rect, m: &Metrics) -> Vec<(Part, Rect)> {
             // a tab: its inset, its name, a gap, its close mark and a gap --
             // a long name is cut, not followed, at the widest a tab grows
             let close = m.tab_close;
-            let around = m.tab_inset + 2.0 * m.tab_end + close;
             let natural: Vec<f32> = tabs
                 .iter()
-                .map(|t| (font::width(&t.name, size) + around).min(m.tab_w))
+                .map(|t| tab_width(&t.name, size, m, t.closable))
                 .collect();
             let room = (end - x).max(0.0);
             let room = if *half { room * 0.5 } else { room };
-            let least = around + font::width("\u{2026}", size);
+            let least = tab_width("\u{2026}", size, m, true);
             let total: f32 = natural.iter().sum();
             let each = (room / natural.len().max(1) as f32).max(least);
             let start = x;
@@ -314,6 +313,27 @@ fn title(mesh: &mut Mesh, r: Rect, text: &str, size: f32, m: &Metrics, theme: &T
     );
 }
 
+/// **What a tab takes beside its name**, before it and after it: its inset,
+/// then the gaps around its cross when it closes (`closes`), else the inset
+/// again. The one geometry a row of tabs is measured by ([`tab_width`]) and
+/// a tab's name is drawn by ([`tab`]), so a name measured to fit is drawn
+/// whole.
+pub fn tab_ends(m: &Metrics, closes: bool) -> (f32, f32) {
+    let after = if closes {
+        2.0 * m.tab_end + m.tab_close
+    } else {
+        m.tab_inset
+    };
+    (m.tab_inset, after)
+}
+
+/// **The width a tab of `name` takes**: the name and its ends
+/// ([`tab_ends`]), up to the widest a tab grows, past which the name is cut.
+pub fn tab_width(name: &str, size: f32, m: &Metrics, closes: bool) -> f32 {
+    let (before, after) = tab_ends(m, closes);
+    (font::width(name, size) + before + after).min(m.tab_w)
+}
+
 /// **A tab**, as a bar and the dock's page strip draw one: its ground,
 /// marked when `mark` says it is the one shown, and its name from its inset,
 /// cut to leave room for its cross when it has one (`closes`).
@@ -331,18 +351,14 @@ pub fn tab(
     size: f32,
 ) {
     choice::tab_ground(mesh, m, theme, r, mark, hot, edge);
-    let after = if closes {
-        2.0 * m.tab_end + m.tab_close
-    } else {
-        m.tab_inset
-    };
+    let (before, after) = tab_ends(m, closes);
     let glyph = font::height(size);
     font::text_ellipsis(
         mesh,
         name,
-        r.x + m.tab_inset,
+        r.x + before,
         r.y + (r.h - glyph) * 0.5,
-        (r.w - m.tab_inset - after).max(0.0),
+        (r.w - before - after).max(0.0),
         size,
         if mark.is_some() {
             theme.text
@@ -465,5 +481,30 @@ mod tests {
             "a close mark only where the tab has one"
         );
         assert!(names(&bar(Middle::Pane)).is_empty());
+    }
+
+    /// **A name measured to fit is drawn whole**: a tab's width is its name
+    /// and its ends, and its name is drawn in that width minus them, so in
+    /// the face the host draws with, at every size, closing or not, no name
+    /// is cut. Compared exactly, "Score" lost a millionth of a pixel and was
+    /// drawn as "Sco...".
+    #[test]
+    fn a_tab_measured_to_fit_draws_its_name_whole() {
+        font::atlas::set_embedded();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let m = Metrics::default().resolved(scale);
+            for size in [1.0, 1.25, 1.5, 2.0, 2.5, 3.0] {
+                for name in ["Score", "Audio", "Multitrack", "Multitrack 2", "Notes"] {
+                    for closes in [true, false] {
+                        let w = tab_width(name, size, &m, closes);
+                        let (before, after) = tab_ends(&m, closes);
+                        assert!(
+                            font::fits(name, w - before - after, size),
+                            "{name} at {size}, scale {scale}, closes {closes}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
