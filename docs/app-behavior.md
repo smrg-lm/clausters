@@ -310,7 +310,10 @@ code that keeps it lives.
   panel shown or hidden beside a view) keeps the pictures of every view that
   reads the buffer it read: the view does not empty and is not asked for
   again, and the fetch the new tree makes lands in the picture on screen,
-  without counting as an edit of the take.
+  without counting as an edit of the take. It keeps its place in the dock
+  the same way: a window whose menu the dock's bar shows goes on showing it
+  there and draws no bar of its own, not even for a frame, and the dock's
+  bar shows the menu as the new tree has it.
 - **A spectrogram shows only magnitudes the analysis measured.** A pixel
   inside one bin or one column shows that value, so a bin taller than a pixel
   is a block as tall as its band and a column wider than a pixel a block as

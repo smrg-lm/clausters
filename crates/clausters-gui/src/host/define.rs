@@ -261,6 +261,11 @@ impl Host {
         self.sync_subscriptions();
         self.sync_timeline_groups(Some(window));
         self.settle_dialog(window, effects);
+        // a window whose menu the dock's bar shows: the bar shows it as the
+        // tree now has it
+        if let Some(bar) = self.menu_changed(window) {
+            effects.push(HostEffect::Redraw(bar));
+        }
         effects.push(HostEffect::OpenWindow(window));
     }
 

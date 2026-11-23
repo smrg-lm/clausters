@@ -102,11 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A window rebuilt in the dock shows its own menu bar for a frame**
-  *(`crates/clausters-gui/PLAN.md`, Found by use)*. A rebuilt window forgets
-  that the dock's bar shows its menu; seen opening the spectrogram settings
-  and the roll's event inspector.
-
 - ⬜ **A page's tab cuts a name that was measured to fit**
   *(`crates/clausters-gui/PLAN.md`, Found by use)*. The measure and the cut
   are two formulas that meet only up to rounding.

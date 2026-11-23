@@ -40,6 +40,8 @@
 //!   per-widget mark a marquee left) -- what the hand is holding.
 //! - **The active layer and what is hidden** -- which of a container's layered
 //!   contents the hand is on, and which of them are drawn.
+//! - **Where a window's bar shows its menu from** -- its own, the dock's bar,
+//!   or another window's -- which the dock decides and no def can say.
 //!
 //! # The bulk is kept by being asked for
 //!
@@ -233,6 +235,20 @@ fn carry<'a>(
     // Nothing on the wire sets the mark a marquee left, so there is no "the def
     // said so" case for it: it is the host's, always.
     fresh.selected = held.selected;
+    // Nor where a window's bar shows its menu from, which the dock decided: a
+    // window rebuilt showing its own drew a second bar under the dock's for
+    // the frame before the dock decided again.
+    if let (
+        WidgetKind::Window {
+            menu_shown: was, ..
+        },
+        WidgetKind::Window {
+            menu_shown: now, ..
+        },
+    ) = (&held.kind, &mut fresh.kind)
+    {
+        now.clone_from(was);
+    }
     if !says.contains_key("layer") {
         fresh.layer = held.layer;
     }

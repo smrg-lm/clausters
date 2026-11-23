@@ -79,8 +79,9 @@ impl Host {
         true
     }
 
-    /// **Window `id`'s own menu changed**: a bar showing it in its place
-    /// shows the new one. Answers that bar, to be drawn again.
+    /// **Window `id`'s own menu may have changed**: a bar showing it in its
+    /// place shows it as it is now. Answers that bar when what it shows
+    /// changed, to be drawn again.
     pub(crate) fn menu_changed(&mut self, id: i32) -> Option<i32> {
         let entries = self
             .window_def(id)
@@ -98,8 +99,8 @@ impl Host {
                 window: id,
                 entries,
             },
-        );
-        Some(bar)
+        )
+        .then_some(bar)
     }
 }
 
@@ -164,5 +165,46 @@ mod tests {
         dock.remove(1);
         host.show_menus(&dock);
         assert_eq!(shown(&host, 2).unwrap()[0].label, "Code");
+    }
+
+    /// **A window redefined keeps what the dock decided of its bar**: an
+    /// application that rebuilds its window (a panel shown or hidden) draws
+    /// no bar of its own in the frame before the dock decides again, which
+    /// showed the menu twice for an instant; and the dock's bar shows the
+    /// new menu at once.
+    #[test]
+    fn a_window_redefined_keeps_its_bar_away() {
+        let mut host = Host::new();
+        let app = |label: &str| {
+            format!(
+                r#"{{"type":"window","menu":[{{"label":"{label}","menu":[{{"label":"Open","verb":"open"}}]}}],
+                    "children":[]}}"#
+            )
+        };
+        def(&mut host, 1, &app("File"));
+        def(
+            &mut host,
+            2,
+            r#"{"type":"window","dock_edge":"top","h":40,
+                "menu":[{"label":"Code","menu":[{"label":"New","verb":"new_file"}]}],
+                "children":[]}"#,
+        );
+        let mut dock = Dock::new((600, 440), host.metrics.resolved(1.0));
+        dock.add_edge(2, Edge::Top, 40);
+        dock.add(1);
+        host.show_menus(&dock);
+        def(&mut host, 1, &app("Edit"));
+        let shown =
+            |host: &Host, id| menubar::entries(host.window_def(id).unwrap()).map(<[_]>::to_vec);
+        assert_eq!(shown(&host, 1), None, "the rebuilt window draws no bar");
+        assert_eq!(
+            shown(&host, 2).unwrap()[0].label,
+            "Edit",
+            "the dock's bar shows the new menu"
+        );
+        assert!(
+            host.show_menus(&dock).is_empty(),
+            "nothing left for the dock to decide"
+        );
     }
 }

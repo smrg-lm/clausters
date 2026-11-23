@@ -10324,3 +10324,21 @@ module of its own.
   rows across with its scroll. The hover card copies from the same reading
   of its rows and draws its selection from the same spans. The pointer is
   the I-beam over the page's text and the arrow beside it.)*
+
+- ✅ **A window rebuilt in the dock shows its own menu bar for a frame**
+  *(found by the user, 2026-11-22; fixed 2026-11-23)*. Opening the audio
+  editor's spectrogram settings or the roll's event inspector showed the
+  menu bar twice for an instant. Both redefine the window whole
+  (`restructure`), and where a window's bar shows its menu from
+  (`MenuShown`) is host state kept in the window's tree, which the
+  reconcile did not carry: the rebuilt window started at `Own` and drew
+  its own bar under the dock's until the next `show_menus` marked it
+  `Away` again. The fix is general rather than per application: the
+  reconcile carries `menu_shown` with the rest of the host's state, so
+  every redefinition of every window keeps what the dock decided, and
+  `tree_changed`, the one door a redefined tree passes, brings the dock's
+  bar up to the window's menu as the new tree has it (a check that moved
+  with the panel shown). `menu_changed` answers a bar only when what it
+  shows changed. Checked by
+  `a_window_redefined_keeps_its_bar_away`, which failed before the fix
+  with the rebuilt window answering its own entries.

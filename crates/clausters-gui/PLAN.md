@@ -1597,19 +1597,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **A window rebuilt in the dock shows its own menu bar for a frame**
-  *(found by the user, 2026-11-22)*. Opening the audio editor's spectrogram
-  settings or the roll's event inspector shows the menu bar twice for an
-  instant. Both rebuild the window's tree, and a window built anew starts
-  with `menu_shown` at its default, `Own` (`host/widget/build.rs`), so it
-  draws its own bar until the next `show_menus` (`host/dock/menus.rs`)
-  marks it `Away` again, under the dock's bar that already shows its menu.
-  The fix most likely is that a redefinition of a window keeps what the
-  dock decided of its bar, or that `show_menus` runs before the rebuilt
-  window is drawn; it is one door for every application, native and in a
-  page, the standalone host's and the code editor's. Check with a capture
-  of the frame after the rebuild before believing the cause.
-
 - ⬜ **A page's tab cuts a name that was measured to fit** *(found by the
   user, 2026-11-22)*. The pager shows "Sco..." and "Multitra..." where a
   second multitrack's "Multitrack 2" is shown whole. `Dock::page_parts`
