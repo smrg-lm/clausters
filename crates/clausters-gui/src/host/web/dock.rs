@@ -40,6 +40,9 @@ pub(super) struct WebShell {
     buttons: Rc<Cell<u16>>,
     mods: Rc<Cell<u8>>,
     _listener: Option<PointerListener>,
+    /// Ctrl+V let through to the browser on the shell's canvas, its paste
+    /// the pane the keyboard goes to (`clipboard`).
+    _paster: Option<super::clipboard::Paster>,
     /// A size the page reported before the GPU came up.
     pending_size: Option<(u32, u32)>,
     /// The panes behind another's tab, told they are not seen.
@@ -63,6 +66,15 @@ impl WebApp {
     /// panel's.
     pub(super) fn is_dock_window(&self, id: WindowId) -> bool {
         self.shell_of(id).is_some()
+    }
+
+    /// The pane shell `which` has the keyboard going to.
+    pub(super) fn shell_focus(&self, which: Which) -> Option<i32> {
+        match which {
+            Which::Main => self.dock.as_ref(),
+            Which::Float(def) => self.floats.get(&def),
+        }
+        .and_then(|shell| shell.layout.focus())
     }
 
     /// The shell whose canvas window is `id`.
@@ -137,6 +149,10 @@ impl WebApp {
         let buttons = Rc::new(Cell::new(0));
         let mods = Rc::new(Cell::new(0));
         let listener = watch_buttons(&window, &buttons, &mods);
+        let paster = window.canvas().and_then(|c| {
+            let to = super::clipboard::PasteTo::Shell(which);
+            super::clipboard::Paster::attach(self.id, to, c.into())
+        });
         let scale = window.scale_factor() as f32;
         let metrics = self.host.metrics.resolved(scale);
         let layout = match which {
@@ -171,6 +187,7 @@ impl WebApp {
             buttons,
             mods,
             _listener: listener,
+            _paster: paster,
             pending_size: None,
             hidden: HashSet::new(),
             cursor: Pointer::Default,

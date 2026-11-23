@@ -10381,3 +10381,27 @@ module of its own.
   client says it keeps the work"); checked by
   `an_audio_window_asks_unless_its_client_keeps_the_work`.
 
+
+- ✅ **A paste in the web editor typed the clipboard as Ctrl chords**
+  *(found by the user, 2026-11-23; fixed 2026-11-23)*. Ctrl+V on the code
+  editor in a page opened tabs, stacked dialogs, zoomed and froze the
+  page, and pasted something copied earlier. A text widget with the focus
+  has the keyboard through the hidden field of `web/compose.rs`, and the
+  field let Ctrl+V through to the browser, whose paste reached it as a
+  `beforeinput` of the whole text. That text was typed a character at a
+  time, through `on_key`, with the Control still held in the slot's
+  modifiers, so every character was a chord: an `n` a new tab, an `o` the
+  open dialog, a `+` a zoom, a `v` a paste of the host's own clipboard.
+  The paste on a window's canvas already took the browser's text into the
+  paste verb (`web/clipboard.rs`), so the field now takes the same road: a
+  `Paster` on the field turns the browser's `paste` into one paste of the
+  whole text, its line breaks kept, and a `beforeinput` paste that comes
+  without one does the same. The dock's canvas and a floating panel's had
+  no `Paster` at all, so Ctrl+V on a pane with no text focus pasted the
+  host's stale clipboard; a shell's `Paster` now pastes into the pane its
+  keyboard goes to (`PasteTo::Shell`). Typing itself is never a chord:
+  what the field hands over is characters, pressed with no modifiers
+  whatever made them. Checked by the editor page's e2e
+  (`crates/clausters-editor/page/tests/page.e2e.mjs`), which pastes with
+  the browser's own Ctrl+V in Chrome and in Firefox: it fails on the
+  previous host and passes on this one.

@@ -408,9 +408,10 @@ impl WebApp {
         slot.appended = appending;
         slot.watch_buttons();
         slot.composer = compose::Composer::attach(self.id, def_id);
-        slot.paster = window
-            .canvas()
-            .and_then(|c| super::clipboard::Paster::attach(self.id, def_id, c.into()));
+        slot.paster = window.canvas().and_then(|c| {
+            let to = super::clipboard::PasteTo::Window(def_id);
+            super::clipboard::Paster::attach(self.id, to, c.into())
+        });
         self.canvases.insert(def_id, slot);
         log(&format!(
             "def {def_id}: canvas attached; requesting GPU adapter"

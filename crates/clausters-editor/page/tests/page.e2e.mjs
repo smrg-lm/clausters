@@ -141,6 +141,24 @@ async function chrome() {
         await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
       }
     },
+    /** Ctrl+V of the browser's own with `text` on its clipboard: Control
+     *  pressed and held, then V, which runs the browser's paste. */
+    paste: async (text) => {
+      const origin = new URL(PAGE).origin;
+      await send("Browser.grantPermissions", { origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] });
+      const { exceptionDetails } = await send("Runtime.evaluate", {
+        expression: `navigator.clipboard.writeText(${JSON.stringify(text)})`,
+        awaitPromise: true,
+        userGesture: true,
+      });
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+      const control = { key: "Control", code: "ControlLeft", windowsVirtualKeyCode: 17 };
+      const v = { key: "v", code: "KeyV", windowsVirtualKeyCode: 86, modifiers: 2 };
+      await send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...control, modifiers: 2 });
+      await send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...v, commands: ["paste"] });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", ...v });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", ...control });
+    },
   };
 }
 
@@ -164,6 +182,32 @@ async function firefox() {
   };
   return {
     evaluate,
+    /** Ctrl+V of the browser's own with `text` on its clipboard: Control
+     *  pressed and held, then V, which runs the browser's paste. */
+    paste: async (text) => {
+      const answer = await send("script.evaluate", {
+        expression: `navigator.clipboard.writeText(${JSON.stringify(text)})`,
+        target: { context },
+        awaitPromise: true,
+        userActivation: true,
+      });
+      if (answer.type === "exception") throw new Error(answer.exceptionDetails?.text ?? "the clipboard was not written");
+      await send("input.performActions", {
+        context,
+        actions: [
+          {
+            type: "key",
+            id: "keyboard",
+            actions: [
+              { type: "keyDown", value: "\uE009" },
+              { type: "keyDown", value: "v" },
+              { type: "keyUp", value: "v" },
+              { type: "keyUp", value: "\uE009" },
+            ],
+          },
+        ],
+      });
+    },
     /** A click of the browser's own at (x, y): the page's first gesture. */
     click: (x, y) =>
       send("input.performActions", {
@@ -389,6 +433,23 @@ try {
     if (!text.includes("Session.live")) await key("Backspace");
   }
   check(text.includes("Session.live"), "completions come from the package's types");
+
+  // A paste is one edit of the browser's text: Ctrl+V in the editor puts
+  // the clipboard in whole, its line breaks kept, and none of its
+  // characters reaches the keys under the Control still held, where an `n`
+  // was a new tab, an `o` the open dialog and a `+` a zoom.
+  {
+    const pasted = 'import { Session } from "clausters";\nconst one = 1 + 2;\nconsole.log("now", one);\n';
+    const panes = () => host(`return (await host.dockCall({ verb: "layout" })).members.length`);
+    const before = await panes();
+    await host(`host.set(${CODE}, { focus: 1, text: "" })`);
+    await page.click(300, 300);
+    await page.paste(pasted);
+    await sleep(800);
+    text = await host(`return String((await host.query(${CODE})).props.text)`);
+    check(text === pasted, "Ctrl+V pastes the browser's clipboard into the editor, whole");
+    check((await panes()) === before, "and none of its characters is a chord: no tab or dialog opens");
+  }
 
   // Saving into the page's storage, in the editor's own file dialog.
   await key("a", "ctrl");

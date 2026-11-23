@@ -21,7 +21,7 @@
 //! While the field holds the keyboard it is the shell's only key source, so it
 //! forwards each thing exactly once, over three listeners:
 //!
-//! - **`beforeinput`** -- a letter typed outright, or a pasted run.
+//! - **`beforeinput`** -- a letter typed outright.
 //! - **`compositionend`** -- what an input method *finished*, and only that.
 //!   A composition is a negotiation: a dead key emits the bare accent first
 //!   and settles on the accented letter afterwards, an IME shows a whole
@@ -33,6 +33,12 @@
 //!   Escape) plus the chords, since a `Ctrl+C` is a command and never a
 //!   character. A keydown that *is* a character is dropped here and left to
 //!   the two above, which is what keeps a letter from arriving twice.
+//!
+//! **A paste is no typing.** Ctrl+V on the field is the browser's, and its
+//! `paste` is the widget's paste verb with the browser's text, as on a
+//! canvas (`clipboard`): one edit, its line breaks kept, where typing the
+//! text would have pressed each character under the Ctrl still held -- a
+//! chord each, a new tab for an `n`, a zoom for a `+`.
 //!
 //! The field is never read and never holds anything: the host owns the text,
 //! and every event is cancelled so the element stays empty. It is one input per
@@ -58,6 +64,8 @@ pub(super) struct Composer {
     _typed: Closure<dyn FnMut(web_sys::InputEvent)>,
     _composed: Closure<dyn FnMut(web_sys::CompositionEvent)>,
     _keys: Closure<dyn FnMut(web_sys::KeyboardEvent)>,
+    /// Ctrl+V let through to the browser, its paste the widget's paste verb.
+    _paster: Option<super::clipboard::Paster>,
 }
 
 impl Drop for Composer {
@@ -108,8 +116,9 @@ impl Composer {
                 if event.is_composing() {
                     return;
                 }
-                // A letter or a paste. Everything else (a deletion, a format)
-                // is a command and comes off `keydown`.
+                // A letter, or a paste the `paste` listener did not take.
+                // Everything else (a deletion, a format) is a command and
+                // comes off `keydown`.
                 let kind = event.input_type();
                 if !matches!(kind.as_str(), "insertText" | "insertFromPaste") {
                     return;
@@ -117,7 +126,12 @@ impl Composer {
                 // Cancelled either way: the element must stay empty, since a
                 // field that accumulated would start reporting its own history.
                 event.prevent_default();
-                let Some(text) = event.data().filter(|t| !t.is_empty()) else {
+                let text = event.data().filter(|t| !t.is_empty());
+                if kind == "insertFromPaste" {
+                    let to = super::clipboard::PasteTo::Window(def_id);
+                    return send(host, WebEvent::Pasted { to, text });
+                }
+                let Some(text) = text else {
                     return;
                 };
                 send(host, WebEvent::Typed { def_id, text });
@@ -188,6 +202,11 @@ impl Composer {
             },
         );
         let target: &web_sys::EventTarget = input.as_ref();
+        let paster = super::clipboard::Paster::attach(
+            host,
+            super::clipboard::PasteTo::Window(def_id),
+            target.clone(),
+        );
         target
             .add_event_listener_with_callback("beforeinput", typed.as_ref().unchecked_ref())
             .ok()?;
@@ -205,6 +224,7 @@ impl Composer {
             _typed: typed,
             _composed: composed,
             _keys: keys,
+            _paster: paster,
         })
     }
 
@@ -252,9 +272,17 @@ impl WebApp {
 
     /// Text the field produced: each character takes the ordinary key road, so
     /// a composed `á` reaches the widget exactly as a typed `a` does.
+    ///
+    /// **Text is never a chord**: what the field hands over is characters,
+    /// whatever modifiers made them (AltGr's Ctrl+Alt, a Ctrl still held), so
+    /// they are pressed with none and the keyboard's come back afterwards.
     pub(super) fn on_typed(&mut self, def_id: i32, text: &str) {
+        let held = self.canvases.get(&def_id).map(|slot| slot.mods.replace(0));
         for ch in text.chars() {
             self.on_key(def_id, &Key::Character(ch.to_string().into()));
+        }
+        if let (Some(held), Some(slot)) = (held, self.canvases.get(&def_id)) {
+            slot.mods.set(held);
         }
         self.aim_keyboard(def_id);
     }

@@ -9,8 +9,10 @@
 //!   made it, which a browser allows without asking.
 //! - **Ctrl+V takes the text the browser's `paste` event carries**, which
 //!   needs no permission: the key is let through to the browser, its
-//!   `paste` lands on the canvas, and the host performs the paste with that
-//!   text handed over first.
+//!   `paste` lands where the keyboard is (a window's canvas, the dock's, or
+//!   the field a text widget is typed through), and the host performs the
+//!   paste with that text handed over first: one paste of the whole text,
+//!   never its characters typed one by one.
 //! - **A paste from a menu reads it asynchronously**
 //!   (`navigator.clipboard.readText`, which a browser may ask the reader's
 //!   permission for): the paste waits for the text
@@ -28,6 +30,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::Closure;
 
 use crate::host::clipboard::SystemClipboard;
+use crate::host::dock::Which;
 
 use super::files::{call, field};
 use super::{HostEvent, HostId, WebApp, WebEvent, web_proxy};
@@ -35,6 +38,14 @@ use super::{HostEvent, HostId, WebApp, WebEvent, web_proxy};
 /// The text the browser last handed over, shared by the clipboard and the
 /// front that fills it.
 pub(super) type Text = Arc<Mutex<Option<String>>>;
+
+/// **Whose paste the browser's lands as**: a window's, or that of the pane
+/// a dock's shell (its canvas) has the keyboard going to.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum PasteTo {
+    Window(i32),
+    Shell(Which),
+}
 
 /// **The page's clipboard**, as the host's [`SystemClipboard`].
 pub(super) struct PageClipboard(pub Text);
@@ -63,9 +74,10 @@ impl SystemClipboard for PageClipboard {
     }
 }
 
-/// **The listeners that let Ctrl+V through to the browser** on one canvas:
-/// the key is kept from the shell, which would cancel it, so the browser
-/// fires its `paste`; and the `paste` hands its text to the host.
+/// **The listeners that let Ctrl+V through to the browser** on one element
+/// the keyboard goes to (a canvas, or a text widget's field): the key is
+/// kept from the shell, which would cancel it, so the browser fires its
+/// `paste`; and the `paste` hands its text to the host.
 pub(super) struct Paster {
     canvas: web_sys::EventTarget,
     _keys: Closure<dyn FnMut(web_sys::KeyboardEvent)>,
@@ -98,8 +110,8 @@ pub(super) fn is_paste_key(event: &web_sys::KeyboardEvent) -> bool {
 }
 
 impl Paster {
-    /// The listeners on `canvas`, for window `def_id` of host `host`.
-    pub(super) fn attach(host: HostId, def_id: i32, canvas: web_sys::EventTarget) -> Option<Self> {
+    /// The listeners on `canvas`, for the paste of `to` on host `host`.
+    pub(super) fn attach(host: HostId, to: PasteTo, canvas: web_sys::EventTarget) -> Option<Self> {
         // the key, before the shell's own listener: kept from it, so nothing
         // cancels the browser's paste
         let keys = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
@@ -111,7 +123,7 @@ impl Paster {
                 // a browser that fires no `paste` here still pastes: the
                 // paste goes on by a read once the browser's turn is over
                 if let Some(proxy) = web_proxy() {
-                    let _ = proxy.send_event(HostEvent::To(host, WebEvent::PasteKey { def_id }));
+                    let _ = proxy.send_event(HostEvent::To(host, WebEvent::PasteKey { to }));
                 }
             },
         );
@@ -124,7 +136,7 @@ impl Paster {
                 .and_then(|f| f.call1(&data, &JsValue::from_str("text/plain")).ok())
                 .and_then(|t| t.as_string());
             if let Some(proxy) = web_proxy() {
-                let _ = proxy.send_event(HostEvent::To(host, WebEvent::Pasted { def_id, text }));
+                let _ = proxy.send_event(HostEvent::To(host, WebEvent::Pasted { to, text }));
             }
         });
         canvas
@@ -146,6 +158,15 @@ impl Paster {
 }
 
 impl WebApp {
+    /// **The window a paste of `to` is for**: the window, or the pane the
+    /// shell's keyboard goes to.
+    pub(super) fn paste_window(&self, to: PasteTo) -> Option<i32> {
+        match to {
+            PasteTo::Window(def) => Some(def),
+            PasteTo::Shell(which) => self.shell_focus(which),
+        }
+    }
+
     /// **The browser handed text over for window `def`'s paste**: the paste
     /// event's, or the menu's read (`None` where it was refused, when the
     /// host's own clipboard is pasted). The paste is performed with it.

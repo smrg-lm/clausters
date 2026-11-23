@@ -241,12 +241,15 @@ enum WebEvent {
         ticket: u64,
         result: Result<crate::host::files::Listing, String>,
     },
-    /// **The browser's `paste` landed on window `def_id`**, with the text it
-    /// carried (`clipboard`).
-    Pasted { def_id: i32, text: Option<String> },
-    /// The paste key was pressed on window `def_id` and let through to the
-    /// browser (`clipboard`).
-    PasteKey { def_id: i32 },
+    /// **The browser's `paste` landed for `to`**, with the text it carried
+    /// (`clipboard`).
+    Pasted {
+        to: clipboard::PasteTo,
+        text: Option<String>,
+    },
+    /// The paste key was pressed for `to` and let through to the browser
+    /// (`clipboard`).
+    PasteKey { to: clipboard::PasteTo },
     /// A moment after it, for a browser that fired no `paste`.
     PasteKeyLate { def_id: i32 },
     /// The browser's clipboard was read for a paste that waited on it:
@@ -1411,8 +1414,16 @@ impl WebApp {
                 ticket,
                 result,
             } => self.on_read(def_id, widget_id, ticket, result),
-            WebEvent::Pasted { def_id, text } => self.on_pasted(def_id, "paste", text),
-            WebEvent::PasteKey { def_id } => self.on_paste_key(def_id),
+            WebEvent::Pasted { to, text } => {
+                if let Some(def) = self.paste_window(to) {
+                    self.on_pasted(def, "paste", text);
+                }
+            }
+            WebEvent::PasteKey { to } => {
+                if let Some(def) = self.paste_window(to) {
+                    self.on_paste_key(def);
+                }
+            }
             WebEvent::PasteKeyLate { def_id } => self.on_paste_key_late(def_id),
             WebEvent::ClipboardRead { def_id, verb, text } => self.on_pasted(def_id, &verb, text),
             WebEvent::Captured { of, path, result } => match of {
