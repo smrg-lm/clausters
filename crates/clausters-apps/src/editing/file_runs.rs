@@ -239,7 +239,11 @@ impl Editing {
                     return ran;
                 }
                 Some(Leaving::File(change)) => {
-                    if let Some(mut roll) = self.rolls.remove(&member).or_else(|| Roll::new(self)) {
+                    if let Some(mut roll) = self
+                        .rolls
+                        .remove(&member)
+                        .or_else(|| Roll::new(self, member))
+                    {
                         if let Err(why) =
                             self.file_change::<A>(member, &mut roll, change, ids, &mut ran)
                         {

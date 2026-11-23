@@ -342,11 +342,6 @@ fn ruler(w: &Window<'_>) -> Value {
 /// at the head of its toolbar.
 fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
     let mut tools = crate::transport::tools(clausters_editing::verbs::MULTITRACK);
-    tools.push(chrome::tool(
-        App::Multitrack,
-        editor::STOP_AT_END_VERB,
-        Some(&chrome::glyph(chrome::TO_END)),
-    ));
     // A reading, written on every tick of the transport: drawn on the
     // window's live layer, so a write costs the label and not the window
     // -- and as wide as its longest reading, so a tick moves no tool.

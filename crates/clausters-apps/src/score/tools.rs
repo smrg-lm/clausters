@@ -507,7 +507,10 @@ mod tests {
             .iter()
             .filter_map(|c| c["verb"].as_str())
             .collect();
-        assert_eq!(verbs, ["to_start", "pause", "stop", "to_end", "loop"]);
+        assert_eq!(
+            verbs,
+            ["to_start", "pause", "stop", "to_end", "loop", "stop_at_end"]
+        );
         // a window that numbered no tool has no toolbar
         assert!(toolbar(&Ids::new(), &state(), &Outlines::new()).is_none());
     }
@@ -544,7 +547,7 @@ mod tests {
         assert_eq!(by("layout")["options"], json!(["page", "line"]));
         // every symbol asked for is a codepoint, each once
         let asked = codes();
-        assert_eq!(asked.len(), 26);
+        assert_eq!(asked.len(), 25);
         let mut once = asked.clone();
         once.sort_unstable();
         once.dedup();

@@ -12,6 +12,7 @@
 use clausters_core::ids::IdSpaces;
 use clausters_editing::apply::Medium;
 use clausters_editing::notes_playback::NotesPlayback;
+use clausters_editing::playback::End;
 use serde_json::{Value, json};
 
 use super::{Editing, Member, MemberId, Raised, Ran};
@@ -29,15 +30,23 @@ pub(super) struct Roll {
 }
 
 impl Roll {
-    pub(super) fn new(editing: &mut Editing) -> Option<Roll> {
+    /// **Member `member`'s playback**: a roll's passes roll on past its
+    /// notes, as a multitrack's do, and a page's stop with its score
+    /// (`PAGE_END`), until the end switch is turned.
+    pub(super) fn new(editing: &mut Editing, member: MemberId) -> Option<Roll> {
+        let end = editing.roll_start_end(member);
         let engine = editing.engine.as_mut()?;
         Some(Roll {
             rate: engine.rate(),
-            playback: NotesPlayback::in_medium(engine.medium()),
+            playback: NotesPlayback::in_medium(engine.medium()).ending(end),
             cursor: 0.0,
         })
     }
 }
+
+/// Where a page's pass ends until its end switch is turned: with the score.
+#[cfg(feature = "notation")]
+pub(super) const PAGE_END: End = End::Contents;
 
 /// A window's effect.
 pub(super) fn effect(kind: &str, fields: Value) -> Value {
@@ -72,7 +81,7 @@ impl Editing {
     ) -> Ran {
         let mut roll = match self.rolls.remove(&member) {
             Some(roll) => roll,
-            None => match Roll::new(self) {
+            None => match Roll::new(self, member) {
                 Some(roll) => roll,
                 None => {
                     return Ran {
@@ -514,6 +523,20 @@ impl Editing {
             relooped,
             transport,
         } = asked;
+        // **the end switch** ([`crate::transport`]): a pass stops where the
+        // notes end, or rolls on past them -- the playback's own end, which
+        // the window's reading shows; nothing plays or stops for it
+        if transport == Some(crate::transport::Asked::StopAtEnd) {
+            let end = match roll.playback.end() {
+                End::Open => End::Contents,
+                _ => End::Open,
+            };
+            let rate = roll.rate;
+            self.roll_with(member, |sequence| {
+                roll.playback.set_end(end, sequence, rate)
+            });
+            return;
+        }
         if locate.is_some() || play.is_some() {
             // whether it rolls is the engine's: a pass may have ended on its
             // own
@@ -609,6 +632,52 @@ impl Editing {
         }
     }
 
+    /// **The rolls and pages whose playback believes its transport rolls
+    /// while the engine has stopped it**: a pass that ended where the notes
+    /// do, or at its range's end ([`Editing::stopped`]).
+    pub(super) fn rolls_stopped(&self) -> Vec<MemberId> {
+        let Some(engine) = self.engine.as_ref() else {
+            return Vec::new();
+        };
+        self.rolls
+            .iter()
+            .filter(|(_, roll)| {
+                roll.playback.rolling()
+                    && roll
+                        .playback
+                        .transport()
+                        .is_some_and(|transport| !engine.rolling(transport))
+            })
+            .map(|(member, _)| *member)
+            .collect()
+    }
+
+    /// **Whether member `member`'s passes stop where its notes end** (the
+    /// end switch's reading): its playback's end, or before it has one the
+    /// end it starts with -- open for a roll, the score's for a page.
+    pub(super) fn roll_ends(&self, member: MemberId) -> Option<bool> {
+        match self.member(member)? {
+            Member::Notes(_) => {}
+            #[cfg(feature = "notation")]
+            Member::Score(_) => {}
+            _ => return None,
+        }
+        let end = self
+            .rolls
+            .get(&member)
+            .map_or_else(|| self.roll_start_end(member), |r| r.playback.end());
+        Some(end == End::Contents)
+    }
+
+    /// Where member `member`'s passes end before its end switch is turned.
+    fn roll_start_end(&self, member: MemberId) -> End {
+        match self.member(member) {
+            #[cfg(feature = "notation")]
+            Some(Member::Score(_)) => PAGE_END,
+            _ => End::Open,
+        }
+    }
+
     /// Whether the roll's transport rolls, as the engine says now.
     fn roll_rolling(&self, roll: &mut Roll) {
         let rolling = roll.playback.transport().is_some_and(|transport| {
@@ -690,7 +759,7 @@ impl Editing {
     ) -> Ran {
         let mut roll = match self.rolls.remove(&member) {
             Some(roll) => roll,
-            None => match Roll::new(self) {
+            None => match Roll::new(self, member) {
                 Some(roll) => roll,
                 None => {
                     return Ran {

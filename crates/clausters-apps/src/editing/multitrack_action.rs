@@ -166,4 +166,13 @@ mod tests {
             Some(Some("session.json".into()))
         );
     }
+
+    /// **What the application asks of a pass that ended on its own** is
+    /// every member's `playing`, with the window to tell: a multitrack reads
+    /// it as its own.
+    #[test]
+    fn a_pass_ended_on_its_own_is_asked_as_any_member_s_playing() {
+        let action = Action::read(&json!({"verb": "playing", "window": true})).unwrap();
+        assert!(matches!(action.kind, Kind::Playing));
+    }
 }

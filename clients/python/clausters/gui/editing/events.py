@@ -312,6 +312,11 @@ class NotesEditor(Marking, SequenceHandler):
         next without a new attack (`clausters.seq.EventSequence.join`)."""
         return self.verb("join")
 
+    def stop_at_end(self) -> bool:
+        """Switch whether a pass stops where the notes end, or rolls on
+        past them: the window's ``stop_at_end`` (`verb`, Shift+L)."""
+        return self.verb("stop_at_end")
+
     def unjoin(self) -> bool:
         """Take the joins among what is selected away -- the window's
         ``unjoin`` (`verb`, Shift+J), `clausters.seq.EventSequence.unjoin`

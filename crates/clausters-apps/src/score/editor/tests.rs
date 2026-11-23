@@ -1034,7 +1034,10 @@ fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
     let row = tree["children"][0]["children"].as_array().unwrap();
     assert_eq!(row[0]["id"], 100);
     let verbs: Vec<&str> = row.iter().filter_map(|t| t["verb"].as_str()).collect();
-    assert_eq!(verbs, ["to_start", "pause", "stop", "to_end", "loop"]);
+    assert_eq!(
+        verbs,
+        ["to_start", "pause", "stop", "to_end", "loop", "stop_at_end"]
+    );
 }
 
 #[test]
@@ -1605,6 +1608,13 @@ fn a_play_asks_for_a_pass_from_where_the_selection_starts() {
         editor.event(&pick("pause", None), 1).transport,
         Some(crate::transport::Asked::Toggle)
     );
+    // the end switch, its key and its menu entry: the playback's to turn
+    for out in [
+        editor.event(&window("stop_at_end", 0), 1),
+        editor.event(&pick("stop_at_end", Some(1)), 1),
+    ] {
+        assert_eq!(out.transport, Some(crate::transport::Asked::StopAtEnd));
+    }
     // several: the stretch they cover, a quarter to the beat
     editor.event(&gesture("element", &[json!("n2")]), 1);
     editor.event(&gesture("element", &[json!("n3"), json!("extend")]), 1);

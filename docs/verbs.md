@@ -52,6 +52,8 @@ The verdict is one of three:
 | `window` | `close` | `Editor.close` | `Editor.close` | **api** |
 | `window` | `view_all` | `Editor.view_all` | `Editor.viewAll` | **api** |
 | `window` | `play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | `MultitrackTransport.play` `NotesEditor.play` `ScoreEditor.play` | **api** |
+| `window` | `pause` | `MultitrackTransport.pause` `AudioTransport.pause` `NotesEditor.pause` `ScoreEditor.pause` | `MultitrackTransport.pause` `AudioTransport.pause` `NotesEditor.pause` `ScoreEditor.pause` | **api** — the play tool plays or pauses; a script says which it means, and `play` after a pause goes on from there |
+| `window` | `stop` | `MultitrackTransport.stop` `AudioTransport.stop` `NotesEditor.stop` `ScoreEditor.stop` | `MultitrackTransport.stop` `AudioTransport.stop` `NotesEditor.stop` `ScoreEditor.stop` | **api** |
 | `window` | `loop` | `Editor.loop` | `Editor.loop` | **api** |
 | `window` | `to_start` | `Editor.to_start` | `Editor.toStart` | **api** — the multitrack's `rewind` also cues a stopped transport there |
 | `window` | `to_end` | `Editor.to_end` | `Editor.toEnd` | **api** |
@@ -81,8 +83,6 @@ The verdict is one of three:
 | `audio` | `apply` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** — the one effect today is the gain envelope |
 | `audio` | `apply_envelope` | `AudioEditor.apply_envelope` | `AudioEditor.applyEnvelope` | **api** |
 | `audio` | `reverse` | `AudioEditor.reverse` | `AudioEditor.reverse` | **api** |
-| `multitrack` | `pause` | `MultitrackTransport.pause` | `MultitrackTransport.pause` | **api** |
-| `multitrack` | `stop` | `MultitrackTransport.stop` | `MultitrackTransport.stop` | **api** |
 | `multitrack` | `stop_at_end` | `MultitrackEditor.stop_at_end` | `MultitrackEditor.stopAtEnd` | **api** |
 | `multitrack` | `crossfade` | `Multitrack.crossfade` | `Multitrack.crossfade` | **api** — a default of the multitrack, set on the structure |
 | `multitrack` | `add_track` | `Tracks.add` | `Tracks.add` | **api** — on the structure: `multitrack.tracks.add()` |
@@ -90,6 +90,7 @@ The verdict is one of three:
 | `multitrack` | `compact_tracks` | `MultitrackEditor.compact_tracks` | `MultitrackEditor.compactTracks` | **api** |
 | `multitrack` | `view_wave` | `MultitrackEditor.view_wave` | `MultitrackEditor.viewWave` | **api** |
 | `multitrack` | `view_spectrogram` | `MultitrackEditor.view_spectrogram` | `MultitrackEditor.viewSpectrogram` | **api** |
+| `notes` | `stop_at_end` | `NotesEditor.stop_at_end` | `NotesEditor.stopAtEnd` | **api** |
 | `notes` | `monophonic` | `NotesEditor.monophonic` | `NotesEditor.monophonic` | **api** — a switch: `monophonic = True`; on the web `setMonophonic(true)` |
 | `notes` | `events_panel` | `NotesEditor.events_panel` | `NotesEditor.eventsPanel` | **api** — a switch: `events_panel = True`; on the web `setEventsPanel(true)` |
 | `notes` | `display_settings` | `NotesEditor.display_panel` | `NotesEditor.displayPanel` | **api** — a switch: `display_panel = True`; on the web `setDisplayPanel(true)`; the settings themselves are `NotesEditor.display` and `set_display` (`display()`, `setDisplay`) |
@@ -166,6 +167,7 @@ The verdict is one of three:
 | `notes` | `dynamic_f` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("f")` |
 | `notes` | `dynamic_ff` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic("ff")` |
 | `notes` | `dynamic_none` | `NotesEditor.dynamic` | `NotesEditor.dynamic` | **api** — `dynamic(None)`; on the web `dynamic(null)` |
+| `score` | `stop_at_end` | `ScoreEditor.stop_at_end` | `ScoreEditor.stopAtEnd` | **api** |
 | `score` | `entry` | `ScoreEditor.entry` | `ScoreEditor.entry` | **api** |
 | `score` | `delete` | `ScoreEditor.delete` | `ScoreEditor.delete` | **api** |
 | `score` | `deselect` | `ScoreEditor.select` | `ScoreEditor.select` | **api** — with no elements |

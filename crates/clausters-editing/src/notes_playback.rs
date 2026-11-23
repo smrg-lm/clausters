@@ -470,6 +470,15 @@ impl<M: Medium> NotesPlayback<M> {
         self.end
     }
 
+    /// **The playback, its passes ending where `end` says** from the first:
+    /// what a holder whose passes end elsewhere than open starts it with,
+    /// before there is a sequence to read the end off.
+    #[must_use]
+    pub fn ending(mut self, end: End) -> Self {
+        self.end = end;
+        self
+    }
+
     /// **Where a pass ends** ([`End`]): open by default -- the transport rolls
     /// on past the last note, as a multitrack's does -- or where the last note
     /// ends, or at an end marker, a beat of the sequence; each going back to

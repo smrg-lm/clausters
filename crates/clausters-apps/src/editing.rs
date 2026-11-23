@@ -784,6 +784,11 @@ impl Editing {
         if let Some(rolling) = rolling {
             crate::transport::show(&mut states, rolling);
         }
+        // and the end switch where a pass ends, a roll's and a page's (a
+        // multitrack's editor reads its own)
+        if let Some(ends) = self.roll_ends(member) {
+            crate::transport::show_end(&mut states, Some(ends));
+        }
         states
     }
 

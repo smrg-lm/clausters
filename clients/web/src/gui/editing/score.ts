@@ -426,6 +426,11 @@ export class ScoreEditor extends SequenceHandler {
         return this.#act({ action: "silence" });
     }
 
+    /** Switch whether a pass stops where the score's notes end, or rolls on past them: the window's `stop_at_end` (Shift+L). */
+    stopAtEnd(): Promise<boolean> {
+        return this.verb("stop_at_end");
+    }
+
     /** Select previous item -- the window's `select_left` (`verb`). */
     selectLeft(): Promise<boolean> {
         return this.verb("select_left");

@@ -41,6 +41,7 @@ CLASSES = {
     "MultitrackEditor": ("clausters.gui.editing.multitrack", "gui/editing/multitrack.ts"),
     "MultitrackTransport": ("clausters.gui.editing.hosted", "gui/editing/hosted.ts"),
     "AudioEditor": ("clausters.gui.editing.audio", "gui/editing/audio.ts"),
+    "AudioTransport": ("clausters.gui.editing.audio", "gui/editing/audio.ts"),
     "NotesEditor": ("clausters.gui.editing.events", "gui/editing/events.ts"),
     "ScoreEditor": ("clausters.gui.editing.score", "gui/editing/score.ts"),
     "Multitrack": ("clausters.document", "document/multitrack.ts"),
@@ -57,6 +58,9 @@ def camel(name: str) -> str:
 def table() -> set:
     """``(scope, verb)`` for every row of the verb table."""
     source = TABLE.read_text()
+    # a row several scopes share is a constant of its own, named in each
+    shared = dict(re.findall(
+        r'pub const ([A-Z_]+): Verb = (?:verb|toggle)\(\s*"([a-z0-9_]+)"', source))
     rows = set()
     for const, scope in SCOPES.items():
         body = re.search(rf"pub const {const}: &\[Verb\] = &\[(.*?)\n\];", source, re.S)
@@ -64,6 +68,7 @@ def table() -> set:
         # a row is `verb(name, ..)`, `toggle(name, ..)` or `choice(group, name, ..)`
         rows |= {(scope, verb) for verb in re.findall(
             r'(?:verb|toggle|choice\(\s*"[a-z_]+",)\(?\s*"([a-z0-9_]+)"', body[1])}
+        rows |= {(scope, shared[name]) for name in re.findall(r"^\s*([A-Z_]+),$", body[1], re.M)}
     return rows
 
 

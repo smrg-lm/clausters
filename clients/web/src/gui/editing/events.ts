@@ -307,6 +307,11 @@ export class NotesEditor extends SequenceHandler {
         return this.verb("join");
     }
 
+    /** Switch whether a pass stops where the notes end, or rolls on past them: the window's `stop_at_end` (Shift+L). */
+    stopAtEnd(): Promise<boolean> {
+        return this.verb("stop_at_end");
+    }
+
     /**
      * Take the joins among what is selected away -- the window's `unjoin`
      * (Shift+J), {@link EventSequence.unjoin} over the roll's selection.

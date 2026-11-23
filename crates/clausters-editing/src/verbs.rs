@@ -314,13 +314,20 @@ pub const AUDIO: &[Verb] = &[
     toggle("spectrogram_settings", &[], "Spectrogram settings"),
 ];
 
+/// **The end switch**: whether a pass that is not looped stops where the
+/// contents end, or rolls on past them. Every application whose transport
+/// can roll on past its contents has it -- the multitrack's regions, a
+/// roll's notes, a page's score -- where a take always ends with its last
+/// frame.
+pub const STOP_AT_END: Verb = toggle("stop_at_end", &["Shift+L"], "Stop at end, on or off");
+
 /// The multitrack window's scope.
 pub const MULTITRACK_SCOPE: &str = "multitrack";
 
 /// **What the multitrack editor adds**: where a pass ends, its rows' own commands, how its boxes of samples are
 /// drawn, and the automatic crossfade.
 pub const MULTITRACK: &[Verb] = &[
-    toggle("stop_at_end", &["Shift+L"], "Stop at end, on or off"),
+    STOP_AT_END,
     toggle("crossfade", &[], "Crossfade overlaps, on or off"),
     verb("add_track", &[], "Add track"),
     verb("reset_heights", &[], "Reset track heights"),
@@ -337,6 +344,7 @@ pub const NOTES_SCOPE: &str = "notes";
 /// **What the notes editor adds**: how its roll edits, and the joins of a
 /// line. They are the roll's in both of its modes.
 pub const NOTES: &[Verb] = &[
+    STOP_AT_END,
     // one note at a time in a line: a gesture shortens what it covers
     toggle("monophonic", &["M"], "Edit monophonically, on or off"),
     // the inspector of the selected notes and the list of the events,
@@ -482,6 +490,7 @@ pub const NOTE_ENTRY_SCOPE: &str = "note_entry";
 /// **The score window's own keys**: over the selection, and into note entry.
 /// The chords are the settled ones of notation programs.
 pub const SCORE: &[Verb] = &[
+    STOP_AT_END,
     toggle("entry", &["N"], "Note entry on or off"),
     // over the selection: what note entry's own rows, read first while the
     // window is in it, give the cursor and the note written
@@ -733,6 +742,17 @@ mod tests {
         assert_eq!(label(MULTITRACK, "view_all"), "Zoom to fit");
         assert_eq!(label(MULTITRACK, "stop_at_end"), "Stop at end, on or off");
         assert_eq!(label(MULTITRACK, "make_coffee"), "Make coffee");
+    }
+
+    /// **The end switch is one verb**, in every scope whose transport can
+    /// roll on past its contents, and never in the audio editor's.
+    #[test]
+    fn the_end_switch_is_one_verb_where_a_pass_can_roll_on() {
+        for rows in [MULTITRACK, NOTES, SCORE] {
+            assert_eq!(find(rows, "stop_at_end"), Some(STOP_AT_END));
+        }
+        assert!(find(AUDIO, "stop_at_end").is_none());
+        assert!(find(WINDOW, "stop_at_end").is_none());
     }
 
     /// **A file is named alike in every application**: its verbs are the

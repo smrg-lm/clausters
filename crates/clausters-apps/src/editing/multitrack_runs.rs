@@ -733,6 +733,22 @@ impl Editing {
         }
     }
 
+    /// **The multitracks whose playback believes its transport rolls while
+    /// the engine has stopped it**: a pass that ended where the contents do
+    /// ([`Editing::stopped`]).
+    pub(super) fn tracks_stopped(&self) -> Vec<MemberId> {
+        let Some(engine) = self.engine.as_ref() else {
+            return Vec::new();
+        };
+        self.tracks
+            .iter()
+            .filter(|(_, tracks)| {
+                tracks.playback.rolling() && !engine.rolling(tracks.playback.transport())
+            })
+            .map(|(member, _)| *member)
+            .collect()
+    }
+
     /// Whether the multitrack's transport rolls, as the engine says now.
     fn multitrack_rolling(&self, tracks: &mut Tracks) -> bool {
         let rolling = self
@@ -868,6 +884,9 @@ impl Editing {
                 tracks.playback.set_end(end);
             }
             Some(TransportVerb::Cue { secs }) => {
+                // a pass may have ended on its own: stopped, the transport
+                // stands on the cursor
+                self.multitrack_rolling(tracks);
                 let frame = tracks.frame(secs);
                 tracks.playback.cue(frame);
             }

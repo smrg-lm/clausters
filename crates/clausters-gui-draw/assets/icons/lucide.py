@@ -24,13 +24,15 @@ from pathlib import Path
 
 # The icons the host carries, by Lucide's name: the editor's tools and its
 # components', the host's chrome, the transport an application's toolbar
-# shows, and the applications a bar opens (audio-waveform, keyboard-music,
-# layers, music), the applications' edit tools (the roll's, which its
-# pointer is drawn from too: mouse-pointer-2, pencil, eraser, scissors,
-# unfold-horizontal; the snap switch, magnet; the audio editor's clipboard,
-# scissors, copy, clipboard-paste, trash).
+# shows (its end switch, arrow-right-to-line), and the applications a bar
+# opens (audio-waveform, keyboard-music, layers, music), the applications'
+# edit tools (the roll's, which its pointer is drawn from too:
+# mouse-pointer-2, pencil, eraser, scissors, unfold-horizontal; the snap
+# switch, magnet; the audio editor's clipboard, scissors, copy,
+# clipboard-paste, trash).
 SUBSET = [
-    "arrow-down-to-line", "arrow-left", "arrow-right", "audio-waveform",
+    "arrow-down-to-line", "arrow-left", "arrow-right", "arrow-right-to-line",
+    "audio-waveform",
     "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up",
     "circle", "clipboard-paste", "copy", "download", "ellipsis-vertical",
     "eraser", "file-text", "folder", "folder-open", "grip-vertical", "house",

@@ -1581,6 +1581,8 @@ impl ScoreEditor {
         match asked {
             crate::transport::Asked::Toggle => self.leave_to_play(),
             crate::transport::Asked::Stop => self.corrections(),
+            // the playback's own switch, which the window's reading shows
+            crate::transport::Asked::StopAtEnd => Vec::new(),
         }
     }
 

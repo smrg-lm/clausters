@@ -637,7 +637,9 @@ impl Converse for AudioEditor {
         // **The space bar over the window is a play**, the window's own verb
         // and the application's to read (the window says `plays`): what it
         // asks of the playback, with the loop switch the host sends beside it.
-        let asked = crate::transport::asked(&message.tag);
+        // a take always ends with its last frame, so it has no end switch
+        let asked = crate::transport::asked(&message.tag)
+            .filter(|asked| *asked != crate::transport::Asked::StopAtEnd);
         if asked.is_some() || message.tag == "play" || message.tag == "loop" {
             out.turn = Kind::Route;
             // the loop switch the host sends beside the space bar and `L`;

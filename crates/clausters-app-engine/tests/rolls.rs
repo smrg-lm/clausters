@@ -78,3 +78,86 @@ fn two_rolls_over_one_sequence_each_sound_it() {
         );
     }
 }
+
+/// **A roll's pass that ends on its own is taken in**, as the audio
+/// editor's is: with its end switch on, the pass stops where the last note
+/// ends, the roll hears it on the application's turn with nothing asked of
+/// it, and the cursor sent back to the start then leaves it stopped -- it
+/// does not play the roll again from there. Switched off, a pass rolls on
+/// past the notes, as a multitrack's does.
+#[test]
+fn a_roll_s_pass_that_ends_on_its_own_is_taken_in() {
+    use clausters_app_engine::app::App;
+    use clausters_apps::editing::Editing;
+
+    let (mut engine, handle) = engine_pair(SR as f32, 2);
+    let mut app = App::new(Arc::new(Mutex::new(AppEngine::over(handle))));
+    let app_engine = Arc::clone(app.engine());
+    let mut editing = Editing::new();
+    app.hold(&mut editing);
+    let opened = app.call(
+        &mut editing,
+        &json!({"verb": "openNotes", "key": "roll:ends"}),
+    );
+    let member = opened["member"].as_u64().expect("a notes member") as u32;
+    let act = |app: &mut App, editing: &mut Editing, action: serde_json::Value| {
+        let ran = app.act(editing, member, action.clone(), 1, None);
+        assert!(
+            ran.end.as_ref().is_some_and(Result::is_ok),
+            "{action}: {:?}",
+            ran.end
+        );
+    };
+    act(&mut app, &mut editing, json!({"verb": "open"}));
+    act(
+        &mut app,
+        &mut editing,
+        json!({"verb": "handle", "call": {"verb": "loadrows",
+            "keys": ["beat", "midinote", "sustain"], "rows": [[0, 72, 0.25]]}}),
+    );
+    let rolling = |app: &mut App, editing: &mut Editing| {
+        app.query(editing, member, "transport")["rolling"].clone()
+    };
+    let ends = |app: &mut App, editing: &mut Editing| {
+        app.call(editing, &json!({"verb": "actions", "member": member}))["stop_at_end"]["checked"]
+            .clone()
+    };
+    // **a roll rolls on past its notes** until its end switch is turned
+    assert_eq!(ends(&mut app, &mut editing), false);
+    act(&mut app, &mut editing, json!({"verb": "play", "beat": 0.0}));
+    for _ in 0..200 {
+        blocks(&mut engine, &app_engine, 1);
+        assert!(app.landed(&mut editing).is_empty(), "nothing ends");
+    }
+    assert_eq!(rolling(&mut app, &mut editing), true, "open: it rolls on");
+    act(&mut app, &mut editing, json!({"verb": "stop", "mark": 0.0}));
+    act(
+        &mut app,
+        &mut editing,
+        json!({"verb": "end", "end": "contents"}),
+    );
+    assert_eq!(ends(&mut app, &mut editing), true);
+    act(&mut app, &mut editing, json!({"verb": "play", "beat": 0.0}));
+    let mut heard_at = None;
+    for block in 0..400 {
+        blocks(&mut engine, &app_engine, 1);
+        let ran: Vec<_> = app
+            .landed(&mut editing)
+            .into_iter()
+            .filter(|ran| ran.member == member)
+            .collect();
+        if !ran.is_empty() {
+            assert!(heard_at.is_none(), "heard twice");
+            heard_at = Some(block);
+        }
+    }
+    assert!(heard_at.is_some_and(|b| b > 10), "heard at {heard_at:?}");
+    assert_eq!(rolling(&mut app, &mut editing), false, "taken in");
+    // back to the start: the transport stands there, and nothing plays --
+    // once the note's release has rung out
+    blocks(&mut engine, &app_engine, 200);
+    act(&mut app, &mut editing, json!({"verb": "locate", "at": 0.0}));
+    let peak = blocks(&mut engine, &app_engine, 200);
+    assert_eq!(rolling(&mut app, &mut editing), false, "still stopped");
+    assert!(peak < 1e-4, "nothing plays again: {peak}");
+}

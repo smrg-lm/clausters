@@ -360,6 +360,11 @@ class ScoreEditor(SequenceHandler):
         """Turn the selected notes into rests of the same length."""
         return self._act({"action": "silence"})
 
+    def stop_at_end(self) -> bool:
+        """Switch whether a pass stops where the score's notes end, or rolls on
+        past them: the window's ``stop_at_end`` (`verb`, Shift+L)."""
+        return self.verb("stop_at_end")
+
     def select_left(self) -> bool:
         """Select previous item -- the window's ``select_left`` (`verb`)."""
         return self.verb("select_left")

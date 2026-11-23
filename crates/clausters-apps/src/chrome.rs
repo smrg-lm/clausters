@@ -29,9 +29,11 @@
 //! **What each adds**: the audio editor `save`, `mix` (a paste that adds)
 //! and its processes (`reverse`, the gain curve and the choice of the body
 //! the hand edits), under a Process menu of its own;
-//! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
+//! the multitrack and the roll `split`, `join` and `quantize`; the
+//! multitrack, the roll and the score where a pass ends (`stop_at_end`, the
+//! transport's end switch); the multitrack
 //! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`),
-//! where a pass ends (`stop_at_end`), how its boxes of samples are
+//! how its boxes of samples are
 //! drawn (`view_wave`, `view_spectrogram`), and `save` where the window is the work's
 //! only holder. The points editor adds nothing and has no tools: its bar holds
 //! the window's own verbs and the history, and what a curve does not do is
@@ -63,12 +65,6 @@ pub enum App {
     Points,
 }
 
-/// **Back to start**: a bar and a triangle pointing at it, drawn here
-/// since the host's own symbols have none -- in a codepoint of the editors'
-/// private plane, as the window's `glyphs` carry it.
-pub const TO_START: &str = "F0100";
-/// **On to the end**: the same, turned.
-pub const TO_END: &str = "F0101";
 /// **The edit tools' icons**, by the name the host carries them under:
 /// the roll's tools (the pointer, the pencil, the eraser, the scissors and
 /// the stretch), which its pointer is drawn from too, the snap switch, and
@@ -86,29 +82,6 @@ const DELETE: &str = "trash";
 
 /// The host's own symbols the tools use.
 pub(crate) const PLAY: &str = "\u{25B6}";
-
-/// The size a tool's symbol is drawn at: twice the words beside it, as an
-/// icon stands to a caption.
-pub(crate) const SYMBOL_SIZE: f64 = 2.0;
-
-/// **The outlines the tools are drawn with**, as a window's `glyphs`: a
-/// thousand to the em, `y` upward, as the engraver's own come.
-#[must_use]
-pub fn glyphs() -> Value {
-    json!({
-        TO_START: "M0 0L80 0L80 520L0 520Z M560 0L560 520L150 260Z",
-        TO_END: "M480 0L560 0L560 520L480 520Z M0 0L410 260L0 520Z",
-    })
-}
-
-/// The character a codepoint in hex is.
-pub(crate) fn glyph(code: &str) -> String {
-    u32::from_str_radix(code, 16)
-        .ok()
-        .and_then(char::from_u32)
-        .map(String::from)
-        .unwrap_or_default()
-}
 
 /// The verbs `app` adds to the window's: where its entries and tools find
 /// their words.
@@ -382,11 +355,7 @@ fn entries(app: App, files: bool, saves: bool) -> Value {
     }
 
     // **the one transport** ([`crate::transport`])
-    let mut transport = crate::transport::entries(scope(app));
-    if app == App::Multitrack {
-        // where a pass ends, when it is not looped
-        transport.push(entry(app, "stop_at_end"));
-    }
+    let transport = crate::transport::entries(scope(app));
 
     let mut bar = vec![
         file,
@@ -504,28 +473,12 @@ pub(crate) fn grid_actions(
         .collect()
 }
 
-/// A tool: a flat button that performs `verb`, its face `symbol` drawn at
-/// twice the words' size, or the verb's words when it has none -- and its tip
-/// the verb's words either way.
 /// **A tool drawn as an icon the host carries** (`icon`, by its name), its
 /// verb's words its tip: the edit tools, square and as large as the
 /// interface's icons.
 pub(crate) fn icon_tool(app: App, verb: &str, icon: &str) -> Value {
     let words = verbs::label(scope(app), verb);
     json!({"type": "button", "flat": true, "verb": verb, "icon": icon, "tip": words})
-}
-
-pub(crate) fn tool(app: App, verb: &str, symbol: Option<&str>) -> Value {
-    let words = verbs::label(scope(app), verb);
-    let face = symbol.map_or_else(|| words.clone(), str::to_string);
-    let mut node =
-        json!({"type": "button", "flat": true, "verb": verb, "label": face, "tip": words});
-    if symbol.is_some()
-        && let Some(map) = node.as_object_mut()
-    {
-        map.insert("text_size".into(), json!(SYMBOL_SIZE));
-    }
-    node
 }
 
 /// **The transport's tools**, every application's ([`crate::transport`]):
@@ -645,7 +598,7 @@ impl App {
 }
 
 /// **A window dressed as `app`**: its menu bar, its toolbar on top, the
-/// view the menu acts on (`main`), the chrome's symbols, and the page of its
+/// view the menu acts on (`main`), and the page of its
 /// own it opens on in a dock ([`App::page`]), and the key the host keeps
 /// the window's size under ([`App::remember`]), so an editor opens at the
 /// size it was last left at.
@@ -657,7 +610,6 @@ pub fn dress(window: &mut Value, app: App, menu: Value, toolbar: Value, main: i3
     map.insert("remember".into(), json!(app.remember()));
     map.insert("menu".into(), menu);
     map.insert("main".into(), json!(main));
-    map.insert("glyphs".into(), glyphs());
     // a window with no tools (a curve's) has no row for them
     if !toolbar.is_null()
         && let Some(Value::Array(children)) = map.get_mut("children")
@@ -880,6 +832,5 @@ pub(crate) mod tests {
         assert_eq!(window["remember"], "Notes");
         assert_eq!(window["children"][0]["type"], "layout");
         assert_eq!(window["children"][1]["id"], 4);
-        assert!(window["glyphs"][TO_START].is_string());
     }
 }

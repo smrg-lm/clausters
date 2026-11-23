@@ -379,6 +379,8 @@ impl Session {
                     Task::ShowTransport,
                 ]
             }
+            // a take always ends with its last frame: no end switch to turn
+            Rolled::Button(crate::transport::Asked::StopAtEnd, _) => Vec::new(),
             // **A placed cursor moves the music where it plays**: the file in
             // focus rolling goes on from the cursor, its pass ending as the
             // switch says from there; stopped, the transport stands on it.
