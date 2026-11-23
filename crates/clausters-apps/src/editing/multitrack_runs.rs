@@ -724,6 +724,15 @@ impl Editing {
         }
     }
 
+    /// **Whether member `member`'s multitrack rolls**, as the engine says
+    /// now, without telling its playback.
+    pub(super) fn multitrack_rolls(&self, member: MemberId) -> bool {
+        match (self.engine.as_ref(), self.tracks.get(&member)) {
+            (Some(engine), Some(tracks)) => engine.rolling(tracks.playback.transport()),
+            _ => false,
+        }
+    }
+
     /// Whether the multitrack's transport rolls, as the engine says now.
     fn multitrack_rolling(&self, tracks: &mut Tracks) -> bool {
         let rolling = self

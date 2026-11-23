@@ -48,6 +48,7 @@ pub mod samples;
 #[cfg(feature = "notation")]
 pub mod score;
 pub mod takes;
+pub mod transport;
 pub mod turn;
 pub mod view;
 

@@ -126,6 +126,110 @@ fn a_roll_opened_over_nothing_is_an_empty_sequence() {
     until(&mut host, "the roll never said it asks", asks);
 }
 
+/// **The transport's buttons, in a roll**: the play tool plays, pauses where
+/// it stands and goes on from there, the stop tool stops, and the play tool
+/// shows pause while the transport rolls -- as in every application.
+#[test]
+fn a_roll_s_play_tool_pauses_and_its_stop_tool_stops() {
+    let mut host = host();
+    let roll = host
+        .open_app_notes_for(None, json!({}), "roll", None)
+        .expect("opened");
+    until(&mut host, "the roll was never drawn", |h| {
+        h.window_def(roll).is_some()
+    });
+    let rows = json!({"do": {"verb": "handle", "call": {"verb": "loadrows",
+        "keys": ["beat", "midinote", "sustain"],
+        "rows": [[0, 60, 4], [4, 62, 4], [8, 64, 4]]}}});
+    assert_eq!(ask(&mut host, roll, rows)["len"], 3);
+    let rolling =
+        |host: &mut Host| ask(host, roll, json!({"query": "transport"}))["rolling"].clone();
+    let icon = |host: &Host| {
+        host.action_state(roll, "pause", &host.clipboard)
+            .and_then(|state| state.icon)
+    };
+    let mut seq = 1;
+    let mut press = |host: &mut Host, verb: &str| {
+        seq += 1;
+        let message = host.event_message(
+            roll,
+            seq,
+            vec![OscType::String("menu".into()), OscType::String(verb.into())],
+        );
+        assert!(host.deliver(roll, &message), "{verb} is the roll's");
+    };
+    until(&mut host, "the play tool never read play", |h| {
+        icon(h).as_deref() == Some("play")
+    });
+    press(&mut host, "pause");
+    until(&mut host, "the play tool never played", |h| {
+        rolling(h) == true
+    });
+    until(&mut host, "the play tool never showed pause", |h| {
+        icon(h).as_deref() == Some("pause")
+    });
+    press(&mut host, "pause");
+    until(&mut host, "the play tool never paused", |h| {
+        rolling(h) == false
+    });
+    until(&mut host, "the play tool never showed play again", |h| {
+        icon(h).as_deref() == Some("play")
+    });
+    press(&mut host, "pause");
+    until(&mut host, "the play tool never went on", |h| {
+        rolling(h) == true
+    });
+    press(&mut host, "stop");
+    until(&mut host, "the stop tool never stopped", |h| {
+        rolling(h) == false
+    });
+}
+
+/// **The transport's buttons, in the audio editor**: the same play tool and
+/// stop tool as every application's, carried out on its take.
+#[test]
+fn an_audio_window_s_play_tool_pauses_and_its_stop_tool_stops() {
+    let path = take("buttons", 480_000);
+    let mut host = host();
+    let def_id = opened(&mut host, &path);
+    let icon = |host: &Host| {
+        host.action_state(def_id, "pause", &host.clipboard)
+            .and_then(|state| state.icon)
+    };
+    let paused =
+        |host: &mut Host| ask(host, def_id, json!({"query": "transport"}))["paused"].clone();
+    let mut seq = 1;
+    let mut press = |host: &mut Host, verb: &str| {
+        seq += 1;
+        let message = host.event_message(
+            def_id,
+            seq,
+            vec![OscType::String("menu".into()), OscType::String(verb.into())],
+        );
+        assert!(host.deliver(def_id, &message), "{verb} is the window's");
+    };
+    until(&mut host, "the play tool never read play", |h| {
+        icon(h).as_deref() == Some("play")
+    });
+    press(&mut host, "pause");
+    until(&mut host, "the play tool never showed pause", |h| {
+        icon(h).as_deref() == Some("pause")
+    });
+    press(&mut host, "pause");
+    until(&mut host, "the play tool never paused", |h| {
+        paused(h) == true
+    });
+    until(&mut host, "the play tool never showed play again", |h| {
+        icon(h).as_deref() == Some("play")
+    });
+    press(&mut host, "stop");
+    until(&mut host, "the stop tool never let the pause go", |h| {
+        paused(h) == false
+    });
+    host.close_audio(def_id);
+    let _ = std::fs::remove_file(&path);
+}
+
 /// A mono float file of `frames` frames, each told apart.
 fn take(name: &str, frames: usize) -> String {
     let path = std::env::temp_dir().join(format!("host-audio-{name}-{}.wav", std::process::id()));
@@ -669,10 +773,10 @@ fn a_box_of_notes_opens_its_roll_in_the_application() {
     let rolling =
         |host: &mut Host| ask(host, roll, json!({"query": "transport"}))["rolling"].clone();
     assert_eq!(rolling(&mut host), false);
-    let play = host.event_message(roll, 2, host.play_verb());
+    let play = host.event_message(roll, 2, host.play_verb(roll));
     assert!(host.deliver(roll, &play), "the space bar is the roll's");
     until(&mut host, "the roll never played", |h| rolling(h) == true);
-    let play = host.event_message(roll, 3, host.play_verb());
+    let play = host.event_message(roll, 3, host.play_verb(roll));
     assert!(host.deliver(roll, &play));
     until(&mut host, "the roll never stopped", |h| rolling(h) == false);
     // **Closed by the person** (Escape, its close mark), it is let go,
@@ -3075,7 +3179,7 @@ fn a_hand_on_an_automated_control_reaches_the_playback_and_no_history() {
 }
 
 /// **The space bar is the window's after a press on a tool of its
-/// transport row.** Rewind took the focus, so the space bar pressed Rewind
+/// transport row.** Back to start (Rewind) took the focus, so the space bar pressed Rewind
 /// again and nothing played.
 #[test]
 fn the_space_bar_plays_after_a_press_on_the_transport_row() {
@@ -3090,16 +3194,15 @@ fn the_space_bar_plays_after_a_press_on_the_transport_row() {
     until(&mut host, "the window was never drawn", |h| {
         h.window_def(def_id).is_some()
     });
-    let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
-    let rewind = host.own_widget_id(structure, AUDIO, "rewind").unwrap();
     let ctx = GestureCtx::new(def_id, 1000, 560);
     let mut hand = Gestures::default();
     let rolling = |h: &mut Host| ask(h, def_id, json!({"query": "transport"}))["rolling"].clone();
+    // back to the start, every application's tool by its verb
     let tool = host
         .layout_window(def_id, 1000, 560)
         .unwrap()
         .iter()
-        .find(|p| p.widget.id == Some(rewind))
+        .find(|p| p.widget.kind.as_element().and_then(|e| e.tool_verb()) == Some("to_start"))
         .unwrap()
         .rect;
     let at = (

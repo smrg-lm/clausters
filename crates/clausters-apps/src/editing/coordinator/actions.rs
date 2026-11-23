@@ -362,6 +362,23 @@ impl Session {
                 },
                 Task::ShowTransport,
             ],
+            Rolled::Button(crate::transport::Asked::Stop, play) => vec![
+                Task::Playback(Op::stop(file, Some(&play))),
+                Task::ShowTransport,
+            ],
+            Rolled::Button(crate::transport::Asked::Toggle, play) => {
+                let focused = self.focused(editing, member);
+                vec![
+                    if rolling && focused {
+                        Task::Playback(Op::Pause)
+                    } else if focused && self.playback.paused() {
+                        Task::Playback(Op::Resume)
+                    } else {
+                        Task::Playback(Op::play(file, Some(&play)))
+                    },
+                    Task::ShowTransport,
+                ]
+            }
             // **A placed cursor moves the music where it plays**: the file in
             // focus rolling goes on from the cursor, its pass ending as the
             // switch says from there; stopped, the transport stands on it.

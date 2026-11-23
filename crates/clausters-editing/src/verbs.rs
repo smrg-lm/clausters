@@ -131,6 +131,11 @@ pub struct ActionState {
     /// sheet does not list it among what the window does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub absent: bool,
+    /// **The icon its tools show now**, by the name the host carries it
+    /// under, in place of their own: the play tool shows `pause` while the
+    /// transport rolls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 impl ActionState {
@@ -150,6 +155,7 @@ impl ActionState {
             paste: None,
             unselected: false,
             absent: false,
+            icon: None,
         }
     }
 
@@ -261,6 +267,10 @@ pub const WINDOW: &[Verb] = &[
     verb("close", &[], "Close"),
     verb("view_all", &["R"], "Zoom to fit"),
     verb("play", &["Space"], "Play or stop"),
+    // **the transport's two buttons**: play or pause where it stands, and
+    // stop, which goes back to the position cursor
+    verb("pause", &[], "Play or pause"),
+    verb("stop", &[], "Stop"),
     toggle("loop", &["L"], "Loop, on or off"),
     verb("to_start", &["Home"], "Go to start"),
     verb("to_end", &["End"], "Go to end"),
@@ -307,12 +317,9 @@ pub const AUDIO: &[Verb] = &[
 /// The multitrack window's scope.
 pub const MULTITRACK_SCOPE: &str = "multitrack";
 
-/// **What the multitrack editor adds**: its transport's two other buttons,
-/// where a pass ends, its rows' own commands, how its boxes of samples are
+/// **What the multitrack editor adds**: where a pass ends, its rows' own commands, how its boxes of samples are
 /// drawn, and the automatic crossfade.
 pub const MULTITRACK: &[Verb] = &[
-    verb("pause", &[], "Pause"),
-    verb("stop", &[], "Stop"),
     toggle("stop_at_end", &["Shift+L"], "Stop at end, on or off"),
     toggle("crossfade", &[], "Crossfade overlaps, on or off"),
     verb("add_track", &[], "Add track"),

@@ -246,6 +246,20 @@ pub(super) fn stopped(editing: &Editing) -> Vec<MemberId> {
         .collect()
 }
 
+/// **Whether member `member`'s file in view rolls**, as the engine says
+/// now: its session's transport rolling with that file in focus.
+pub(super) fn rolling(editing: &Editing, member: MemberId) -> bool {
+    let (Some(engine), Some(session)) = (editing.engine.as_ref(), editing.sessions.get(&member))
+    else {
+        return false;
+    };
+    session
+        .playback
+        .transport()
+        .is_some_and(|transport| engine.rolling(transport))
+        && session.focused(editing, member)
+}
+
 /// **What a script reads of member `member`**: `transport` or `output`.
 fn query(editing: &mut Editing, member: MemberId, query: &str) -> Value {
     if let Err(error) = audio_member(editing, member) {

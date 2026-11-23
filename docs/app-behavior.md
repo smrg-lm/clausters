@@ -504,6 +504,19 @@ code that keeps it lives.
   beats, crossed by the tempo) and its end: a pass with no selection stops
   where the end switch says, or runs on, and a loop with no selection
   repeats the contents (every note, in a roll).
+- **Every application has one transport.** Its toolbar holds the same five
+  tools and its Transport menu the same entries (`clausters_apps::transport`):
+  back to the start, play or pause (`pause`), stop, on to the end, the loop
+  switch. The play tool shows what a press does, the pause icon while the
+  transport rolls and the play icon while it stands, a pass that ended on its
+  own included; a pause stays where it stands and a play after it goes on
+  from there; stop goes back to the position cursor and lets the pause go.
+  The space bar stays play or stop.
+- **The loop switch is each window's.** A key or a tool flips it from where
+  that window has it (its owner's `loop` reading), and a play carries that
+  window's: the host's one switch had been flipped from wherever another
+  window left it, so a press could set the switch to what the window already
+  had and only the second one worked.
 - **A copy of a take is made on the server.** Copy and cut in the audio
   editor copy the span into a server buffer the clipboard names, whatever
   its length; a paste copies it again on the server. No sample crosses the

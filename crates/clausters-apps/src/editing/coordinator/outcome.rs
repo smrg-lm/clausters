@@ -159,8 +159,11 @@ impl Session {
         }
         if let Some(play) = outcome.play {
             // The loop switch rides beside the space bar and `L`: a pass that
-            // loops is the switch on.
-            tasks.push(Task::Rolling(Rolled::Space(play)));
+            // loops is the switch on. A transport button asks its own.
+            tasks.push(Task::Rolling(match outcome.transport {
+                Some(asked) => Rolled::Button(asked, play),
+                None => Rolled::Space(play),
+            }));
         }
         if let Some(pass) = outcome.pass {
             // `L`: the pass in progress ends as the switch now says; a stopped

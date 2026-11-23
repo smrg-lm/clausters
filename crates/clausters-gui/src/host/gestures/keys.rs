@@ -588,13 +588,14 @@ impl Gestures {
             // this host's own editor, or a script's.
             Verb::Play => Some(self.play_key(host, ctx, cx, cy).unwrap_or_else(|| {
                 let mut out = Vec::new();
-                tell(host, &mut out, ctx.def_id, host.play_verb());
+                tell(host, &mut out, ctx.def_id, host.play_verb(ctx.def_id));
                 out
             })),
             // The window is told the loop changed too, so whoever plays it
             // changes the pass in progress.
             Verb::Loop => {
                 let mut out = self.loop_key(host, ctx);
+                // the switch as the key left it, flipped from the window's
                 tell(host, &mut out, ctx.def_id, host.loop_verb());
                 Some(out)
             }
@@ -746,6 +747,12 @@ impl Gestures {
     /// pass read off the view the way the space bar reads one; the window's
     /// owner is told beside it (`Host::loop_verb`), by the front.
     pub fn loop_key(&self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
+        // **the switch flips from where this window has it**: a window whose
+        // owner reads its own loop flips that, never the last window's -- a
+        // press that set the host's switch to what the window already had
+        // did nothing, and the next one worked
+        let own = host.window_loops(ctx.def_id);
+        host.set_monitor_loop(own);
         let looping = host.toggle_monitor_loop();
         if let Some(loaded) = host.monitor()
             && loaded.rolling

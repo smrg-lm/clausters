@@ -235,8 +235,14 @@ impl Element for Button {
     /// force, is drawn held, and an action that cannot be taken does not
     /// light under the pointer (the frame greys its words).
     fn draw_action(&self, d: &mut Draw, ctx: &Ctx, state: Option<&ActionState>) {
+        // **the icon its verb's reading names**, in place of its own: the
+        // play tool shows pause while the transport rolls
+        let icon = state
+            .and_then(|s| s.icon.as_deref())
+            .and_then(clausters_gui_draw::font::outline::icon)
+            .or(self.icon);
         let size = controls::symbol_size(
-            &controls::button_text(self.label.as_deref(), self.icon),
+            &controls::button_text(self.label.as_deref(), icon),
             self.face(ctx.metrics, ctx.scale),
             ctx.text_fit,
             ctx.metrics,
@@ -244,7 +250,7 @@ impl Element for Button {
         controls::button(
             d,
             self.label.as_deref(),
-            self.icon,
+            icon,
             ctx.rect,
             controls::ButtonLook {
                 active: state.and_then(|s| s.checked).unwrap_or(false),

@@ -106,6 +106,11 @@ pub struct Outcome {
     /// when `L`, the toolbar or the menu turned the loop on or off.
     #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
     pub relooped: Option<Value>,
+    /// **What a transport button asks of the playback** (the play tool's
+    /// pause, the stop tool), beside the pass [`Outcome::play`] names for a
+    /// play from a stop.
+    #[serde(skip)]
+    pub transport: Option<crate::transport::Asked>,
     /// Where the position cursor was placed, as a beat of the score -- a
     /// rewind. Not an edit: a stopped playback is cued there.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1568,6 +1573,17 @@ impl ScoreEditor {
     /// of the menu's (`mine`) tells the host -- `looping`, on the window --
     /// so its next `L` starts from here and never asks for the state the
     /// switch already has.
+    /// **A transport button** ([`crate::transport::Asked`]): what it asks of
+    /// the playback, beside the pass a play from a stop plays.
+    fn transport(&mut self, asked: crate::transport::Asked, out: &mut Outcome) -> Vec<Correction> {
+        out.transport = Some(asked);
+        out.play = Some(self.pass());
+        match asked {
+            crate::transport::Asked::Toggle => self.leave_to_play(),
+            crate::transport::Asked::Stop => self.corrections(),
+        }
+    }
+
     fn set_looping(&mut self, on: bool, mine: bool, out: &mut Outcome) -> Vec<Correction> {
         self.looping = on;
         out.relooped = Some(self.pass());
@@ -1649,7 +1665,9 @@ impl ScoreEditor {
                 out.play = Some(self.pass());
                 shown = Some(self.leave_to_play());
             }
+            menu::Pick::Transport(asked) => shown = Some(self.transport(asked, out)),
             menu::Pick::Rewind => shown = Some(self.rewind(out)),
+            menu::Pick::ToEnd => shown = Some(self.go_to_end(out)),
             menu::Pick::Loop(on) => shown = Some(self.set_looping(on, true, out)),
             menu::Pick::Layout(view) => self.view = view,
             menu::Pick::Entry(on) => self.set_entry(on),
@@ -2217,18 +2235,12 @@ impl ScoreEditor {
                 self.view = view;
                 return (None, self.corrections());
             }
-            tools::Tool::Play => {
-                out.play = Some(self.pass());
-                return (None, self.leave_to_play());
-            }
             tools::Tool::Entry(on) => {
                 self.set_entry(on);
                 let mut out = self.cursor_shown();
                 out.extend(self.chrome());
                 return (None, out);
             }
-            tools::Tool::Rewind => return (None, self.rewind(out)),
-            tools::Tool::Loop(on) => return (None, self.set_looping(on, true, out)),
             tools::Tool::Act(action) => {
                 let reason = self.perform(&action, out);
                 return (reason, self.corrections());
@@ -2337,6 +2349,19 @@ impl Converse for ScoreEditor {
                     let on = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
                     self.set_looping(on, false, out)
                 };
+                out.answer = Some(conversation::answer(
+                    message.seq,
+                    out.version,
+                    None,
+                    corrections,
+                ));
+            }
+            // **the transport's buttons**, every application's: play or
+            // pause, and stop
+            verb if crate::transport::asked(verb).is_some() => {
+                out.turn = Kind::Route;
+                let asked = crate::transport::asked(verb).unwrap_or(crate::transport::Asked::Stop);
+                let corrections = self.transport(asked, out);
                 out.answer = Some(conversation::answer(
                     message.seq,
                     out.version,

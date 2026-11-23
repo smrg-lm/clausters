@@ -443,6 +443,10 @@ struct App {
     /// **A quit's Save all under way**: the windows it saves, until nothing
     /// is left to lose in them.
     saving_all: Option<Vec<i32>>,
+    /// **Whether each window's transport rolled** when last looked at, so
+    /// its play tool is drawn again when that changes -- a pass that ended
+    /// on its own included.
+    rolled: HashMap<i32, bool>,
 }
 
 /// **What wakes the host's loop** when the application has said something:
@@ -577,6 +581,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         next_token: 1,
         out,
         saving_all: None,
+        rolled: HashMap::new(),
     };
     loop {
         let mut asked = false;
@@ -592,6 +597,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         }
         state.landed();
         state.saved_all();
+        state.transports();
         if !asked {
             std::thread::park_timeout(if state.app.busy() { IDLE } else { REST });
         }
@@ -1882,6 +1888,25 @@ impl App {
         }
         window.told_title = Some(title.clone());
         Some(title)
+    }
+
+    /// **The play tools follow their transports**: a window whose transport
+    /// started or stopped rolling since it was last looked at says its
+    /// actions again, the play tool's icon with them ([`Editing::rolling`]).
+    /// What it reads is the engine's word on each transport, so this costs a
+    /// look per window at the loop's pace and nothing else.
+    fn transports(&mut self) {
+        let windows: Vec<(i32, MemberId)> =
+            self.windows.iter().map(|(id, w)| (*id, w.member)).collect();
+        self.rolled.retain(|id, _| self.windows.contains_key(id));
+        for (def_id, member) in windows {
+            let Some(rolling) = self.editing.rolling(member) else {
+                continue;
+            };
+            if self.rolled.insert(def_id, rolling) != Some(rolling) {
+                self.say_actions(def_id);
+            }
+        }
     }
 
     /// The actions said on their own, after a call that may have moved them.

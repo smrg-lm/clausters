@@ -18,6 +18,8 @@
 //! | `select_all` | everything the view holds, selected |
 //! | `view_all` | the whole extent in view |
 //! | `play` | play, or stop and go back to the position cursor |
+//! | `pause` | the play tool: play, or pause where it stands |
+//! | `stop` | stop, and go back to the position cursor |
 //! | `to_start`, `to_end` | the position cursor to either end |
 //! | `loop` | the loop switch |
 //! | `snap` | the snap-to-grid switch (not the audio editor's) |
@@ -28,8 +30,8 @@
 //! and its processes (`reverse`, the gain curve and the choice of the body
 //! the hand edits), under a Process menu of its own;
 //! the multitrack and the roll `split`, `join` and `quantize`; the multitrack
-//! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`), a
-//! transport that pauses (`pause`, `stop`), how its boxes of samples are
+//! the rows' own commands (`add_track`, `reset_heights`, `compact_tracks`),
+//! where a pass ends (`stop_at_end`), how its boxes of samples are
 //! drawn (`view_wave`, `view_spectrogram`), and `save` where the window is the work's
 //! only holder. The points editor adds nothing and has no tools: its bar holds
 //! the window's own verbs and the history, and what a curve does not do is
@@ -84,8 +86,6 @@ const DELETE: &str = "trash";
 
 /// The host's own symbols the tools use.
 pub(crate) const PLAY: &str = "\u{25B6}";
-pub(crate) const STOP: &str = "\u{25A0}";
-pub(crate) const LOOP: &str = "\u{21BB}";
 
 /// The size a tool's symbol is drawn at: twice the words beside it, as an
 /// icon stands to a caption.
@@ -381,17 +381,8 @@ fn entries(app: App, files: bool, saves: bool) -> Value {
         ]);
     }
 
-    let mut transport = vec![entry(app, "play")];
-    if app == App::Multitrack {
-        transport.extend([entry(app, "pause"), entry(app, "stop")]);
-    }
-    transport.extend([
-        sep(),
-        entry(app, "to_start"),
-        entry(app, "to_end"),
-        sep(),
-        entry(app, "loop"),
-    ]);
+    // **the one transport** ([`crate::transport`])
+    let mut transport = crate::transport::entries(scope(app));
     if app == App::Multitrack {
         // where a pass ends, when it is not looped
         transport.push(entry(app, "stop_at_end"));
@@ -537,15 +528,10 @@ pub(crate) fn tool(app: App, verb: &str, symbol: Option<&str>) -> Value {
     node
 }
 
-/// **The transport's tools**, for the two windows whose transport is the
-/// host's verbs: back to the start, play or stop, on to the end, the loop.
+/// **The transport's tools**, every application's ([`crate::transport`]):
+/// back to the start, play or pause, stop, on to the end, the loop.
 fn transport(app: App) -> Vec<Value> {
-    vec![
-        tool(app, "to_start", Some(&glyph(TO_START))),
-        tool(app, "play", Some(PLAY)),
-        tool(app, "to_end", Some(&glyph(TO_END))),
-        tool(app, "loop", Some(LOOP)),
-    ]
+    crate::transport::tools(scope(app))
 }
 
 /// **The edit tools** an application has beside the menu's: the audio
@@ -736,6 +722,8 @@ pub(crate) mod tests {
             "select_all",
             "view_all",
             "play",
+            "pause",
+            "stop",
             "to_start",
             "to_end",
             "loop",
@@ -784,8 +772,6 @@ pub(crate) mod tests {
         let multitrack = verbs(&menu(App::Multitrack, true, false));
         for verb in [
             "add_track",
-            "pause",
-            "stop",
             "reset_heights",
             "compact_tracks",
             "view_wave",

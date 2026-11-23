@@ -52,9 +52,6 @@ pub const TOOLS: &[&str] = &[
     "tuplet",
     "voice",
     "layout",
-    "rewind",
-    "play",
-    "loop",
 ];
 
 /// The caller's widget id for each tool it numbered.
@@ -112,7 +109,7 @@ pub fn codes() -> Vec<&'static str> {
         .chain([DOT, REST, TRIPLET])
         .chain(ACCIDENTALS.iter().map(|a| a.1))
         .chain(ARTICULATIONS.iter().map(|a| a.2))
-        .chain([icons::TIE, icons::NONE, icons::REWIND, icons::ENTRY])
+        .chain([icons::TIE, icons::NONE, icons::ENTRY])
         // the first voice's quarter is the value's, already asked
         .chain([VOICE_TWO, icons::PAGE_VIEW, icons::LINE_VIEW])
         .collect()
@@ -176,7 +173,6 @@ impl State {
                 "layout",
                 json!({"index": usize::from(self.view == View::Continuous)}),
             ),
-            ("loop", json!({"value": i32::from(self.looping)})),
         ]
     }
 }
@@ -343,34 +339,12 @@ pub fn toolbar(ids: &Ids, state: &State, outlines: &Outlines) -> Option<Value> {
         )],
         &mut children,
     );
-    // the transport goes to the far edge, past a spring: the host's own
-    // symbols, which every face draws, at the size of the other tools'
-    let transport: Vec<Value> = [
-        tool(
-            ids,
-            "rewind",
-            symbols(press(&shown(icons::REWIND, "|<"), "Back to start")),
-        ),
-        tool(
-            ids,
-            "play",
-            symbols(keyed(press("\u{25B6}", "Play, or stop"), "play")),
-        ),
-        tool(
-            ids,
-            "loop",
-            symbols(keyed(
-                latch("\u{21BB}", "Loop the selection, or the score"),
-                "loop",
-            )),
-        ),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    if !transport.is_empty() {
+    // **the transport goes to the far edge**, past a spring: every
+    // application's ([`crate::transport`]), by its verbs, where the window
+    // has tools at all
+    if !ids.is_empty() {
         children.push(json!({"type": "separator", "weight": 1, "line": false}));
-        children.extend(transport);
+        children.extend(crate::transport::tools(clausters_editing::verbs::SCORE));
     }
     if children.is_empty() {
         return None;
@@ -427,12 +401,6 @@ pub enum Tool {
     Voice(usize),
     /// How the window looks at the score.
     Layout(View),
-    /// Back to start.
-    Rewind,
-    /// Play, or stop what plays.
-    Play,
-    /// Whether a pass loops.
-    Loop(bool),
 }
 
 /// **What the tool `name` reporting `tag` asks for** -- or `None` for a name
@@ -444,16 +412,10 @@ pub enum Tool {
 /// hand, and `"click"`, which is the command -- so only the click is read.
 #[must_use]
 pub fn read(name: &str, tag: &str) -> Option<Tool> {
-    let acts = matches!(name, "tie" | "tuplet" | "rewind" | "play")
-        || ARTICULATIONS.iter().any(|a| a.0 == name);
+    let acts = matches!(name, "tie" | "tuplet") || ARTICULATIONS.iter().any(|a| a.0 == name);
     if acts {
         if tag != "click" {
             return None;
-        }
-        match name {
-            "rewind" => return Some(Tool::Rewind),
-            "play" => return Some(Tool::Play),
-            _ => {}
         }
         return Some(Tool::Act(match name {
             "tie" => json!({"action": "tie"}),
@@ -471,7 +433,6 @@ pub fn read(name: &str, tag: &str) -> Option<Tool> {
         }
         "entry" => Tool::Entry(on),
         "dot" => Tool::Dot(on),
-        "loop" => Tool::Loop(on),
         "rest" => Tool::Rest(on),
         "accidental" => Tool::Accidental(match index {
             0 => None,
@@ -540,10 +501,13 @@ mod tests {
         );
         assert_eq!(by("voice")["index"], 1, "the second voice");
         assert_eq!(by("layout")["index"], 1, "continuous");
-        assert_eq!(by("loop")["value"], 1, "looping");
-        // the transport is past the spring, at the far edge
+        // the transport is every application's, past the spring, by its verbs
         let spring = children.iter().position(|c| c["weight"] == 1).unwrap();
-        assert_eq!(children[spring + 1]["id"], id("rewind"));
+        let verbs: Vec<&str> = children[spring + 1..]
+            .iter()
+            .filter_map(|c| c["verb"].as_str())
+            .collect();
+        assert_eq!(verbs, ["to_start", "pause", "stop", "to_end", "loop"]);
         // a window that numbered no tool has no toolbar
         assert!(toolbar(&Ids::new(), &state(), &Outlines::new()).is_none());
     }
@@ -599,11 +563,9 @@ mod tests {
         assert_eq!(read("layout", "1"), Some(Tool::Layout(View::Continuous)));
         assert_eq!(read("value", "99"), None);
         assert_eq!(read("zoom", "1"), None);
-        // the transport: two commands and a switch
-        assert_eq!(read("play", "click"), Some(Tool::Play));
-        assert_eq!(read("rewind", "click"), Some(Tool::Rewind));
-        assert_eq!(read("play", "1"), None);
-        assert_eq!(read("loop", "1"), Some(Tool::Loop(true)));
+        // the transport is every application's, by its verbs: no tool here
+        assert_eq!(read("play", "click"), None);
+        assert_eq!(read("loop", "1"), None);
     }
 
     #[test]

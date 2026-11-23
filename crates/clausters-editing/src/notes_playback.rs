@@ -489,6 +489,12 @@ impl<M: Medium> NotesPlayback<M> {
         self.passes.rolling()
     }
 
+    /// Whether the transport stands where a pause left it, so a play goes on
+    /// from there ([`Passes::paused`](crate::pass::Passes::paused)).
+    pub fn paused(&self) -> bool {
+        self.passes.paused()
+    }
+
     /// Says whether the transport rolls, when the caller learned it from the
     /// engine -- a pass that ended on its mark.
     pub fn set_rolling(&mut self, rolling: bool) {

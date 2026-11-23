@@ -576,12 +576,12 @@ fn a_window_that_plays_its_own_take_leaves_the_monitor_out() {
     );
     assert!(host.playing_widget().is_none());
     assert_eq!(
-        host.play_verb(),
+        host.play_verb(1),
         vec![OscType::String("play".into()), OscType::Int(0)]
     );
     host.toggle_monitor_loop();
     assert_eq!(
-        host.play_verb()[1],
+        host.play_verb(1)[1],
         OscType::Int(1),
         "the loop rides beside it"
     );

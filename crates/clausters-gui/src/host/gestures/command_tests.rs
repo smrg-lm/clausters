@@ -1081,3 +1081,35 @@ fn a_paste_reaches_the_one_take_its_owner_holds_before_any_samples_arrive() {
         emitted(&effects)
     );
 }
+
+/// **The loop switch flips from where its window has it.** The host's own
+/// switch is one for every window, and a window whose owner reads its own
+/// loop flipped that one: a press after another window turned it on set it
+/// to what this window already had, and only the second press worked. A
+/// play beside it carries the window's switch too.
+#[test]
+fn the_loop_switch_flips_from_its_window_s_reading() {
+    let mut host = host_from(ROLL);
+    let mut on = reading("toggle");
+    on["checked"] = true.into();
+    publish_actions(
+        &mut host,
+        serde_json::json!({"loop": on, "play": reading("command")}),
+    );
+    assert!(!host.monitor_loops(), "the host's own switch is off");
+    let told = |effects: &[GestureEffect], verb: &str| {
+        emitted(effects)
+            .into_iter()
+            .find(|(_, args)| args.first() == Some(&OscType::String(verb.into())))
+            .map(|(_, args)| args[1].clone())
+    };
+    let ctx = ctx();
+    let effects = Gestures::default().command(&mut host, &ctx, "play");
+    assert_eq!(told(&effects, "play"), Some(OscType::Int(1)), "it loops");
+    let effects = Gestures::default().command(&mut host, &ctx, "loop");
+    assert_eq!(
+        told(&effects, "loop"),
+        Some(OscType::Int(0)),
+        "on goes off at the first press"
+    );
+}

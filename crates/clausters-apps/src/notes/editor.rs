@@ -48,6 +48,11 @@ pub struct Outcome {
     /// and a stopped playback reads the switch on its next play.
     #[serde(rename = "loop", skip_serializing_if = "Option::is_none")]
     pub relooped: Option<Value>,
+    /// **What a transport button asks of the playback** (the play tool's
+    /// pause, the stop tool), beside the pass [`Outcome::play`] names for a
+    /// play from a stop.
+    #[serde(skip)]
+    pub transport: Option<crate::transport::Asked>,
     /// Where the position cursor was placed, as a beat of the sequence -- a
     /// click on the roll's ruler. Not an edit: the caller cues a stopped
     /// playback there, and a play starts from it.
@@ -1691,18 +1696,29 @@ impl Converse for NotesEditor {
             ));
             return true;
         }
-        if !matches!(message.tag.as_str(), "play" | "loop") {
+        let asked = crate::transport::asked(&message.tag);
+        if asked.is_none() && !matches!(message.tag.as_str(), "play" | "loop") {
             return false;
         }
         out.turn = Kind::Route;
-        let looping = args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0);
+        // the loop switch the host sends beside the space bar and `L`; the
+        // transport's buttons read the window's own
+        let looping = if asked.is_some() {
+            self.looping
+        } else {
+            args.get(4).and_then(Value::as_i64).is_some_and(|v| v != 0)
+        };
         self.looping = looping;
         let pass = json!({
             "looping": looping,
             "range": self.range.map(|(a, b)| json!([a, b])),
         });
-        // The space bar plays or stops; `L` changes the pass in progress.
-        if message.tag == "play" {
+        // The space bar plays or stops; `L` changes the pass in progress;
+        // the play tool plays or pauses and the stop tool stops.
+        if asked.is_some() {
+            out.transport = asked;
+            out.play = Some(pass);
+        } else if message.tag == "play" {
             out.play = Some(pass);
         } else {
             out.relooped = Some(pass);

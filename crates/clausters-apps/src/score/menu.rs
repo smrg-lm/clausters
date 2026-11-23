@@ -163,15 +163,17 @@ fn document_entries(state: &State<'_>) -> Value {
                 ),
             ],
         ),
-        sub(
-            "Play",
-            vec![
-                word("Play or stop", "play"),
-                word("Back to start", "rewind"),
-                sep(),
-                json!({"label": "Loop", "verb": "loop", "checked": state.looping}),
-            ],
-        ),
+        // **the one transport** ([`crate::transport`]), its loop a check
+        // that reads the score's switch
+        sub("Transport", {
+            let mut entries = crate::transport::entries(clausters_editing::verbs::SCORE);
+            for entry in &mut entries {
+                if entry["verb"] == "loop" {
+                    entry["checked"] = json!(state.looping);
+                }
+            }
+            entries
+        }),
         sub(
             "Notes",
             vec![
@@ -423,8 +425,12 @@ pub enum Pick {
     Close,
     /// Play, or stop what plays.
     Play,
+    /// A transport button: play or pause, or stop.
+    Transport(crate::transport::Asked),
     /// Back to start.
     Rewind,
+    /// On to the end.
+    ToEnd,
     /// Whether a pass loops.
     Loop(bool),
     /// The window looks at the score this way.
@@ -468,7 +474,11 @@ pub fn read(verb: &str, state: Option<i64>) -> Pick {
         "close_file" => Pick::CloseFile,
         "close" => Pick::Close,
         "play" => Pick::Play,
-        "rewind" => Pick::Rewind,
+        "to_start" => Pick::Rewind,
+        "to_end" => Pick::ToEnd,
+        verb if crate::transport::asked(verb).is_some() => {
+            crate::transport::asked(verb).map_or(Pick::Unknown, Pick::Transport)
+        }
         "loop" => Pick::Loop(state.is_none_or(|on| on != 0)),
         "entry" => Pick::Entry(state.is_none_or(|on| on != 0)),
         _ => Pick::Unknown,

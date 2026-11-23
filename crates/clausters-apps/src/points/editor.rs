@@ -174,7 +174,7 @@ impl PointsEditor {
         for (verb, state) in &mut actions {
             match *verb {
                 "play" if self.plays => {}
-                "play" | "loop" | "to_start" | "to_end" => {
+                "play" | "pause" | "stop" | "loop" | "to_start" | "to_end" => {
                     state.refuse_absent("a curve does not play here");
                 }
                 "view_all" => state.refuse_absent("a curve's window shows all of it"),

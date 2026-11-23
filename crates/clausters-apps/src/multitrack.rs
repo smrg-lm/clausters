@@ -337,54 +337,26 @@ fn ruler(w: &Window<'_>) -> Value {
     time_ruler(w).widget()
 }
 
-/// **The transport, as tools**: rewind, play/pause and stop by name, the loop
-/// switch by its verb, and the clock -- what a window with chrome holds at the
-/// head of its toolbar.
+/// **The transport, as tools**: every application's ([`crate::transport`]),
+/// then where a pass ends and the clock -- what a window with chrome holds
+/// at the head of its toolbar.
 fn transport_tools(ids: Option<TransportIds>) -> Vec<Value> {
-    let named = |mut node: Value, name: &str, id: Option<i32>| {
-        if let Some(map) = node.as_object_mut() {
-            map.insert("name".into(), json!(name));
-            if let Some(id) = id {
-                map.insert("id".into(), json!(id));
-            }
-        }
-        node
-    };
-    let button = |label: &str, tip: &str| {
-        json!({"type": "button", "flat": true, "label": label, "tip": tip,
-               "text_size": chrome::SYMBOL_SIZE})
-    };
-    vec![
-        named(
-            button(&chrome::glyph(chrome::TO_START), "Back to start"),
-            REWIND,
-            ids.map(|i| i.rewind),
-        ),
-        named(
-            button(chrome::PLAY, "Play or pause"),
-            PLAY,
-            ids.map(|i| i.play),
-        ),
-        named(
-            button(chrome::STOP, "Stop and go back to the cursor"),
-            STOP,
-            ids.map(|i| i.stop),
-        ),
-        chrome::tool(App::Multitrack, "loop", Some(chrome::LOOP)),
-        chrome::tool(
-            App::Multitrack,
-            editor::STOP_AT_END_VERB,
-            Some(&chrome::glyph(chrome::TO_END)),
-        ),
-        // A reading, written on every tick of the transport: drawn on the
-        // window's live layer, so a write costs the label and not the window
-        // -- and as wide as its longest reading, so a tick moves no tool.
-        named(
-            json!({"type": "label", "text": "", "text_size": 2.0, "w": 260.0, "live": true}),
-            CLOCK,
-            ids.map(|i| i.clock),
-        ),
-    ]
+    let mut tools = crate::transport::tools(clausters_editing::verbs::MULTITRACK);
+    tools.push(chrome::tool(
+        App::Multitrack,
+        editor::STOP_AT_END_VERB,
+        Some(&chrome::glyph(chrome::TO_END)),
+    ));
+    // A reading, written on every tick of the transport: drawn on the
+    // window's live layer, so a write costs the label and not the window
+    // -- and as wide as its longest reading, so a tick moves no tool.
+    let mut clock = json!({"type": "label", "text": "", "text_size": 2.0, "w": 260.0, "live": true,
+            "name": CLOCK});
+    if let Some(id) = ids.map(|i| i.clock) {
+        clock["id"] = json!(id);
+    }
+    tools.push(clock);
+    tools
 }
 
 /// **The transport row**: rewind, play/pause, stop, and where the multitrack is.
@@ -511,13 +483,24 @@ mod tests {
             ruler["axes"]["x"]["playhead_at"], multitrack["playhead_at"],
             "the first member seeds the group's anchor, so the ruler states it too"
         );
-        // **The transport heads the toolbar**, by name, and the edit tools
-        // follow it by their verbs
+        // **The transport heads the toolbar**, every application's by its
+        // verbs, then where a pass ends, the clock by name and the edit tools
         let tools = bar["children"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().filter_map(|c| c["name"].as_str()).collect();
-        assert_eq!(names, [REWIND, PLAY, STOP, CLOCK]);
+        assert_eq!(names, [CLOCK]);
         let verbs: Vec<&str> = tools.iter().filter_map(|c| c["verb"].as_str()).collect();
-        assert_eq!(verbs, ["loop", "stop_at_end", "snap"]);
+        assert_eq!(
+            verbs,
+            [
+                "to_start",
+                "pause",
+                "stop",
+                "to_end",
+                "loop",
+                "stop_at_end",
+                "snap"
+            ]
+        );
         assert!(
             bar.get("id").is_none() && tools[0].get("id").is_none(),
             "named, and numbered by whoever sends it"

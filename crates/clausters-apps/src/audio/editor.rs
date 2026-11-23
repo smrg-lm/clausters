@@ -275,6 +275,11 @@ pub struct Outcome {
     /// otherwise -- the playback is the caller's, and so is whether it rolls.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub play: Option<Play>,
+    /// **What a transport button asks of the playback** (the play tool's
+    /// pause, the stop tool), with [`Outcome::play`] the pass a play from a
+    /// stop plays and where a stop goes back to.
+    #[serde(skip)]
+    pub transport: Option<crate::transport::Asked>,
     /// **What `L` asks of a pass in progress**: how it ends now, read off the
     /// view as a play's is -- the caller changes the pass of what is playing,
     /// and a stopped playback reads the switch on its next play.
@@ -632,12 +637,23 @@ impl Converse for AudioEditor {
         // **The space bar over the window is a play**, the window's own verb
         // and the application's to read (the window says `plays`): what it
         // asks of the playback, with the loop switch the host sends beside it.
-        if message.tag == "play" || message.tag == "loop" {
+        let asked = crate::transport::asked(&message.tag);
+        if asked.is_some() || message.tag == "play" || message.tag == "loop" {
             out.turn = Kind::Route;
-            let looping = args.get(4).is_some_and(|v| int(v) != 0);
+            // the loop switch the host sends beside the space bar and `L`;
+            // the transport's buttons read the take's own
+            let looping = if asked.is_some() {
+                self.file.presentation.looping
+            } else {
+                args.get(4).is_some_and(|v| int(v) != 0)
+            };
             self.file.presentation.looping = looping;
-            // The space bar plays or stops; `L` changes the pass in progress.
-            if message.tag == "play" {
+            // The space bar plays or stops; `L` changes the pass in progress;
+            // the play tool plays or pauses and the stop tool stops.
+            if asked.is_some() {
+                out.transport = asked;
+                out.play = Some(self.play(looping));
+            } else if message.tag == "play" {
                 out.play = Some(self.play(looping));
             } else {
                 out.pass = Some(self.play(looping).pass);

@@ -457,10 +457,13 @@ impl<M: Medium> AudioEditorPlayback<M> {
 
     /// **Stops, from the window showing `file`**, and goes back to `back`, a
     /// frame of that file: whichever file was playing stops, and the one
-    /// shown comes into focus, so the next play is over what is seen.
+    /// shown comes into focus, so the next play is over what is seen. It
+    /// is a stop and no pause, so a play after it starts a pass.
     pub fn stop_viewing(&mut self, file: u64, back: u64) -> Vec<Step> {
         self.viewed = Some(file);
         let mut steps = self.pause();
+        // a stop is no pause: the next play starts a pass from the cursor
+        self.passes.end_pause();
         steps.extend(self.focus_on(file));
         steps.extend(self.locate(back));
         steps

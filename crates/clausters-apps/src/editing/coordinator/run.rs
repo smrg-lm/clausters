@@ -164,6 +164,10 @@ pub(super) enum Rolled {
     View { frame: u64 },
     /// The space bar: stop a rolling pass or play one.
     Space(Play),
+    /// **A transport button** ([`crate::transport`]): play or pause where
+    /// it stands, or stop back at the cursor -- `Play` the pass a play from
+    /// a stop plays.
+    Button(crate::transport::Asked, Play),
     /// The position cursor moved: the play cursor goes with it.
     Cue(u64),
     /// A script asked whether it plays.

@@ -427,7 +427,6 @@ fn asking_for_a_tools_props_engraves_nothing() {
         props(&mut editor, widget);
     }
     assert_eq!(drawn(), before, "no page was drawn for any of them");
-    assert_eq!(props(&mut editor, numbered()["loop"])["value"], 0);
     assert!(props(&mut editor, IDS.status.unwrap())["text"].is_string());
     // the page is engraved to be answered
     assert!(props(&mut editor, IDS.page)["display_list"].is_object());
@@ -912,7 +911,7 @@ fn the_window_carries_the_menu_bar_and_a_pick_is_the_verb_it_wrote() {
             "File",
             "Edit",
             "View",
-            "Play",
+            "Transport",
             "Notes",
             "Notation",
             "Measures",
@@ -1031,8 +1030,11 @@ fn the_window_has_the_toolbar_when_its_tools_are_numbered() {
         r#"{"verb": "window", "widget": 10, "tools": {"value": 100, "fold": 7}}"#,
     ))
     .unwrap();
-    assert_eq!(tree["children"][0]["children"][0]["id"], 100);
-    assert_eq!(tree["children"][0]["children"].as_array().unwrap().len(), 1);
+    // the one tool numbered, and every application's transport past it
+    let row = tree["children"][0]["children"].as_array().unwrap();
+    assert_eq!(row[0]["id"], 100);
+    let verbs: Vec<&str> = row.iter().filter_map(|t| t["verb"].as_str()).collect();
+    assert_eq!(verbs, ["to_start", "pause", "stop", "to_end", "loop"]);
 }
 
 #[test]
@@ -1590,10 +1592,18 @@ fn a_play_asks_for_a_pass_from_where_the_selection_starts() {
     assert!(!out.changed && out.record.is_none(), "a play is no edit");
     // one note selected: from it, and no range to repeat
     editor.event(&gesture("element", &[json!("n3")]), 1);
-    let out = editor.event(&tool("play", json!("click")), 1);
+    // the play tool, every application's: play or pause, the same pass
+    let out = editor.event(&window("pause", 0), 1);
     assert_eq!(
         out.play,
         Some(json!({"looping": false, "range": null, "from": 2.0}))
+    );
+    assert_eq!(out.transport, Some(crate::transport::Asked::Toggle));
+    let out = editor.event(&window("stop", 0), 1);
+    assert_eq!(out.transport, Some(crate::transport::Asked::Stop));
+    assert_eq!(
+        editor.event(&pick("pause", None), 1).transport,
+        Some(crate::transport::Asked::Toggle)
     );
     // several: the stretch they cover, a quarter to the beat
     editor.event(&gesture("element", &[json!("n2")]), 1);
@@ -1662,31 +1672,31 @@ fn a_measure_selected_is_the_stretch_a_play_plays_though_it_holds_one_note() {
 #[test]
 fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
     let mut editor = with_tools();
-    let switch = numbered()["loop"];
-    // `L` over the window: the pass in progress is told, and the toolbar's
-    // switch and the menu's check show it
+    // `L` over the window, or the toolbar's switch, which is the same verb:
+    // the pass in progress is told, and the menu's check shows it
     let out = editor.event(&window("loop", 1), 1);
     assert_eq!(out.relooped.as_ref().unwrap()["looping"], true);
     let shown = corrections_of(&out);
-    assert!(
-        shown
-            .iter()
-            .any(|c| c.widget == i64::from(switch) && c.props == json!({"value": 1}))
-    );
     let bar = &shown.last().expect("the window's").props["menu"];
-    let play = bar
+    let transport = bar
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["label"] == "Play")
+        .find(|m| m["label"] == "Transport")
         .unwrap();
-    assert_eq!(play["menu"][3]["checked"], true);
+    let entry = transport["menu"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["verb"] == "loop")
+        .unwrap();
+    assert_eq!(entry["checked"], true);
     // the host turned it, so it is not told what it already holds
     let window_props = &shown.last().unwrap().props;
     assert!(window_props.get("looping").is_none(), "{window_props}");
-    // the toolbar turns it off, and the next play does not loop: the host's
+    // the menu turns it off, and the next play does not loop: the host's
     // switch -- the one `L` turns -- is told, so its next press turns it on
-    let out = editor.event(&tool("loop", json!(0)), 1);
+    let out = editor.event(&pick("loop", Some(0)), 1);
     assert_eq!(out.relooped.as_ref().unwrap()["looping"], false);
     let shown = corrections_of(&out);
     assert_eq!(shown.last().unwrap().props["looping"], json!(false));
@@ -1695,15 +1705,16 @@ fn the_loop_switch_is_one_whoever_turns_it_and_a_rewind_cues_the_start() {
         corrections_of(&out).last().unwrap().props["looping"],
         json!(true)
     );
-    editor.event(&tool("loop", json!(0)), 1);
+    editor.event(&pick("loop", Some(0)), 1);
     assert_eq!(
-        editor.event(&window("play", 1), 1).play.unwrap()["looping"],
+        editor.event(&window("play", 0), 1).play.unwrap()["looping"],
         false
     );
-    // a rewind is the cursor at the first beat
-    let out = editor.event(&tool("rewind", json!("click")), 1);
+    // back to start is the cursor at the first beat, from the menu as from
+    // the key
+    let out = editor.event(&window("to_start", 0), 1);
     assert_eq!(out.locate, Some(0.0));
-    assert_eq!(editor.event(&pick("rewind", None), 1).locate, Some(0.0));
+    assert_eq!(editor.event(&pick("to_start", None), 1).locate, Some(0.0));
 }
 
 /// **A rewind is where the next pass starts.** One item picked would start it
@@ -1720,7 +1731,7 @@ fn a_rewind_lets_go_of_the_place_a_pick_left_and_keeps_a_stretch() {
     );
     editor.event(&window("play", 0), 1);
 
-    let out = editor.event(&tool("rewind", json!("click")), 1);
+    let out = editor.event(&pick("to_start", None), 1);
     assert_eq!(out.locate, Some(0.0));
     assert_eq!(out.selected, Some(Vec::new()), "the pick went");
     assert!(editor.items().is_empty());

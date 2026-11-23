@@ -1816,11 +1816,20 @@ impl Host {
     /// **The window's `play` verb**, as it goes out: the verb and the loop
     /// switch (`L`) beside it, `1` or `0` -- an owner that plays its own take
     /// reads how the pass ends from it, and one that does not ignores it.
-    pub fn play_verb(&self) -> Vec<OscType> {
+    pub fn play_verb(&self, def: i32) -> Vec<OscType> {
         vec![
             OscType::String(clausters_apps::multitrack::editor::PLAY_KEY.into()),
-            OscType::Int(i32::from(self.monitor_loops())),
+            OscType::Int(i32::from(self.window_loops(def))),
         ]
+    }
+
+    /// **Whether window `def`'s loop switch is on**: its owner's `loop`
+    /// reading, where it publishes one -- the switch is each window's, and
+    /// one window's must not move another's -- else the host's own.
+    pub fn window_loops(&self, def: i32) -> bool {
+        self.action_state(def, "loop", &self.clipboard)
+            .and_then(|state| state.checked)
+            .unwrap_or_else(|| self.monitor_loops())
     }
 
     /// **The window's `loop` verb**, as it goes out when `L` switches the loop:

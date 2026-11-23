@@ -752,8 +752,9 @@ impl Editing {
         }
         self.select_member(member);
         let (can_undo, can_redo) = (self.can_undo(), self.can_redo());
+        let rolling = self.rolling(member);
         let seat = &self.seats[member as usize];
-        match &seat.member {
+        let mut states = match &seat.member {
             Member::Audio(editor) => {
                 let pending =
                     self.audio_runtime
@@ -778,7 +779,12 @@ impl Editing {
             #[cfg(feature = "notation")]
             Member::Score(editor) => json!(editor.actions(can_undo, can_redo)),
             _ => json!({}),
+        };
+        // **the play tool shows what a press does**, every application's
+        if let Some(rolling) = rolling {
+            crate::transport::show(&mut states, rolling);
         }
+        states
     }
 
     /// The version a host names back.
@@ -921,6 +927,20 @@ impl Editing {
     pub fn window_title(&self, member: MemberId) -> Option<String> {
         let (title, asks, unsaved) = self.work_of(member)?;
         Some(crate::closing::shown_title(&title, asks, unsaved))
+    }
+
+    /// **Whether member `member`'s transport rolls**, as the engine says
+    /// now: what its play tool shows ([`crate::transport::show`]). `None`
+    /// for a member with no transport (a curve).
+    pub fn rolling(&self, member: MemberId) -> Option<bool> {
+        Some(match self.member(member)? {
+            Member::Audio(_) => coordinator::rolling(self, member),
+            Member::Multitrack(_) => self.multitrack_rolls(member),
+            #[cfg(feature = "notation")]
+            Member::Score(_) => self.roll_rolls(member),
+            Member::Notes(_) => self.roll_rolls(member),
+            _ => return None,
+        })
     }
 
     /// **Whether member `member`'s window asks before it closes**

@@ -187,8 +187,11 @@ impl Editing {
                     member,
                     roll,
                     outcome.locate,
-                    outcome.play.as_ref(),
-                    outcome.relooped.as_ref(),
+                    PassAsked {
+                        play: outcome.play.as_ref(),
+                        relooped: outcome.relooped.as_ref(),
+                        transport: outcome.transport,
+                    },
                     ids,
                 );
                 ran.end = Some(Ok(json!(outcome.changed)));
@@ -497,16 +500,20 @@ impl Editing {
     }
 
     /// **What a turn asked of the pass**, a roll's or a page's alike: the
-    /// cursor placed, a play or a stop, the loop switch.
+    /// cursor placed, a play or a stop, the loop switch, a transport button.
     fn roll_pass(
         &self,
         member: MemberId,
         roll: &mut Roll,
         locate: Option<f64>,
-        play: Option<&Value>,
-        relooped: Option<&Value>,
+        asked: PassAsked<'_>,
         ids: &mut IdSpaces,
     ) {
+        let PassAsked {
+            play,
+            relooped,
+            transport,
+        } = asked;
         if locate.is_some() || play.is_some() {
             // whether it rolls is the engine's: a pass may have ended on its
             // own
@@ -529,14 +536,27 @@ impl Editing {
             });
         }
         if let Some(asked) = play {
-            // a page plays from where its selection starts, which it names
-            if let Some(from) = asked["from"].as_f64() {
+            use crate::transport::Asked;
+            // a page plays from where its selection starts, which it names --
+            // where a play from a stop starts, never where a pause stands
+            if let Some(from) = asked["from"].as_f64()
+                && !(transport == Some(Asked::Toggle) && roll.playback.paused())
+            {
                 roll.cursor = from;
             }
             let (range, looping) = pass(asked);
             let (cursor, rate) = (roll.cursor, roll.rate);
             self.roll_with(member, |sequence| {
-                if roll.playback.rolling() {
+                // **the transport's buttons** ([`crate::transport`]): play or
+                // pause where it stands, and stop back at the cursor
+                let rolling = roll.playback.rolling();
+                if transport == Some(Asked::Stop) {
+                    roll.playback.stop(sequence, cursor, rate)
+                } else if transport == Some(Asked::Toggle) && rolling {
+                    roll.playback.pause()
+                } else if transport == Some(Asked::Toggle) && roll.playback.paused() {
+                    roll.playback.resume()
+                } else if rolling {
                     roll.playback.stop(sequence, cursor, rate)
                 } else {
                     roll.playback
@@ -576,6 +596,16 @@ impl Editing {
                 Some(f(&sequence))
             }
             _ => None,
+        }
+    }
+
+    /// **Whether member `member`'s roll or page rolls**, as the engine says
+    /// now, without telling its playback.
+    pub(super) fn roll_rolls(&self, member: MemberId) -> bool {
+        let transport = self.rolls.get(&member).and_then(|r| r.playback.transport());
+        match (self.engine.as_ref(), transport) {
+            (Some(engine), Some(transport)) => engine.rolling(transport),
+            _ => false,
         }
     }
 
@@ -871,8 +901,11 @@ impl Editing {
             member,
             roll,
             outcome.locate,
-            outcome.play.as_ref(),
-            outcome.relooped.as_ref(),
+            PassAsked {
+                play: outcome.play.as_ref(),
+                relooped: outcome.relooped.as_ref(),
+                transport: outcome.transport,
+            },
             ids,
         );
         ran.end = Some(Ok(json!({
@@ -1026,4 +1059,14 @@ impl Editing {
         }
         self.notes_query(member, query)
     }
+}
+
+/// **What a turn asked of a roll's pass** beside where the cursor went: a
+/// play (`{"looping", "range", "from"}`), the loop switch, and a transport
+/// button ([`crate::transport::Asked`]).
+#[derive(Clone, Copy)]
+struct PassAsked<'a> {
+    play: Option<&'a Value>,
+    relooped: Option<&'a Value>,
+    transport: Option<crate::transport::Asked>,
 }
