@@ -145,7 +145,7 @@ theme_roles! {
     accent = [0.29, 0.871, 0.502, 1.0];
     /// The accent's quiet form (an unlit toggle, a knob's arc).
     accent_dim = [0.251, 0.251, 0.251, 1.0];
-    /// The accent's lit form (a pressed control, a window's edge marker).
+    /// The accent's lit form (a window's edge marker, a solo that is on).
     hilite = [0.29, 0.871, 0.502, 1.0];
     /// What the pointer is over: a row of an open list, a flat button, a
     /// tab. A quiet lift off the ground it sits on, so it reads as *under the

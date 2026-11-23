@@ -3525,7 +3525,7 @@ menu of its tab, is what interfaces with dockable panels commonly have;
 without it, those actions are reachable only by dragging or by the
 application's menus. It stays, in every bar.
 
-## A button held is drawn on the lit fill, not a pixel lower (2026-11-23)
+## A button held is drawn on the toggled fill, not a pixel lower (2026-11-23)
 
 The reference design marks a held button with nothing of its own (its
 hover is all it has), and the host's port of it stood what the button
@@ -3533,15 +3533,16 @@ says a hairline lower while it was held. On a tool that is one icon, the
 usual kind in an application's bar, the user found that shift almost
 invisible: it read as a slight change of the icon's size, if at all.
 
-**Held, a button of any variant is drawn on `hilite`**, the accent's lit
-form, with the ink that reads on it (a `link` in that ink, having no
-box), and the icon does not move. It is the convention the host had
-before the design system, when the press was the lit fill, and `hilite`
-is the role the theme already named for a pressed control. It is not
-`toggled`: a press of a momentary button must not look like a switch
-that is on, and the two are told apart by fill, since a tool's on state
-keeps the `toggled` fill under the hand. The buttons an element draws
-inside itself (the documentation's strip, the find bar, the post
-window's clear tool) take the same look while held, so no button of the
-host's has a press that is not seen. The `press_shift` size role went
-with the shift, since nothing else moved by it.
+**Held, a button of any variant is drawn on `toggled`**, the fill of a
+switch that is on, in the text's ink (a `link` too, having no box),
+and the icon does not move. A first version drew
+the press on `hilite`, the accent's lit form and the host's convention
+before the design system; in a bar of tools it read as a second accent
+beside the switches' quiet fill, and the user asked for the press to
+wear the switches' own grey so the bar keeps one style. A press and a
+switch that is on look alike only while the hand holds the button,
+which is when the hand already knows which it pressed. The buttons an
+element draws inside itself (the documentation's strip, the find bar,
+the post window's clear tool) take the same look while held, so no
+button of the host's has a press that is not seen. The `press_shift`
+size role went with the shift, since nothing else moved by it.

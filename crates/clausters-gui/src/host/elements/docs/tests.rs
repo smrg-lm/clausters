@@ -515,7 +515,7 @@ fn a_tool_of_the_strip_is_drawn_held() {
             header: None,
         };
         v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
-        mesh.colors_by_y().any(|(_, c)| c == theme.hilite)
+        mesh.colors_by_y().any(|(_, c)| c == theme.toggled)
     };
     assert!(!lit(&v));
     let g = v.geometry(RECT, 1.0, &m, None);

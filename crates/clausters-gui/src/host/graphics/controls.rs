@@ -652,7 +652,7 @@ pub struct ButtonLook {
     pub flat: bool,
     /// Its variant.
     pub variant: Variant,
-    /// Held down by the hand: on the `hilite` fill, the accent's lit form,
+    /// Held down by the hand: on the `toggled` fill, a switch's that is on,
     /// whatever its variant.
     pub held: bool,
 }
@@ -742,10 +742,10 @@ pub fn caption_floor(caption: &str, size: f32, m: &Metrics) -> f32 {
 /// variant's: under the pointer, a ghost or an outlined button takes the
 /// `muted` fill and a filled one fades to four fifths; on, a ghost or an
 /// outlined one takes the `toggled` fill, which reads on the bar it stands
-/// in. **Held, any of them takes the `hilite` fill** and the ink that reads
-/// on it, a link its ink alone: a press is seen on a lone icon, where a
-/// shift of a pixel or two was not, and is not confused with a switch that
-/// is on.
+/// in. **Held, any of them takes that `toggled` fill** and the text's
+/// ink, a link the ink alone: a press is seen on a lone
+/// icon, where a shift of a pixel or two was not, in the one grey a bar's
+/// tools use for a state.
 pub fn button(
     d: &mut Draw,
     label: Option<&str>,
@@ -793,8 +793,8 @@ pub fn button(
         Variant::Link => (None, None, theme.primary),
     };
     let (fill, edge, ink) = match (look.held, variant) {
-        (true, Variant::Link) => (None, None, theme.hilite),
-        (true, _) => (Some(theme.hilite), None, theme.text_on(theme.hilite)),
+        (true, Variant::Link) => (None, None, theme.text),
+        (true, _) => (Some(theme.toggled), None, theme.text),
         (false, _) => (fill, edge, ink),
     };
     if let Some(fill) = fill {
@@ -1763,10 +1763,10 @@ mod tests {
     }
 
     /// **A button held is seen held, whatever its variant**: on the
-    /// `hilite` fill, which neither its rest, its hover nor a switch that is
-    /// on takes, and its icon stands where it stood.
+    /// `toggled` fill, a switch's that is on, which neither its rest nor its
+    /// hover takes, and its icon stands where it stood.
     #[test]
-    fn a_held_button_takes_the_lit_fill_and_stays_put() {
+    fn a_held_button_takes_the_toggled_fill_and_stays_put() {
         let theme = Theme::default();
         let m = Metrics::default();
         let r = Rect::new(0.0, 0.0, 30.0, 30.0);
@@ -1797,19 +1797,15 @@ mod tests {
                     ..ButtonLook::default()
                 };
                 let held = ButtonLook { held: true, ..look };
-                assert!(fills(&draw(held)).contains(&theme.hilite), "{variant:?}");
+                assert!(fills(&draw(held)).contains(&theme.toggled), "{variant:?}");
                 for other in [
                     look,
                     ButtonLook {
                         hovered: true,
                         ..look
                     },
-                    ButtonLook {
-                        active: true,
-                        ..look
-                    },
                 ] {
-                    assert!(!fills(&draw(other)).contains(&theme.hilite), "{variant:?}");
+                    assert!(!fills(&draw(other)).contains(&theme.toggled), "{variant:?}");
                 }
             }
         }
@@ -1827,7 +1823,7 @@ mod tests {
         let held = draw(ButtonLook { held: true, ..look });
         let rest = top(&draw(look), theme.text);
         assert!(rest < r.h);
-        assert_eq!(rest, top(&held, theme.text_on(theme.hilite)));
+        assert_eq!(rest, top(&held, theme.text));
     }
 
     /// **A latch is the design system's toggle**: off, no fill; on, the

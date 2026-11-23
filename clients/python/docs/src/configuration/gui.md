@@ -130,7 +130,7 @@ the notation:
 | `track` | `#171717` | `#fafafa` | The inset groove/body under a control's value (a slider's track), and the body of the static info views (node tree, plot). |
 | `accent` | `#4ade80` | `#16a34a` | The color that carries a widget's function: a slider's fill, a knob's pointer, a meter's bar, the live views' frame. |
 | `accent_dim` | `#404040` | `#e5e5e5` | The accent's quiet form (an unlit toggle, a knob's arc). |
-| `hilite` | `#4ade80` | `#16a34a` | The accent's lit form (a pressed control, a window's edge marker). |
+| `hilite` | `#4ade80` | `#16a34a` | The accent's lit form (a window's edge marker, a solo that is on). |
 | `hover` | `#2e2e2e` | `#ececec` | What the pointer is over: a row of an open list, a flat button, a tab. |
 | `text_disabled` | `#737373` | `#a1a1a1` | The text of something that cannot be acted on now: a disabled control, a disabled entry of a menu. |
 | `popup` | `#171717` | `#ffffff` | The ground of what opens over the window: a list, a menu, a tip. Opaque, since it covers what it opened over. |
