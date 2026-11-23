@@ -1063,7 +1063,7 @@ impl Element for Notes {
             // The strip sits under the grid, aligned to the grid's x range --
             // the "body" the tick math derives it from.
             let body = Rect::new(r.grid.x, ctx.rect.y, r.grid.w, r.ruler.y - ctx.rect.y);
-            crate::host::frame::draw_time_ruler(d, ctx.rect, body, &nav, rate, &self.editor);
+            crate::host::frame::draw_time_ruler(d, ctx.rect, body, &nav, rate, &self.editor, false);
         }
         self.draw_axis_chrome(d, ctx, r.grid, &nav);
     }

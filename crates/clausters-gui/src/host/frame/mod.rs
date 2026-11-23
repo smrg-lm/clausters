@@ -1433,7 +1433,7 @@ fn picture(
     let collected = collect_widgets(base, &mut mesh, inputs, theme);
     draw_dividers(&mut mesh, &placed, 0..base.len(), inputs, theme);
 
-    draw_timeline_meshes(
+    let empty = draw_timeline_meshes(
         &mut mesh,
         &mut over,
         &collected,
@@ -1442,7 +1442,9 @@ fn picture(
         inputs,
         theme,
     );
-    draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
+    draw_static_meshes(
+        &mut mesh, &mut over, &collected, inputs, theme, tree, &empty,
+    );
     let reading = draw_element_overlays(&mut over, base, inputs, theme);
     draw_bars(&mut over, base, inputs, theme);
     // **What moves, apart**: the window's live layers, kept by the placements
@@ -1505,7 +1507,7 @@ fn picture(
             dialog_card = Some(dialog[0].rect);
         }
         draw_dividers(&mut under, &placed, base.len()..placed.len(), inputs, theme);
-        draw_timeline_meshes(
+        let empty = draw_timeline_meshes(
             &mut under,
             &mut above,
             &inside,
@@ -1514,7 +1516,7 @@ fn picture(
             inputs,
             theme,
         );
-        draw_static_meshes(&mut under, &mut above, &inside, inputs, theme, tree);
+        draw_static_meshes(&mut under, &mut above, &inside, inputs, theme, tree, &empty);
         draw_element_overlays(&mut above, dialog, inputs, theme);
         draw_bars(&mut above, dialog, inputs, theme);
         draw_timeline_heads(&mut above, &inside, waveforms, spectrograms, inputs, theme);

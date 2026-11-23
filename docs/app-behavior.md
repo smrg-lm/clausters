@@ -652,7 +652,10 @@ code that keeps it lives.
   The audio editor's New... asks the channels, the rate and the sample
   format, never a length: the file starts empty, written nowhere, and an
   edit (a paste, a drawn stroke) puts samples in it. Its format is 32-bit
-  float, the one a take is held in, and its saves write that format.
+  float, the one a take is held in, and its saves write that format. A
+  file is finite, so a ruler never shows a duration it does not have: over
+  a take of no samples the time ruler shows its start, `0`, and nothing
+  else.
 - **A file is handled alike in every application.** The File menu is built
   once (`chrome::file_menu`), the score's and the code editor's with the
   others': New, Open..., Open Recent where the application keeps its recent

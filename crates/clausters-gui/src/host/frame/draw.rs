@@ -31,7 +31,10 @@ fn draw_time_line(d: &mut Draw, body: Rect, nav: &View, pos: Option<f64>, color:
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
-/// when a vertical ruler indents the body).
+/// when a vertical ruler indents the body). `empty` is an axis bounded by a
+/// take of no samples: **a file is finite, so a ruler never shows a
+/// duration it does not have**, and that one shows its start alone
+/// ([`ruler::origin_ticks`]).
 pub(crate) fn draw_time_ruler(
     d: &mut Draw,
     rect: Rect,
@@ -39,6 +42,7 @@ pub(crate) fn draw_time_ruler(
     nav: &View,
     rate: f64,
     editor: &EditorProps,
+    empty: bool,
 ) {
     if !editor.strip() {
         return;
@@ -48,14 +52,18 @@ pub(crate) fn draw_time_ruler(
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
     }
-    let ticks = ruler::time_ticks(
-        nav.start,
-        nav.len,
-        strip.w as f64,
-        rate,
-        time_unit(editor),
-        metrics,
-    );
+    let ticks = if empty {
+        ruler::origin_ticks(rate, time_unit(editor), metrics)
+    } else {
+        ruler::time_ticks(
+            nav.start,
+            nav.len,
+            strip.w as f64,
+            rate,
+            time_unit(editor),
+            metrics,
+        )
+    };
     ruler::draw_ticks_h(d, strip, &ticks, editor.dir);
     draw_markers(
         d,
@@ -502,6 +510,8 @@ pub(super) fn draw_editor_overlay(
 /// the vertical-ruler strip go into the base `mesh` (under the GPU view); the
 /// border, channel dividers, selection, playhead and cursor readout into `over`
 /// (drawn over it).
+/// Answers the axes a take of no samples bounds ([`empty_axes`]), which the
+/// free-standing rulers over them rule at their start alone.
 pub(super) fn draw_timeline_meshes(
     mesh: &mut Mesh,
     over: &mut Mesh,
@@ -510,8 +520,9 @@ pub(super) fn draw_timeline_meshes(
     spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
     inputs: &FrameInputs,
     theme: &Theme,
-) {
+) -> std::collections::HashSet<crate::host::timeline::GroupKey> {
     let m = inputs.metrics;
+    let empty = empty_axes(collected, waveforms, spectrograms);
     // Timeline views (waveform/spectrogram): the field, time ruler and the
     // vertical-ruler strip go into the base mesh (under the GPU view); the
     // border, channel dividers, selection, playhead and cursor readout into the
@@ -575,6 +586,7 @@ pub(super) fn draw_timeline_meshes(
                 &nav,
                 rate,
                 &item.editor,
+                empty.contains(&group_key(item.id, item.editor.link)),
             );
         }
         // The rows are the lanes and the channels are the data: the count comes
@@ -825,12 +837,46 @@ pub(super) fn draw_timeline_meshes(
             th,
         );
     }
+    empty
 }
 
-/// Draws the remaining static views (plots, envelope editors, node trees,
-/// multitrack lanes and piano rolls): pure mesh work with the host-tree borrow
-/// already released. The flat geometry goes into `mesh`, the hover/selection/
-/// playhead chrome into `over`.
+/// **The axes a take of no samples bounds**: the groups whose pictures
+/// resolved, every one of them to an extent of nothing -- a file with no
+/// samples, which has no duration, so its rulers show its start alone. A
+/// picture still on its way says nothing, and any picture with samples on
+/// the axis rules it as before.
+fn empty_axes(
+    collected: &Collected,
+    waveforms: &HashMap<SlotAt, WaveformSlot>,
+    spectrograms: &HashMap<SlotAt, SpectrogramSlot>,
+) -> std::collections::HashSet<crate::host::timeline::GroupKey> {
+    let mut empty = std::collections::HashSet::new();
+    let mut full = std::collections::HashSet::new();
+    for item in &collected.timeline_items {
+        let total = waveforms
+            .get(&(item.id, item.key))
+            .filter(|s| s.view.num_channels() > 0)
+            .map(|s| s.view.total_samples())
+            .or_else(|| {
+                spectrograms
+                    .get(&(item.id, item.key))
+                    .map(|s| s.total_samples())
+            });
+        let key = group_key(item.id, item.editor.link);
+        match total {
+            Some(0) => {
+                empty.insert(key);
+            }
+            Some(_) => {
+                full.insert(key);
+            }
+            None => {}
+        }
+    }
+    empty.retain(|key| !full.contains(key));
+    empty
+}
+
 /// **The playhead of every timeline view in `collected`**, into `mesh`: the
 /// engine clock relative to the view's origin while its transport plays, else
 /// the parked line of a located, stopped one.
@@ -901,6 +947,7 @@ pub(super) fn draw_static_meshes(
     inputs: &FrameInputs,
     theme: &Theme,
     _tree: &Widget,
+    empty: &std::collections::HashSet<crate::host::timeline::GroupKey>,
 ) {
     let m = inputs.metrics;
     // Where the shared time axis begins, per navigation group: a lane, a roll
@@ -941,6 +988,7 @@ pub(super) fn draw_static_meshes(
             &nav,
             rate,
             &item.editor,
+            empty.contains(&group_key(item.id, item.editor.link)),
         );
     }
 }

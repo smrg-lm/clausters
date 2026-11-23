@@ -231,6 +231,26 @@ fn labels_fit(
     }
 }
 
+/// **The ruler of an axis with nothing on it**: a file of no samples, which
+/// has no duration to show. Its one tick is its start, labelled `0` -- in
+/// seconds and in samples alike -- or, on the musical grid, as the grid
+/// names the beat the axis starts on.
+pub(crate) fn origin_ticks(sample_rate: f64, unit: TimeUnit, metrics: &Metrics) -> Vec<Tick> {
+    let label = match unit {
+        TimeUnit::Beats { .. } if sample_rate > 0.0 => {
+            time_ticks(0.0, sample_rate, 1000.0, sample_rate, unit, metrics)
+                .into_iter()
+                .find(|t| t.frac.abs() < 1e-9 && t.label.is_some())
+                .and_then(|t| t.label)
+        }
+        _ => None,
+    };
+    vec![Tick {
+        frac: 0.0,
+        label: Some(label.unwrap_or_else(|| "0".into())),
+    }]
+}
+
 /// The ticks of a time ruler spanning samples `[start, start + len)` over
 /// `width_px` device pixels. With `TimeUnit::Seconds` (and a positive
 /// `sample_rate`) the steps and labels are in clock time; with
@@ -1654,6 +1674,19 @@ pub(crate) fn draw_ticks_v_shared(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A file of no samples has no duration to show**: its ruler is its
+    /// start alone, `0` in seconds and in samples.
+    #[test]
+    fn an_empty_axis_is_ruled_at_its_start_alone() {
+        let m = Metrics::default();
+        for unit in [TimeUnit::Seconds, TimeUnit::Samples] {
+            let ticks = origin_ticks(48_000.0, unit, &m);
+            assert_eq!(ticks.len(), 1, "{unit:?}");
+            assert_eq!(ticks[0].frac, 0.0);
+            assert_eq!(ticks[0].label.as_deref(), Some("0"));
+        }
+    }
     use clausters_gui_draw::paint::Mesh;
     use clausters_gui_draw::theme::Theme;
 
