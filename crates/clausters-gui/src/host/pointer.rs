@@ -150,27 +150,66 @@ pub fn pointer_px(scale: f32) -> u32 {
     (POINTER_PX * scale).round().max(1.0) as u32
 }
 
+/// **Where in a picture `px` square the point `(hx, hy)` of its icon's box
+/// of 24 lands**: the box inside a pixel of margin, as the picture is drawn
+/// ([`clausters_gui_draw::font::outline::icon_pixels`]).
+fn hotspot(px: u32, (hx, hy): (f32, f32)) -> (u16, u16) {
+    let k = (px as f32 - 2.0).max(1.0) / 24.0;
+    let hot = |v: f32| ((1.0 + v * k).round() as u16).min(px as u16 - 1);
+    (hot(hx), hot(hy))
+}
+
+/// **A pointer's picture as a page sets it**: the icon `name` as an SVG
+/// image `px` CSS pixels square, in a `data:` URL. A page shows a raster
+/// pointer at one image pixel to the CSS pixel and scales it by the screen's
+/// density, so the pencil drawn at 24 pixels blurred on a dense screen
+/// beside the platform's own pointer; an SVG is stroked at the density it
+/// is shown at. Every byte a URL left unquoted in a CSS `url()` cannot
+/// carry is escaped. A page's alone, and checked natively.
+#[cfg(any(target_arch = "wasm32", test))]
+fn picture_url(name: &str, px: u32) -> Option<String> {
+    let svg = clausters_gui_draw::font::outline::icon_svg(name, px)?;
+    let mut url = String::from("data:image/svg+xml,");
+    for b in svg.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~/:=".contains(&b) {
+            url.push(b as char);
+        } else {
+            url.push_str(&format!("%{b:02X}"));
+        }
+    }
+    Some(url)
+}
+
+/// **The picture of icon `name`**, `px` square with its hotspot at `hot`:
+/// natively its raster, drawn at the window's density.
+#[cfg(not(target_arch = "wasm32"))]
+fn source(name: &str, px: u32, (x, y): (u16, u16)) -> Option<winit::window::CustomCursorSource> {
+    let rgba = clausters_gui_draw::font::outline::icon_pixels(name, px)?;
+    winit::window::CustomCursor::from_rgba(rgba, px as u16, px as u16, x, y).ok()
+}
+
+/// **The picture of icon `name`**, `px` CSS pixels square with its hotspot
+/// at `hot`: in a page its SVG ([`picture_url`]).
+#[cfg(target_arch = "wasm32")]
+fn source(name: &str, px: u32, (x, y): (u16, u16)) -> Option<winit::window::CustomCursorSource> {
+    use winit::platform::web::CustomCursorExtWebSys;
+    Some(winit::window::CustomCursor::from_url(
+        picture_url(name, px)?,
+        x,
+        y,
+    ))
+}
+
 impl Cursors {
     /// Makes the pictured shapes at `px` pixels square, the ones not made
-    /// yet.
+    /// yet: natively a raster drawn at the window's density, in a page an
+    /// SVG the browser strokes at the screen's ([`picture_url`]).
     pub fn make(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, px: u32) {
         for &(p, name, (hx, hy)) in PICTURED {
             if self.made.contains_key(&(p, px)) {
                 continue;
             }
-            let Some(rgba) = clausters_gui_draw::font::outline::icon_pixels(name, px) else {
-                continue;
-            };
-            // the icon's box inside a pixel of margin ([`icon_pixels`])
-            let k = (px as f32 - 2.0).max(1.0) / 24.0;
-            let hot = |v: f32| ((1.0 + v * k).round() as u16).min(px as u16 - 1);
-            let Ok(source) = winit::window::CustomCursor::from_rgba(
-                rgba,
-                px as u16,
-                px as u16,
-                hot(hx),
-                hot(hy),
-            ) else {
+            let Some(source) = source(name, px, hotspot(px, (hx, hy))) else {
                 continue;
             };
             self.made
@@ -213,6 +252,29 @@ mod tests {
         ] {
             assert_eq!(p.icon().name(), p.css(), "{p:?}");
         }
+    }
+
+    /// **A page's pointer picture is the icon as an SVG**, black over a white
+    /// halo like the raster, `px` CSS pixels square and stroked at the
+    /// screen's density, in a `data:` URL a CSS `url()` carries unquoted:
+    /// no space, quote, parenthesis or `#` left in it. Its hotspot is where
+    /// the raster's is.
+    #[test]
+    fn a_page_s_pointer_picture_is_an_svg_its_url_carries() {
+        for &(_, name, hot) in PICTURED {
+            let url = picture_url(name, 24).expect(name);
+            assert!(url.starts_with("data:image/svg+xml,"), "{url}");
+            assert!(
+                !url.contains([' ', '\'', '"', '(', ')', '#', '<', '>']),
+                "{url}"
+            );
+            let svg = clausters_gui_draw::font::outline::icon_svg(name, 24).unwrap();
+            assert!(svg.contains("width='24'") && svg.contains("height='24'"));
+            assert!(svg.contains("stroke='white'") && svg.contains("stroke='black'"));
+            let (x, y) = hotspot(24, hot);
+            assert!(x < 24 && y < 24, "{name}");
+        }
+        assert!(picture_url("no-such-icon", 24).is_none());
     }
 
     /// **A shape drawn from an icon is a picture of it**: black lines on a

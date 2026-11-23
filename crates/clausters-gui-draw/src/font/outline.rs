@@ -57,7 +57,6 @@ const ICON_BASE: u32 = 0xF0000;
 const ICON_UNITS: f32 = 1000.0 * (16.0 / 14.0) / (EM_PER_CELL * 0.727);
 
 /// The width an icon's lines are stroked at in its box of 24: Lucide's.
-#[cfg(feature = "path")]
 const ICON_STROKE: f32 = 2.0;
 
 /// The names an icon is also called by: a name of one character is the
@@ -104,6 +103,32 @@ pub fn icon_pixels(name: &str, px: u32) -> Option<Vec<u8>> {
         let _ = (name, px);
         None
     }
+}
+
+/// **The icon `name` as an SVG image**, `size` units square: the same
+/// lines black over a white halo as [`icon_pixels`] draws, stroked by
+/// whatever shows the image at whatever resolution it shows it. What a
+/// page sets as a pointer's picture, where a raster drawn at one density is
+/// scaled to another and blurs. `None` for a name the host does not carry.
+pub fn icon_svg(name: &str, size: u32) -> Option<String> {
+    let (_, d) = super::lucide::ICONS.iter().find(|(n, _)| *n == name)?;
+    // the box of 24 inside a pixel of margin on every side, for the halo
+    let k = (size as f32 - 2.0).max(1.0) / 24.0;
+    let margin = 1.0 / k;
+    let view = 24.0 + 2.0 * margin;
+    let stroke = |color: &str, width: f32| {
+        format!(
+            "<path d='{d}' fill='none' stroke='{color}' stroke-width='{width}' \
+             stroke-linecap='round' stroke-linejoin='round'/>"
+        )
+    };
+    Some(format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='{size}' height='{size}' \
+         viewBox='{o} {o} {view} {view}'>{halo}{line}</svg>",
+        o = -margin,
+        halo = stroke("white", ICON_STROKE + 2.0 / k),
+        line = stroke("black", ICON_STROKE),
+    ))
 }
 
 /// The names of the icons the host carries.
