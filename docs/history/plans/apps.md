@@ -4029,3 +4029,21 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   `a_page_is_the_short_name_and_the_size_key_the_kind`,
   `the_post_window_s_page_is_named_code` and a headless run of the code
   editor with the multitrack open.
+
+- ✅ **An application's file dialog had none of the storage's tools** *(found
+  by the user, 2026-11-23; fixed 2026-11-23)*. The File menus had been made
+  one, but only the code editor's dialog could make a folder, rename,
+  delete, upload and download, each carried out by the editor's platform;
+  in a page an application's document made with New could not be taken to
+  the disk nor a file brought from it, and nothing freed the page's
+  storage. The tools are now every file dialog's, decided once in
+  `forms::storage` and carried out by the host's chooser (its `change`
+  prop: the disk natively, OPFS and the browser's picker and download in a
+  page), which says how much of a page's storage is used. Every Open form
+  has the name field, and the chooser reports its selection even when its
+  value is bound to that field. Recorded in `docs/decisions/apps.md` ("A
+  file dialog manages the storage it shows, and the chooser carries the
+  change out"); checked by `forms::storage`'s and `forms`' tests,
+  `a_chooser_carries_a_change_out_says_how_it_went_and_lists_again`, the
+  code editor's dialog tests and the editor page's e2e in Chrome and
+  Firefox (upload and download in Chrome).

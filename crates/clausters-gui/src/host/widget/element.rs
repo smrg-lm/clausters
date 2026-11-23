@@ -2332,6 +2332,20 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **The change of the storage this element asks for**, once: the
+    /// element clears it as it asks. `None` (the default) for one that
+    /// changes nothing. The front carries it out and hands the end back
+    /// through [`changed`](Element::changed) ([`crate::host::files`]).
+    fn wants_change(&mut self) -> Option<crate::host::files::ChangeAsk> {
+        None
+    }
+
+    /// The end of the change `ticket`; `relists` says whether what it
+    /// changed is to be listed again. Answers whether the element took it.
+    fn changed(&mut self, _ticket: u64, _relists: bool) -> bool {
+        false
+    }
+
     /// **Where its focus ring goes**, in `rect` (its placement): the box
     /// and its corner the ring rounds, grown by the band. `None` (the
     /// default) is the whole placement with the medium corner; a checkbox

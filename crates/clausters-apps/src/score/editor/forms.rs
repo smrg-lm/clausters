@@ -67,7 +67,14 @@ impl ScoreEditor {
         match said {
             // what a field holds and where a chooser is are kept by the
             // reading
-            Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => (None, Vec::new()),
+            Said::Field(..)
+            | Said::Chosen(..)
+            | Said::Entered(..)
+            | Said::Changed(..)
+            | Said::Tool(_) => (None, Vec::new()),
+            // the storage's tools: the chooser asked for a change, the line
+            // says what they have to say
+            Said::Corrected(list) => (None, corrections(list)),
             Said::Cancel => {
                 self.leaving = None;
                 (None, corrections(self.dialogs.hide()))

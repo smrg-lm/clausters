@@ -91,12 +91,14 @@ The post window says which of the two happened.
 ## Files
 
 A page's files are its own storage, which the browser keeps for the page: File
-→ Open and File → Save show it, in the editor's own dialog. In the same
-dialog, **Upload** copies files from the disk into the folder shown,
+→ Open and File → Save show it, in the file dialog every application has (the
+multitrack's, the audio editor's, the roll's and the score's are the same). In
+that dialog, **Upload** copies files from the disk into the folder shown,
 **Download** hands the file selected back to the disk, **New folder** makes the
 folder whose name is typed, **Rename** gives the file selected the name typed,
 and **Delete** deletes the file selected, or the folder shown when none is
-(it asks first).
+(it asks first). Under the files it says how much of the storage the browser
+gives the page is used, so deleting there is how its room is freed.
 
 ## Completions and help
 

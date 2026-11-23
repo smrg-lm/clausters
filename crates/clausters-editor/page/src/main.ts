@@ -3,8 +3,10 @@
 // program, built for the page: ../editor/) a client of that host, as a
 // session is. The host draws every panel; the application decides what they
 // show. This module answers the application with what only a page's script
-// reaches: the session's workers (session.ts), the page's storage, the books
-// the page serves (docs.ts) and the browser's upload and download.
+// reaches: the session's workers (session.ts), the page's storage and the
+// books the page serves (docs.ts). What its file dialog changes in that
+// storage -- a folder, a rename, a delete, an upload, a download -- the
+// host's chooser carries out itself, for every application.
 
 import init, { PageEditor } from "../editor/clausters_editor.js";
 import { readDocs } from "./docs";
@@ -19,72 +21,6 @@ const connection = await portConnection(runtime.gui.link().port);
 
 /** The folder holding `path`. */
 const parentOf = (path: string) => path.replace(/\/[^/]*$/, "") || "/";
-/** `name` in folder `dir`. */
-const join = (dir: string, name: string) => `${dir === "/" ? "" : dir}/${name}`;
-
-/** Hands the page's file at `path` to the browser as a download. */
-async function download(path: string): Promise<void> {
-  const url = URL.createObjectURL(new Blob([await opfs.readFile(path)]));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = path.split("/").pop() || "file";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-/** Asks for files from the disk and copies them into folder `dir`. */
-function upload(dir: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.multiple = true;
-    input.onchange = async () => {
-      try {
-        await opfs.makeDirectory(dir).catch(() => {});
-        for (const file of input.files ?? []) {
-          await opfs.writeFile(join(dir, file.name), new Uint8Array(await file.arrayBuffer()));
-        }
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
-    };
-    input.oncancel = () => resolve();
-    input.click();
-  });
-}
-
-/** Removes a file, or a folder and everything in it. */
-async function remove(path: string): Promise<void> {
-  try {
-    await opfs.removeFile(path);
-  } catch {
-    await opfs.removeDirectory(path, true);
-  }
-}
-
-/** One change of the editor's file dialog to the page's storage. */
-async function change(asked: string): Promise<void> {
-  const { op, path, to } = JSON.parse(asked) as { op: string; path: string; to: string | null };
-  switch (op) {
-    case "makeFolder":
-      return opfs.makeDirectory(path);
-    case "rename":
-      try {
-        return await opfs.moveFile(path, to!);
-      } catch {
-        throw new Error(`${path} was not renamed: only a file is renamed here`);
-      }
-    case "remove":
-      return remove(path);
-    case "upload":
-      return upload(path);
-    case "download":
-      return download(path);
-    default:
-      throw new Error(`${op}: not a change of the page's storage`);
-  }
-}
 
 const editor = new PageEditor({
   send: (packet: Uint8Array) => {
@@ -110,7 +46,6 @@ const editor = new PageEditor({
     await opfs.makeDirectory(parentOf(path)).catch(() => {});
     await opfs.writeFile(path, new TextEncoder().encode(text));
   },
-  change,
   readDocs,
 });
 connection.addReply((packet: Uint8Array) => editor.host(packet));

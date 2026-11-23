@@ -24,7 +24,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use crate::app::{App, Msg};
 use crate::docs::Folder;
-use crate::platform::{self, Change, Language, Offers, Platform, Purpose, Read};
+use crate::platform::{self, Language, Offers, Platform, Purpose, Read};
 use crate::settings::Settings;
 use crate::wire::{Link, Said};
 
@@ -58,9 +58,6 @@ extern "C" {
     fn read_text(this: &PagePlatform, path: &str) -> js_sys::Promise;
     #[wasm_bindgen(method)]
     fn write(this: &PagePlatform, path: &str, text: &str) -> js_sys::Promise;
-    /// One change to the storage, as the JSON of `{op, path, to?}`.
-    #[wasm_bindgen(method)]
-    fn change(this: &PagePlatform, change: &str) -> js_sys::Promise;
     /// Every book's folder, read, as the JSON of
     /// `[{prefix, name, summary, documents: [[path, text]], at}]`.
     #[wasm_bindgen(method, js_name = readDocs)]
@@ -257,7 +254,6 @@ impl Platform for Page {
             docs_folder: false,
             fonts: false,
             quit: false,
-            transfers: true,
         }
     }
 
@@ -331,19 +327,6 @@ impl Platform for Page {
                 path: None,
             },
         );
-    }
-
-    fn change(&self, change: Change) {
-        let (op, path, to) = match &change {
-            Change::MakeFolder(p) => ("makeFolder", p, None),
-            Change::Rename(p, to) => ("rename", p, Some(to)),
-            Change::Remove(p) => ("remove", p, None),
-            Change::Upload(p) => ("upload", p, None),
-            Change::Download(p) => ("download", p, None),
-        };
-        let asked = json!({"op": op, "path": named(path), "to": to.map(|t| named(t))});
-        let promise = self.js.change(&asked.to_string());
-        self.answer(promise, |done| Msg::Changed(done.map(|_| ())));
     }
 
     /// The browser's `prefers-color-scheme`, now and at every change.

@@ -56,9 +56,6 @@ pub struct Offers {
     pub fonts: bool,
     /// A quit of the program's own (a page's tab is closed by the browser).
     pub quit: bool,
-    /// **Copies between the disk and the storage**, where the storage is
-    /// not the disk (a page's): its file dialog uploads and downloads.
-    pub transfers: bool,
 }
 
 /// What a file dialog was opened for, handed back with what was chosen.
@@ -92,22 +89,6 @@ pub struct MonoFamily {
     pub name: String,
     pub regular: PathBuf,
     pub bold: Option<PathBuf>,
-}
-
-/// A change the editor's own file dialog makes to the storage.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Change {
-    /// A folder made, with the ones on its way.
-    MakeFolder(PathBuf),
-    /// A file or a folder given another path.
-    Rename(PathBuf, PathBuf),
-    /// A file, or a folder and everything in it, removed.
-    Remove(PathBuf),
-    /// Files from the disk copied into the folder, as the browser asks for
-    /// them.
-    Upload(PathBuf),
-    /// A file handed to the browser to keep on the disk.
-    Download(PathBuf),
 }
 
 /// A file read for a tab: why it was read, handed back with what was read.
@@ -167,9 +148,6 @@ pub trait Platform {
     /// [`Offers::docs_folder`]; a file is opened and saved in the editor's
     /// own file dialog.
     fn choose(&self, purpose: Purpose, start: Option<PathBuf>);
-    /// Makes a change to the storage, asked by the editor's file dialog:
-    /// `Msg::Changed`.
-    fn change(&self, change: Change);
 
     // -- the look and the documentation
 

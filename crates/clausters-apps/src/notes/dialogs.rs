@@ -98,7 +98,7 @@ impl Spec for Form {
                 ("division", "Shortest value"),
                 ("writing", "Polyphony"),
             ],
-            Form::Open => vec![("path", "")],
+            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
             Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
             Form::Close => Vec::new(),
         }

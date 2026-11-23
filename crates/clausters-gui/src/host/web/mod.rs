@@ -234,6 +234,14 @@ enum WebEvent {
     /// The page's answerer answered a list's question (`disk`), in the
     /// server's reply format: read as a server's reply is.
     DiskReply(Vec<u8>),
+    /// A change of the storage an element asked for came to its end
+    /// (`files`).
+    Changed {
+        def_id: i32,
+        widget_id: i32,
+        ask: crate::host::files::ChangeAsk,
+        result: Result<(), String>,
+    },
     /// A directory an element asked for has been listed (`files`).
     Listed {
         def_id: i32,
@@ -1408,6 +1416,12 @@ impl WebApp {
                 ticket,
                 result,
             } => self.on_listed(def_id, widget_id, ticket, result),
+            WebEvent::Changed {
+                def_id,
+                widget_id,
+                ask,
+                result,
+            } => self.on_changed(def_id, widget_id, &ask, result),
             WebEvent::Read {
                 def_id,
                 widget_id,

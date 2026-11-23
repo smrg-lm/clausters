@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::app::Msg;
-use crate::platform::{self, Change, EnvInfo, Language, Offers, Platform, Purpose, Read};
+use crate::platform::{self, EnvInfo, Language, Offers, Platform, Purpose, Read};
 use session::Session;
 
 /// The desktop's platform, telling the application on `tx`.
@@ -64,7 +64,6 @@ impl Platform for Native {
             docs_folder: true,
             fonts: true,
             quit: true,
-            transfers: false,
         }
     }
 
@@ -123,22 +122,6 @@ impl Platform for Native {
 
     fn choose(&self, purpose: Purpose, start: Option<PathBuf>) {
         desktop::choose(&self.tx, purpose, start);
-    }
-
-    /// **The disk changed at once**: a folder made, a file or a folder
-    /// renamed or removed. The disk is the storage here, so nothing is
-    /// copied to it or from it.
-    fn change(&self, change: Change) {
-        use std::fs;
-        let done = match &change {
-            Change::MakeFolder(path) => fs::create_dir_all(path),
-            Change::Rename(from, to) => fs::rename(from, to),
-            Change::Remove(path) if path.is_dir() => fs::remove_dir_all(path),
-            Change::Remove(path) => fs::remove_file(path),
-            Change::Upload(_) | Change::Download(_) => Ok(()),
-        }
-        .map_err(|e| e.to_string());
-        let _ = self.tx.send(Msg::Changed(done));
     }
 
     fn follow_color_scheme(&self) {

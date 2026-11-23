@@ -100,14 +100,17 @@ async function rpc(url) {
   if (!socket) throw new Error(`could not reach ${url}`);
   let nextId = 1;
   const waiting = new Map();
+  const listeners = new Map();
   socket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
     if (msg.id && waiting.has(msg.id)) {
       waiting.get(msg.id)(msg);
       waiting.delete(msg.id);
+    } else if (msg.method && listeners.has(msg.method)) {
+      listeners.get(msg.method)(msg.params);
     }
   });
-  return (method, params = {}) =>
+  const send = (method, params = {}) =>
     new Promise((resolve, reject) => {
       const id = nextId++;
       waiting.set(id, (msg) =>
@@ -115,6 +118,9 @@ async function rpc(url) {
       );
       socket.send(JSON.stringify({ id, method, params }));
     });
+  /** What the other end says unasked: `listener` hears each `method`. */
+  send.on = (method, listener) => listeners.set(method, listener);
+  return send;
 }
 
 /** Chrome, over the DevTools protocol. */
@@ -141,6 +147,23 @@ async function chrome() {
         await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
       }
     },
+    /** The next file picker the page opens answers `file`, a file on the
+     *  disk, as a reader choosing it would. */
+    chooseNext: async (file) => {
+      await send("Page.enable");
+      await send("Page.setInterceptFileChooserDialog", { enabled: true });
+      send.on("Page.fileChooserOpened", ({ backendNodeId }) => {
+        send("DOM.setFileInputFiles", { files: [file], backendNodeId }).catch(() => {});
+      });
+    },
+    /** A key of the browser's own, which is a gesture of the reader's: what
+     *  a page may open a file picker on. */
+    press: async (key, code) => {
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, text: key === " " ? " " : undefined });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key, code });
+    },
+    /** Lets the page's downloads land in `dir`. */
+    downloadInto: (dir) => send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: dir }),
     /** Ctrl+V of the browser's own with `text` on its clipboard: Control
      *  pressed and held, then V, which runs the browser's paste. */
     paste: async (text) => {
@@ -473,6 +496,82 @@ try {
   check(saved === "// a sketch\n1 + 1\n", "a file is saved into the page's storage");
   const tab = await host(`return (await host.dockCall({ verb: "layout" })).panes.find((p) => p.id === ${FILE})?.title`);
   check(tab === "one.mjs", "and its tab takes the file's name");
+
+  // **The file dialog manages the storage it shows**, as every
+  // application's does: a new folder named in its field, the file selected
+  // renamed and deleted (asked first), and in a page the copies to and from
+  // the disk. The chooser carries each change out and lists its folder again,
+  // and says how much of the page's storage is used.
+  {
+    const FILES = NAME - 1;
+    const SAYS = NAME + 8;
+    const press = (name, mods = "") => host(`host.pressKey(${BAR}, ${JSON.stringify(name)}, ${JSON.stringify(mods)})`);
+    const says = async () => String((await host(`return await host.query(${SAYS})`)).props.text ?? "");
+    const sketches = () =>
+      evaluate(`(async () => {
+        const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("sketches");
+        const out = [];
+        for await (const [name, handle] of dir.entries()) out.push(name + (handle.kind === "directory" ? "/" : ""));
+        return out.sort().join(" ");
+      })()`);
+    /** Selects the row `n` rows down in the folder shown, by the keys. */
+    const select = async (n) => {
+      await host(`host.set(${FILES}, { focus: 1 })`);
+      for (let i = 0; i < n; i++) await press("Down");
+      await sleep(200);
+    };
+    /** Types `text` in the field and presses the tool `back` stops before
+     *  it -- with the browser's own key where the tool needs the reader's
+     *  gesture (a file picker). */
+    const tool = async (text, back, gesture = false) => {
+      await host(`host.set(${NAME}, { focus: 1 })`);
+      if (text !== null) {
+        await press("a", "ctrl");
+        await host(`host.typeText(${BAR}, ${JSON.stringify(text)})`);
+      }
+      for (let i = 0; i < back; i++) await press("Tab", "shift");
+      if (gesture) await page.press(" ", "Space");
+      else await press("space");
+      await sleep(800);
+    };
+    const disk = mkdtempSync(join(tmpdir(), "editor-page-disk-"));
+    // it opens in the folder of the file in the tab, /sketches
+    await key("o", "ctrl");
+    await sleep(1000);
+    const chooser = (await host(`return await host.query(${FILES})`)).props;
+    check(chooser.quota > 0 && chooser.used > 0, "the dialog says how much of the page's storage is used");
+    await tool("kept", 3);
+    check((await sketches()) === "kept/ one.mjs", "New folder makes the folder named in the field");
+    await select(3); // .., kept/, one.mjs
+    await tool("two.mjs", 2);
+    check((await sketches()) === "kept/ two.mjs", "Rename gives the file selected the name typed");
+    if (page.downloadInto) {
+      await page.downloadInto(disk);
+      await select(3);
+      await tool(null, 4);
+      await sleep(1000);
+      let got = "";
+      try {
+        got = readFileSync(join(disk, "two.mjs"), "utf8");
+      } catch {}
+      check(got === "// a sketch\n1 + 1\n", "Download hands the file selected to the browser");
+    }
+    if (page.chooseNext) {
+      writeFileSync(join(disk, "brought.mjs"), "// from the disk\n");
+      await page.chooseNext(join(disk, "brought.mjs"));
+      await tool(null, 5, true);
+      await sleep(1000);
+      check((await sketches()) === "brought.mjs kept/ two.mjs", "Upload copies a file from the disk into the folder shown");
+    }
+    await select(page.chooseNext ? 4 : 3);
+    await tool(null, 1);
+    check((await says()).startsWith("Delete /sketches/two.mjs?"), "Delete asks first");
+    await press("space");
+    await sleep(800);
+    check(!(await sketches()).includes("two.mjs"), "and deletes the file selected once asked again");
+    await press("Escape");
+    rmSync(disk, { recursive: true, force: true });
+  }
 
   // The documentation: the editor's book and the package's.
   const documents = await host(`return (await host.query(${DOCS})).props.documents`);

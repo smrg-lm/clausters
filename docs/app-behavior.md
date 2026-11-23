@@ -621,12 +621,20 @@ code that keeps it lives.
   chooser in a form (`forms::Chooser`): Open chooses among the files the
   application reads, Save As shows the folder with the file's name in a
   field under it, which a file selected fills, and a pick (a double click or
-  Enter) accepts either. It is the same natively and in a page; no
-  application types a path into a bare field or asks the desktop's dialog.
-  Check it with `chrome`'s, the score menu's and `forms`' tests (found
-  2026-11-22: the score asked for a path in a text field, its file entries
-  under the page's, the code editor used the desktop's dialog, and the
-  multitrack said "session").
+  Enter) accepts either; Open has the same field, and a path typed there
+  opens as one chosen. **The dialog manages the storage it shows**: under
+  the chooser are New folder, Rename and Delete (asked first), and in a page
+  Upload... and Download, with a line they speak in, and in a page the
+  chooser says how much of the storage is used (`forms::storage`; the host's
+  chooser carries each change out). It is the same natively and in a page;
+  no application types a path into a bare field or asks the desktop's
+  dialog. Check it with `chrome`'s, the score menu's, `forms`' and
+  `forms::storage`'s tests and the editor page's e2e (found 2026-11-22: the
+  score asked for a path in a text field, its file entries under the
+  page's, the code editor used the desktop's dialog, and the multitrack
+  said "session"; found 2026-11-23: only the code editor's dialog had the
+  storage's tools, so in a page an application's document could not be
+  taken to the disk nor a file brought from it).
 - **A step tells the window where it left the context once it has landed.**
   Undo or redo from one window of a shared order may restore a file another
   window holds; the asking window learns the new version only after that walk

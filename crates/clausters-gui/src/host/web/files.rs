@@ -1,5 +1,7 @@
-//! The page's half of **listing a directory**: the origin private file system
-//! (OPFS), the storage a path names in a tab.
+//! The page's half of **listing a directory**, and of **changing what is in
+//! one**: the origin private file system (OPFS), the storage a path names in
+//! a tab. A change ([`Change`]) is carried out here as a listing is, and an
+//! upload and a download are the browser's own file picker and download.
 //!
 //! OPFS answers with promises, so a listing is asked here, awaited off the
 //! event loop and handed back through the proxy as [`WebEvent::Listed`] -- the
@@ -13,7 +15,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
 use super::*;
-use crate::host::files::{Ask, DirEntry, Listing};
+use crate::host::files::{Ask, Change, ChangeAsk, DirEntry, Listing, Usage};
 
 /// The segments of `path`, refusing one that would leave the root.
 pub(super) fn parts(path: &str) -> Result<Vec<String>, String> {
@@ -59,6 +61,256 @@ pub(super) fn field(target: &JsValue, name: &str) -> JsValue {
     Reflect::get(target, &JsValue::from_str(name)).unwrap_or(JsValue::UNDEFINED)
 }
 
+/// The page's storage: `navigator.storage`, or why there is none.
+fn storage() -> Result<JsValue, String> {
+    let storage = field(&field(&js_sys::global(), "navigator"), "storage");
+    if storage.is_undefined() {
+        return Err("this page has no storage".into());
+    }
+    Ok(storage)
+}
+
+/// **The directory `segments` name**, from the storage's root, made on the
+/// way when `create` says so.
+async fn dir_at(segments: &[String], create: bool) -> Result<JsValue, String> {
+    let options = js_sys::Object::new();
+    Reflect::set(
+        &options,
+        &JsValue::from_str("create"),
+        &JsValue::from_bool(create),
+    )
+    .map_err(|e| js_err("create", e))?;
+    let mut dir = call(&storage()?, "getDirectory", &[]).await?;
+    for segment in segments {
+        dir = call(
+            &dir,
+            "getDirectoryHandle",
+            &[JsValue::from_str(segment), options.clone().into()],
+        )
+        .await
+        .map_err(|_| format!("/{}: no such folder", segments.join("/")))?;
+    }
+    Ok(dir)
+}
+
+/// **How much of the page's storage is used**, as the browser estimates it
+/// (`navigator.storage.estimate`), or nothing where it does not say.
+async fn usage() -> Option<Usage> {
+    let estimate = call(&storage().ok()?, "estimate", &[]).await.ok()?;
+    let used = field(&estimate, "usage").as_f64()?;
+    let quota = field(&estimate, "quota").as_f64()?;
+    Some(Usage {
+        used: used as u64,
+        quota: quota as u64,
+    })
+}
+
+/// The folder a path is in, and its name: `None` for the root.
+fn split(path: &str) -> Result<Option<(Vec<String>, String)>, String> {
+    let mut segments = parts(path)?;
+    Ok(segments.pop().map(|name| (segments, name)))
+}
+
+/// **Removes `path`**: a file, or a folder and everything in it.
+async fn remove_opfs(path: &str) -> Result<(), String> {
+    let Some((folder, name)) = split(path)? else {
+        return Err("the storage's root is not removed".into());
+    };
+    let options = js_sys::Object::new();
+    Reflect::set(&options, &JsValue::from_str("recursive"), &JsValue::TRUE)
+        .map_err(|e| js_err("recursive", e))?;
+    let dir = dir_at(&folder, false).await?;
+    call(
+        &dir,
+        "removeEntry",
+        &[JsValue::from_str(&name), options.into()],
+    )
+    .await
+    .map(|_| ())
+    .map_err(|_| format!("{path}: not removed"))
+}
+
+/// **Copies `from` to `to`**: a file's bytes, or a folder and everything in
+/// it, folder by folder.
+async fn copy_opfs(from: &str, to: &str) -> Result<(), String> {
+    match read_opfs(from).await {
+        Ok(bytes) => write_opfs(to, &bytes).await,
+        Err(_) => {
+            let listing = list_opfs(from).await?;
+            dir_at(&parts(to)?, true).await?;
+            for entry in listing.entries {
+                let (a, b) = (
+                    crate::host::files::join(from, &entry.name),
+                    crate::host::files::join(to, &entry.name),
+                );
+                Box::pin(copy_opfs(&a, &b)).await?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// **Gives `from` the path `to`**: moved where the browser moves a handle,
+/// copied and removed where it does not.
+async fn rename_opfs(from: &str, to: &str) -> Result<(), String> {
+    let (Some((from_folder, from_name)), Some((to_folder, to_name))) = (split(from)?, split(to)?)
+    else {
+        return Err("the storage's root is not renamed".into());
+    };
+    if to_folder.starts_with(&parts(from)?) {
+        return Err(format!("{from} is not moved into itself"));
+    }
+    let target = dir_at(&to_folder, true).await?;
+    let exists = |kind: &'static str| {
+        let target = target.clone();
+        let to_name = to_name.clone();
+        async move {
+            call(&target, kind, &[JsValue::from_str(&to_name)])
+                .await
+                .is_ok()
+        }
+    };
+    if exists("getFileHandle").await || exists("getDirectoryHandle").await {
+        return Err(format!("{to}: there is one already"));
+    }
+    let source = dir_at(&from_folder, false).await?;
+    let handle = match call(&source, "getFileHandle", &[JsValue::from_str(&from_name)]).await {
+        Ok(file) => file,
+        Err(_) => call(
+            &source,
+            "getDirectoryHandle",
+            &[JsValue::from_str(&from_name)],
+        )
+        .await
+        .map_err(|_| format!("{from}: no such file or folder"))?,
+    };
+    let moved = call(&handle, "move", &[target, JsValue::from_str(&to_name)]).await;
+    if moved.is_ok() {
+        return Ok(());
+    }
+    copy_opfs(from, to).await?;
+    remove_opfs(from).await
+}
+
+/// **Hands the file at `path` to the browser as a download**, under its
+/// name.
+async fn download_opfs(path: &str) -> Result<(), String> {
+    let bytes = read_opfs(path).await?;
+    let global = js_sys::global();
+    let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(bytes.as_slice()).into());
+    let blob_class = field(&global, "Blob");
+    let blob = Reflect::construct(
+        blob_class.unchecked_ref::<Function>(),
+        &js_sys::Array::of1(&parts),
+    )
+    .map_err(|e| js_err("Blob", e))?;
+    let url_class = field(&global, "URL");
+    let url = call(&url_class, "createObjectURL", &[blob]).await?;
+    let document = web_sys::window()
+        .and_then(|w| w.document())
+        .ok_or("this page has no document to download from")?;
+    let a = document.create_element("a").map_err(|e| js_err("a", e))?;
+    a.set_attribute("href", &url.as_string().unwrap_or_default())
+        .map_err(|e| js_err("href", e))?;
+    let name = path
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or("file");
+    a.set_attribute("download", name)
+        .map_err(|e| js_err("download", e))?;
+    a.unchecked_ref::<web_sys::HtmlElement>().click();
+    // the browser has taken the file once the click is handled
+    let later = wasm_bindgen::closure::Closure::once_into_js(move || {
+        let _ = Reflect::get(&url_class, &JsValue::from_str("revokeObjectURL"))
+            .ok()
+            .and_then(|f| f.dyn_into::<Function>().ok())
+            .map(|f| f.call1(&url_class, &url));
+    });
+    if let Some(window) = web_sys::window() {
+        let _ = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(later.unchecked_ref(), 1000);
+    }
+    Ok(())
+}
+
+/// **Asks the browser for files from the disk** and copies them into folder
+/// `dir`: none when the reader cancels.
+async fn upload_opfs(dir: &str) -> Result<(), String> {
+    let document = web_sys::window()
+        .and_then(|w| w.document())
+        .ok_or("this page has no document to upload into")?;
+    let input = document
+        .create_element("input")
+        .map_err(|e| js_err("input", e))?;
+    input
+        .set_attribute("type", "file")
+        .map_err(|e| js_err("type", e))?;
+    input
+        .set_attribute("multiple", "")
+        .map_err(|e| js_err("multiple", e))?;
+    // the picker's answer: a change when files were chosen, a cancel when
+    // none were
+    let chosen = Promise::new(&mut |resolve, _reject| {
+        let on = |event: &str, picked: bool| {
+            let resolve = resolve.clone();
+            let f = wasm_bindgen::closure::Closure::once_into_js(move || {
+                let _ = resolve.call1(&JsValue::NULL, &JsValue::from_bool(picked));
+            });
+            let _ = Reflect::set(&input, &JsValue::from_str(event), &f);
+        };
+        on("onchange", true);
+        on("oncancel", false);
+    });
+    input.unchecked_ref::<web_sys::HtmlElement>().click();
+    let picked = JsFuture::from(chosen)
+        .await
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !picked {
+        return Ok(());
+    }
+    dir_at(&parts(dir)?, true).await?;
+    let files = field(&input, "files");
+    let count = field(&files, "length").as_f64().unwrap_or(0.0) as u32;
+    for i in 0..count {
+        let file = call(&files, "item", &[JsValue::from(i)]).await?;
+        let name = field(&file, "name").as_string().unwrap_or_default();
+        let buffer = call(&file, "arrayBuffer", &[]).await?;
+        let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+        write_opfs(&crate::host::files::join(dir, &name), &bytes).await?;
+    }
+    Ok(())
+}
+
+/// **Carries `change` out** on the page's storage.
+pub(super) async fn change_opfs(change: &Change) -> Result<(), String> {
+    match change {
+        Change::MakeFolder(path) => dir_at(&parts(path)?, true).await.map(|_| ()),
+        Change::Rename(from, to) => rename_opfs(from, to).await,
+        Change::Remove(path) => remove_opfs(path).await,
+        Change::Upload(dir) => upload_opfs(dir).await,
+        Change::Download(path) => download_opfs(path).await,
+    }
+}
+
+/// Carries one change out and hands its end back through the proxy.
+pub(super) async fn fetch_change(host: HostId, def_id: i32, widget_id: i32, ask: ChangeAsk) {
+    let result = change_opfs(&ask.change).await;
+    if let Some(proxy) = web_proxy() {
+        let _ = proxy.send_event(HostEvent::To(
+            host,
+            WebEvent::Changed {
+                def_id,
+                widget_id,
+                ask,
+                result,
+            },
+        ));
+    }
+}
+
 /// Lists `path` in the page's storage.
 pub(super) async fn list_opfs(path: &str) -> Result<Listing, String> {
     let segments = parts(path)?;
@@ -99,10 +351,9 @@ pub(super) async fn list_opfs(path: &str) -> Result<Listing, String> {
             size,
         });
     }
-    Ok(Listing::ordered(
-        format!("/{}", segments.join("/")),
-        entries,
-    ))
+    let mut listing = Listing::ordered(format!("/{}", segments.join("/")), entries);
+    listing.usage = usage().await;
+    Ok(listing)
 }
 
 /// **Reads `path`** from the page's storage: the bytes of the file, or why
@@ -214,6 +465,25 @@ impl WebApp {
         }
         for (def, widget, ask) in self.host.pending_reads() {
             wasm_bindgen_futures::spawn_local(fetch_read(self.id, def, widget, ask));
+        }
+        for (def, widget, ask) in self.host.pending_changes() {
+            wasm_bindgen_futures::spawn_local(fetch_change(self.id, def, widget, ask));
+        }
+    }
+
+    /// A change came to its end: the chooser says so to its owner and lists
+    /// its directory again.
+    pub(super) fn on_changed(
+        &mut self,
+        def: i32,
+        widget: i32,
+        ask: &ChangeAsk,
+        result: Result<(), String>,
+    ) {
+        let effects = self.host.deliver_changed(def, widget, ask, result);
+        if !effects.is_empty() {
+            self.apply_gesture_effects(effects);
+            self.start_listings();
         }
     }
 

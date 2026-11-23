@@ -31,11 +31,23 @@
 //! disk natively, a path in the page's storage in a tab, where `/` is the
 //! storage's root (`docs/decisions.md`, "A path in a page is its own storage").
 //!
+//! **What is in the storage is changed here too** ([`Change`]): a new folder,
+//! a rename, a delete, and in a page the copies to and from the disk (an
+//! upload, a download). The owner asks a chooser for one (its `change`
+//! prop), the front carries it out over the storage it lists -- `std::fs`
+//! natively ([`change_disk`]), OPFS in a page -- and the chooser reports
+//! `"changed"` with what went wrong, if anything, and lists its directory
+//! again. So every file dialog manages the storage it shows with one
+//! implementation, whoever built the dialog.
+//!
 //! [`Element::wants_listing`]: super::widget::Element::wants_listing
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde_json::Value;
+
 use super::Host;
+use super::gestures::GestureEffect;
 
 /// One entry of a directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +65,113 @@ pub struct DirEntry {
 pub struct Listing {
     pub path: String,
     pub entries: Vec<DirEntry>,
+    /// **How much of the storage is used**, where the storage says: a page's,
+    /// whose origin is given a quota. The disk has no quota of the program's,
+    /// so a listing of it carries none.
+    pub usage: Option<Usage>,
+}
+
+/// **How much of a page's storage is used**, in bytes, of the quota the
+/// browser gives its origin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Usage {
+    pub used: u64,
+    pub quota: u64,
+}
+
+/// **A change to the storage a chooser lists**, asked by its owner: every
+/// path as a listing's, absolute on the disk, from `/` in a page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    /// A folder made, with the ones on its way.
+    MakeFolder(String),
+    /// A file or a folder given another path.
+    Rename(String, String),
+    /// A file, or a folder and everything in it, removed.
+    Remove(String),
+    /// Files from the disk copied into this folder of a page's storage, as
+    /// the browser asks for them.
+    Upload(String),
+    /// A file of a page's storage handed to the browser to keep on the disk.
+    Download(String),
+}
+
+impl Change {
+    /// **The change a `change` prop asks for**: `{"op", "path"}`, with `to`
+    /// for a rename; `op` one of `make_folder`, `rename`, `remove`, `upload`
+    /// (`path` the folder the files go into) and `download`. It rides as the
+    /// object or as its string carrier, as `theme` does, OSC having no
+    /// structural argument.
+    pub fn read(v: &Value) -> Result<Change, String> {
+        if let Value::String(json) = v {
+            let carried = serde_json::from_str::<Value>(json)
+                .map_err(|_| "a change is an object of `op` and its paths".to_string())?;
+            return Change::read(&carried);
+        }
+        let text = |key: &str| {
+            v.get(key)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| format!("a change names its {key}"))
+        };
+        let op = v.get("op").and_then(Value::as_str).unwrap_or_default();
+        Ok(match op {
+            "make_folder" => Change::MakeFolder(text("path")?),
+            "rename" => Change::Rename(text("path")?, text("to")?),
+            "remove" => Change::Remove(text("path")?),
+            "upload" => Change::Upload(text("path")?),
+            "download" => Change::Download(text("path")?),
+            other => return Err(format!("{other:?} is no change of the storage")),
+        })
+    }
+
+    /// Whether the storage is listed again after it: everything but a
+    /// download, which changes nothing in it.
+    pub fn relists(&self) -> bool {
+        !matches!(self, Change::Download(_))
+    }
+}
+
+/// **A change asked to be carried out**: which, and the ticket its answer
+/// must carry back ([`Chooser::changed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeAsk {
+    pub ticket: u64,
+    pub change: Change,
+}
+
+/// **Whether the storage a chooser lists is the disk**: a window's is, and
+/// the copies to and from it (an upload, a download) mean nothing there; a
+/// page's is its own, and has them.
+pub const STORAGE_IS_THE_DISK: bool = !cfg!(target_arch = "wasm32");
+
+/// **Carries `change` out on the disk**, as `std::fs` does it. An upload and
+/// a download are a page's, whose storage is not the disk.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn change_disk(change: &Change) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    let done = match change {
+        Change::MakeFolder(path) => fs::create_dir_all(path),
+        Change::Rename(from, to) => {
+            if Path::new(to).exists() {
+                return Err(format!("{to}: there is one already"));
+            }
+            fs::rename(from, to)
+        }
+        Change::Remove(path) if Path::new(path).is_dir() => fs::remove_dir_all(path),
+        Change::Remove(path) => fs::remove_file(path),
+        Change::Upload(_) | Change::Download(_) => {
+            return Err("the disk is this program's storage: nothing is copied to it".into());
+        }
+    };
+    done.map_err(|e| match change {
+        Change::Rename(from, _) => format!("{from}: {e}"),
+        Change::MakeFolder(p) | Change::Remove(p) | Change::Upload(p) | Change::Download(p) => {
+            format!("{p}: {e}")
+        }
+    })
 }
 
 impl Listing {
@@ -66,7 +185,11 @@ impl Listing {
                 .cmp(&a.dir)
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
-        Listing { path, entries }
+        Listing {
+            path,
+            entries,
+            usage: None,
+        }
     }
 }
 
@@ -114,6 +237,12 @@ pub struct Chooser {
     status: Status,
     /// The ticket of the ask for `path`; only its answer is taken.
     ticket: u64,
+    /// The storage's use, as the last listing said it.
+    usage: Option<Usage>,
+    /// A change asked for and not carried out yet.
+    change: Option<ChangeAsk>,
+    /// The ticket of the change being carried out.
+    changing: Option<u64>,
 }
 
 impl Chooser {
@@ -126,7 +255,46 @@ impl Chooser {
             entries: Vec::new(),
             status: Status::Asking,
             ticket: ticket(),
+            usage: None,
+            change: None,
+            changing: None,
         }
+    }
+
+    /// How much of the storage is used, where the storage says.
+    pub fn usage(&self) -> Option<Usage> {
+        self.usage
+    }
+
+    /// **Asks for `change`** of the storage, to be carried out once: a
+    /// change asked before it is replaced.
+    pub fn ask_change(&mut self, change: Change) {
+        self.change = Some(ChangeAsk {
+            ticket: ticket(),
+            change,
+        });
+    }
+
+    /// **The change to carry out**, once: asked, it waits for its answer.
+    pub fn take_change(&mut self) -> Option<ChangeAsk> {
+        let ask = self.change.take()?;
+        self.changing = Some(ask.ticket);
+        Some(ask)
+    }
+
+    /// **The answer to a change**, taken only when it is the one carried
+    /// out; the directory shown is then listed again where the change
+    /// moved something. Answers whether it was taken.
+    pub fn changed(&mut self, ticket: u64, relists: bool) -> bool {
+        if self.changing != Some(ticket) {
+            return false;
+        }
+        self.changing = None;
+        if relists {
+            let path = self.path.clone();
+            self.go(path);
+        }
+        true
     }
 
     /// The directory shown.
@@ -173,9 +341,14 @@ impl Chooser {
             return false;
         }
         match listing {
-            Ok(Listing { path, entries }) => {
+            Ok(Listing {
+                path,
+                entries,
+                usage,
+            }) => {
                 self.path = path;
                 self.entries = entries;
+                self.usage = usage;
                 self.status = Status::Listed;
             }
             Err(why) => {
@@ -321,6 +494,58 @@ impl Host {
             .and_then(|tree| tree.find_mut(widget))
             .and_then(|w| w.kind.as_element_mut())
             .is_some_and(|el| el.read(ticket, bytes))
+    }
+
+    /// **Every change of the storage an element of an open window asks
+    /// for**, as `(window, widget, ask)`: each asked once, as a listing is.
+    pub fn pending_changes(&mut self) -> Vec<(i32, i32, ChangeAsk)> {
+        let mut out = Vec::new();
+        for (&def, tree) in self.window_defs.iter_mut() {
+            tree.walk_mut(&mut |w| {
+                if let (Some(id), Some(el)) = (w.id, w.kind.as_element_mut())
+                    && let Some(ask) = el.wants_change()
+                {
+                    out.push((def, id, ask));
+                }
+            });
+        }
+        out
+    }
+
+    /// **Hands widget `widget` of window `def` the end of the change
+    /// `ticket`**: what went wrong, or nothing. The element reports it to
+    /// its owner (`"changed"`, with the reason or an empty one) and lists
+    /// its directory again; the answer is what the front carries out, none
+    /// for an element that is gone or asked another since.
+    pub fn deliver_changed(
+        &mut self,
+        def: i32,
+        widget: i32,
+        ask: &ChangeAsk,
+        done: Result<(), String>,
+    ) -> Vec<GestureEffect> {
+        let taken = self
+            .window_def_mut(def)
+            .and_then(|tree| tree.find_mut(widget))
+            .and_then(|w| w.kind.as_element_mut())
+            .is_some_and(|el| el.changed(ask.ticket, ask.change.relists()));
+        if !taken {
+            return Vec::new();
+        }
+        let why = done.err().unwrap_or_default();
+        let seq = self.outbox.borrow_mut().stamp(def, widget);
+        vec![
+            GestureEffect::Emit {
+                def_id: def,
+                widget_id: widget,
+                seq,
+                args: vec![
+                    clausters_core::osc::OscType::String("changed".into()),
+                    clausters_core::osc::OscType::String(why),
+                ],
+            },
+            GestureEffect::Redraw(def),
+        ]
     }
 
     /// Hands widget `widget` of window `def` the answer to the ask `ticket`,

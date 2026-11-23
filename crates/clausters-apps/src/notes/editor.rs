@@ -873,6 +873,9 @@ impl NotesEditor {
             return (None, Vec::new());
         };
         let refused = match said {
+            // the storage's tools: the chooser asked for a change, the line
+            // says what they have to say
+            Said::Corrected(list) => return (None, forms::corrections(list)),
             Said::Cancel => {
                 self.leaving = None;
                 return (None, forms::corrections(self.dialogs.hide()));

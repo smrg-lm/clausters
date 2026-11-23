@@ -12,21 +12,29 @@
 //! table's selection, focus and scrolling.
 //!
 //! What it reports: its **value** is the path of the file selected, so a
-//! `text` field bound to it follows the selection; a double click or Enter on a
-//! file reports `"pick" <path>`, and on a directory it goes into it, reported
+//! `text` field bound to it follows the selection, and `"select" <path>...`
+//! names every file selected, which reaches the owner whether or not the
+//! value is bound; a double click or Enter on a file reports `"pick" <path>`, and on a directory it goes into it, reported
 //! as `"path" <directory>`. Those two are what the hand did, so they reach the
 //! script whether or not the value is bound elsewhere.
+//!
+//! **It changes the storage it lists**, as its owner asks (its `change`
+//! prop, a [`Change`]): the front carries the change out, the chooser
+//! reports `"changed" <why>` (empty when it went well) and lists its
+//! directory again. In a page it also says, under its rows, how much of the
+//! storage is used of what the browser gives the page.
 
 use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
-use crate::host::files::{self, Ask, Chooser, DirEntry, Listing};
+use crate::host::files::{self, Ask, Change, ChangeAsk, Chooser, DirEntry, Listing, Usage};
 use crate::host::graphics::table::{Column, Row};
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::size::Natural;
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::metrics::Metrics;
+use clausters_gui_draw::rect::Rect;
 
 use super::table::{Hit, Rows};
 
@@ -88,6 +96,15 @@ fn filter_of(v: Option<&Value>) -> Vec<String> {
     }
 }
 
+/// **What a page's storage holds**, as the line under the rows says it.
+fn usage_text(usage: Usage) -> String {
+    format!(
+        "{} used of {}",
+        size_text(usage.used),
+        size_text(usage.quota)
+    )
+}
+
 /// A size as a reader reads one.
 fn size_text(bytes: u64) -> String {
     match bytes {
@@ -99,6 +116,31 @@ fn size_text(bytes: u64) -> String {
 }
 
 impl Files {
+    /// The height of the line that says the storage's use, under the rows,
+    /// where the storage says it: none on the disk.
+    fn usage_height(&self, rect_h: f32, scale: f32, m: &Metrics) -> f32 {
+        let size = self.rows.text_size * scale;
+        if self.chooser.usage().is_none() {
+            return 0.0;
+        }
+        let line = clausters_gui_draw::font::height(size) + 2.0 * m.pad;
+        if rect_h > 3.0 * line { line } else { 0.0 }
+    }
+
+    /// The rect the rows are drawn in: the placement, less the usage line.
+    fn rows_rect(&self, rect: Rect, scale: f32, m: &Metrics) -> Rect {
+        let foot = self.usage_height(rect.h, scale, m);
+        Rect::new(rect.x, rect.y, rect.w, (rect.h - foot).max(0.0))
+    }
+
+    /// `input` with its rect the rows'.
+    fn placed<'a>(&self, input: &Input<'a>) -> Input<'a> {
+        Input {
+            rect: self.rows_rect(input.rect, input.scale, input.metrics),
+            ..*input
+        }
+    }
+
     /// Rebuilds the rows from what the chooser shows; nothing stays selected.
     fn refill(&mut self) {
         self.up = self.chooser.up().is_some();
@@ -180,16 +222,16 @@ impl Files {
         }
     }
 
-    /// What a selection change reports: the selected file's path as the value
-    /// and, choosing several, every file selected as `"select" path...`.
+    /// What a selection change reports: the selected file's path as the value,
+    /// and every file selected as `"select" path...` -- also choosing one,
+    /// since a value bound to a field goes to the field and not to the
+    /// owner, which still has to know what is selected (a dialog's rename
+    /// and download act on it).
     fn selection(&self) -> Events {
         let events = match self.selected_file().map(OscType::String) {
             Some(value) => Events::value(value),
             None => Events::none(),
         };
-        if !self.rows.multiple {
-            return events;
-        }
         events.and_interface(
             std::iter::once(OscType::String("select".into()))
                 .chain(self.selected_files())
@@ -213,13 +255,45 @@ impl Element for Files {
                 self.refill();
                 true
             }
+            "change" => match Change::read(v) {
+                Ok(change) => {
+                    self.chooser.ask_change(change);
+                    true
+                }
+                Err(why) => {
+                    crate::host::diag::warn!("files: {why}");
+                    false
+                }
+            },
             "text_size" | "multiple" => self.rows.set(key, v),
             _ => false,
         }
     }
 
+    /// A change asked for is carried out once and kept nowhere: a window
+    /// built again from what it was set to must not do it again.
+    fn writes(&self, key: &str) -> bool {
+        key == "change"
+    }
+
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
-        self.rows.draw(d, ctx, self.chooser.placeholder());
+        let rect = self.rows_rect(ctx.rect, ctx.scale, ctx.metrics);
+        self.rows
+            .draw(d, &Ctx { rect, ..*ctx }, self.chooser.placeholder());
+        if let (Some(usage), true) = (self.chooser.usage(), rect.h < ctx.rect.h) {
+            let size = self.rows.text_size * ctx.scale;
+            let (mesh, m, theme) = d.parts();
+            clausters_gui_draw::font::text_ellipsis_in(
+                mesh,
+                clausters_gui_draw::font::Family::Ui,
+                &usage_text(usage),
+                ctx.rect.x + m.pad,
+                rect.y + rect.h + m.pad,
+                (ctx.rect.w - 2.0 * m.pad).max(0.0),
+                size,
+                theme.text_dim,
+            );
+        }
     }
 
     fn natural(&self, _m: &Metrics, _scale: f32) -> Natural {
@@ -235,14 +309,19 @@ impl Element for Files {
         if let Some(file) = self.selected_file() {
             out.push(("selected".into(), Value::from(file)));
         }
+        if let Some(usage) = self.chooser.usage() {
+            out.push(("used".into(), Value::from(usage.used)));
+            out.push(("quota".into(), Value::from(usage.quota)));
+        }
         out
     }
 
     fn hit_area(&self, input: &Input) -> HitArea {
-        self.rows.hit_area(input)
+        self.rows.hit_area(&self.placed(input))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
+        let input = &self.placed(input);
         if self.rows.press_bar(at, input) {
             return Claim::take();
         }
@@ -263,6 +342,7 @@ impl Element for Files {
     }
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
+        let input = &self.placed(input);
         self.rows.drag_bar(at, input);
         Events::none()
     }
@@ -289,6 +369,7 @@ impl Element for Files {
     }
 
     fn wheel(&mut self, _at: (f64, f64), delta: (f64, f64), input: &Input) -> Option<Events> {
+        let input = &self.placed(input);
         if !self.rows.scrolls(input) {
             return None;
         }
@@ -303,6 +384,18 @@ impl Element for Files {
     fn listed(&mut self, ticket: u64, listing: Result<Listing, String>) -> bool {
         let taken = self.chooser.listed(ticket, listing);
         if taken {
+            self.refill();
+        }
+        taken
+    }
+
+    fn wants_change(&mut self) -> Option<ChangeAsk> {
+        self.chooser.take_change()
+    }
+
+    fn changed(&mut self, ticket: u64, relists: bool) -> bool {
+        let taken = self.chooser.changed(ticket, relists);
+        if taken && relists {
             self.refill();
         }
         taken
@@ -442,8 +535,16 @@ mod tests {
         let mut f = chooser(r#"{"path":"takes"}"#);
         answer(&mut f, Ok(listing()));
         let e = f.press(on_row(&f, &m, 2), &input(&m));
-        assert_eq!(e, Claim::value(OscType::String("/takes/kick.wav".into())));
-        assert_eq!(f.value(), Some(OscType::String("/takes/kick.wav".into())));
+        let kick = OscType::String("/takes/kick.wav".into());
+        // the value, and what is selected for an owner whose value is bound
+        assert_eq!(
+            e,
+            Claim::events(
+                Events::value(kick.clone())
+                    .and_interface(vec![OscType::String("select".into()), kick.clone()])
+            )
+        );
+        assert_eq!(f.value(), Some(kick));
         let double = Input {
             clicks: 2,
             ..input(&m)

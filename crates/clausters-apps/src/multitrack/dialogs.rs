@@ -39,7 +39,7 @@ impl Spec for Form {
     fn fields(self) -> Vec<(&'static str, &'static str)> {
         match self {
             Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Open => vec![("path", "")],
+            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
         }
     }
 

@@ -1082,6 +1082,17 @@ impl App {
             }
         }
 
+        // **A change of the storage a chooser asks for is carried out** on
+        // the disk, at once, and the chooser told how it went.
+        for (def_id, widget, ask) in self.host.pending_changes() {
+            let done = crate::host::files::change_disk(&ask.change);
+            let effects = self.host.deliver_changed(def_id, widget, &ask, done);
+            if !effects.is_empty() {
+                self.apply_gesture_effects(effects);
+                next_wake = Some(now);
+            }
+        }
+
         // **A file an element waits on is read**, off the disk and at once,
         // as a listing is.
         for (def_id, widget, ask) in self.host.pending_reads() {

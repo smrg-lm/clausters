@@ -1881,3 +1881,34 @@ host's does. A client that opened a window still hears its changes and its
 close (`client_owned` stays the host's record of who to tell); what moved
 is only what a close asks.
 
+## A file dialog manages the storage it shows, and the chooser carries the change out (2026-11-23)
+
+**Context.** The code editor's file dialog had a new folder, a rename, a
+delete, and in a page an upload and a download, each carried out by the
+editor's own platform (`std::fs` natively, the page's script over OPFS).
+The applications' Open and Save As had none of them, though the menus that
+open them had been made one: in a page a document made with New could not
+be taken to the disk, nor a file brought from it (found by the user), and
+the page's storage could only grow. Writing the tools a second time for the
+applications would have been two implementations of one rule, and the
+platforms' third.
+
+**Decision.** The storage's tools are every file dialog's, decided once in
+`clausters_apps::forms::storage` (which path a tool acts on, that a delete
+asks first) and drawn under the chooser of every form that has one, the
+code editor's included. **The change is the host's chooser's to carry
+out**: its owner sets `change`, the front does it over the storage the
+chooser lists -- the disk natively, OPFS in a page, the browser's picker
+and download for the copies -- and the chooser reports `"changed"` and
+lists its folder again, as it lists one. In a page the chooser also says
+how much of the storage is used. The chooser reports the files selected
+(`"select"`) whether or not its value is bound to the dialog's name field,
+since the owner of a dialog has to know what a rename or a download acts
+on.
+
+**Consequences.** The editor's platform has no storage change of its own
+any more, and every Open form has the name field a save had, so a path
+typed there opens as one chosen. A change is written into the chooser and
+kept nowhere, so a window built again never repeats a delete. The copies
+are a page's alone: natively the storage is the disk, and they are not
+shown.

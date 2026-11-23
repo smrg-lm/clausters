@@ -630,7 +630,16 @@ impl AudioEditor {
             return self.close_answered(said == Said::Discard, out);
         }
         let reason = match said {
-            Said::Field(..) | Said::Chosen(..) | Said::Entered(..) => return (None, Vec::new()),
+            Said::Field(..)
+            | Said::Chosen(..)
+            | Said::Entered(..)
+            | Said::Changed(..)
+            | Said::Tool(_) => {
+                return (None, Vec::new());
+            }
+            // the storage's tools: the chooser asked for a change, the line
+            // says what they have to say
+            Said::Corrected(list) => return (None, forms::corrections(list)),
             Said::Cancel | Said::Discard => {
                 self.window_state.leaving = None;
                 self.window_state.let_go.clear();

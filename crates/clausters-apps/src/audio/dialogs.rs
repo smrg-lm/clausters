@@ -59,7 +59,7 @@ impl Spec for Form {
                 ("rate", "Sample rate (Hz)"),
             ],
             Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Open => vec![("path", "")],
+            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
             Form::Close => Vec::new(),
         }
     }

@@ -531,7 +531,10 @@ mod tests {
             } else {
                 assert_eq!(parts.len(), 2);
                 let fields = parts[0]["children"].as_array().unwrap();
-                assert_eq!(fields.len(), form.fields().len());
+                // a file form's chooser has the storage's tools under it,
+                // and the line they speak in after its fields
+                let tools = if matches!(form, Form::File(_)) { 2 } else { 0 };
+                assert_eq!(fields.len(), form.fields().len() + tools);
             }
         }
         // every name is a widget, each under an id of its own

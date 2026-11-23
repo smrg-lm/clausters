@@ -734,6 +734,9 @@ impl MultitrackEditor {
         };
         match said {
             Said::Cancel | Said::Discard => (None, crate::forms::corrections(self.dialogs.hide())),
+            // the storage's tools: the chooser asked for a change, the line
+            // says what they have to say
+            Said::Corrected(list) => (None, crate::forms::corrections(list)),
             Said::Picked(_, paths) if open.form == dialogs::Form::Open => {
                 self.open_chosen(&paths, out)
             }

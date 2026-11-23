@@ -65,8 +65,6 @@ pub enum Msg {
         code: i32,
         done: Result<(), String>,
     },
-    /// A change of the editor's file dialog made, or why it was not.
-    Changed(Result<(), String>),
 }
 
 /// Every book and every document.
@@ -486,13 +484,6 @@ impl App {
             }
             Msg::Read { path, why, text } => self.on_read(path, why, text),
             Msg::Written { path, code, done } => self.on_written(path, code, done),
-            // drawn again, its chooser lists its folder afresh
-            Msg::Changed(done) => {
-                if let Some(dialog) = self.file_dialog.as_mut() {
-                    dialog.changed(done);
-                    self.show_file_dialog();
-                }
-            }
         }
     }
 
@@ -1109,8 +1100,7 @@ impl App {
 
     /// The editor's file dialog, drawn again as it is now.
     fn show_file_dialog(&mut self) {
-        let transfers = self.offers.transfers;
-        if let Some(tree) = self.file_dialog.as_ref().map(|d| d.tree(transfers)) {
+        if let Some(tree) = self.file_dialog.as_ref().map(FileDialog::tree) {
             self.show_dialog(tree, filedialog::SPARE);
         }
     }
@@ -1128,7 +1118,17 @@ impl App {
         match said {
             Does::Nothing => {}
             Does::Redraw => self.show_file_dialog(),
-            Does::Change(change) => self.platform.change(change),
+            Does::Set(set) => {
+                for (id, props) in set {
+                    let props: Vec<(&str, Value)> = props
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                        .map(|(k, v)| (k.as_str(), v.clone()))
+                        .collect();
+                    self.link.set(id, &props);
+                }
+            }
             Does::Chosen(path) => {
                 let purpose = dialog.purpose.clone();
                 self.file_dialog = None;

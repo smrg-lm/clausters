@@ -2536,12 +2536,21 @@ export function table(
  * extensions a file must have to be listed (`["wav", "f32"]`).
  *
  * Its **value** is the path of the file selected, so a `text` field bound to it
- * follows the selection. A double click or Enter on a file reports
+ * follows the selection, and `"select" ...paths` reports the files selected
+ * whether or not the value is bound. A double click or Enter on a file reports
  * `"pick" path`, and on a directory goes into it, reported as
  * `"path" directory`; the `..` row goes up.
- * With `multiple`, Ctrl adds/removes a file and Shift selects a range.
- * `"select" ...paths` reports the selected files and `"pick" ...paths`
- * accepts them; directories are excluded. The value remains the last path.
+ * With `multiple`, Ctrl adds/removes a file and Shift selects a range, and
+ * `"pick" ...paths` accepts the files selected; directories are excluded.
+ * The value remains the last path.
+ *
+ * **It changes the storage it lists**: setting `change` to
+ * `{ op: "make_folder", path }`, `{ op: "rename", path, to }` or
+ * `{ op: "remove", path }` -- and in a page `{ op: "upload", path: folder }`
+ * or `{ op: "download", path }`, the copies to and from the disk -- has the
+ * host carry it out once; the chooser then reports `"changed" why`, `why`
+ * empty when it went well, and lists its folder again. In a page it also
+ * says how much of the page's storage is used.
  */
 export function files(
     path = ".",

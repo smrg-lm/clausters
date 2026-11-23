@@ -30,6 +30,13 @@
 //! chosen and the directory the field opens in; and what the paths are for
 //! is the application's, read at `OK` or at a pick ([`Said::Picked`]).
 //!
+//! **A file dialog manages the storage it shows** ([`storage`]): under its
+//! chooser are the tools -- a new folder, a rename, a delete, and in a page
+//! an upload and a download -- and a line they speak in, so every
+//! application's Open and Save As has them, as the code editor's does. A
+//! form whose chooser fills a name field ([`NAME`]) takes the name a tool
+//! needs from it, and an Open form opens a path typed there as one chosen.
+//!
 //! **A field may be one of several** ([`Spec::options`]): it is then the
 //! host's `choice`, and what the field holds is the text of the option
 //! chosen, as a typed field holds its text.
@@ -42,6 +49,10 @@
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
+
+pub mod storage;
+
+use storage::{SAYS, Storage, Tool};
 
 /// The caller's widget id for each widget of the dialogs it numbered.
 pub type Ids = BTreeMap<String, i32>;
@@ -147,8 +158,9 @@ impl Chooser {
     }
 }
 
-/// **The `files` widget a chooser is**, numbered `id`, listing `dir`; a
-/// saving one fills the field numbered `name` with the file it selects.
+/// **The `files` widget a chooser is**, numbered `id`, listing `dir`; it
+/// fills the field numbered `name`, where there is one, with the file it
+/// selects.
 #[must_use]
 pub fn chooser_widget(id: Option<i32>, dir: &str, chooser: &Chooser, name: Option<i32>) -> Value {
     let mut widget = json!({
@@ -160,7 +172,7 @@ pub fn chooser_widget(id: Option<i32>, dir: &str, chooser: &Chooser, name: Optio
         "weight": 1,
         "h": chooser.h,
     });
-    if let (true, Some(name), Some(map)) = (chooser.saves, name, widget.as_object_mut()) {
+    if let (Some(name), Some(map)) = (name, widget.as_object_mut()) {
         map.insert("bind".into(), json!(["widget", name, "value"]));
     }
     widget
@@ -257,8 +269,26 @@ pub fn names<F: Spec>(forms: &[F]) -> Vec<String> {
         if form.closes().is_some() {
             out.push(format!("{prefix}:discard"));
         }
+        // a file form's tools, and the line they speak in
+        if has_chooser(*form) {
+            out.extend(
+                Tool::ALL
+                    .iter()
+                    .filter(|t| t.shown())
+                    .map(|t| format!("{prefix}:{}", t.name())),
+            );
+            out.push(format!("{prefix}:{SAYS}"));
+        }
     }
     out
+}
+
+/// Whether `form` chooses a file: it is then a file dialog, with the
+/// storage's tools.
+fn has_chooser<F: Spec>(form: F) -> bool {
+    form.fields()
+        .iter()
+        .any(|(name, _)| form.chooser(name).is_some())
 }
 
 /// Whether `ids` numbers every widget of the dialogs: a window has all of
@@ -279,7 +309,7 @@ const BODY_GAP: f64 = 16.0;
 /// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
 /// or, closing, the close form every application asks in
 /// ([`crate::closing::dialog`]).
-fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
+fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>, says_now: &str) -> Value {
     let prefix = form.prefix();
     let id = |name: &str| ids.get(&format!("{prefix}:{name}")).copied();
     if let Some(question) = form.closes() {
@@ -290,7 +320,7 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
     let rows: Vec<Value> = form
         .fields()
         .iter()
-        .map(|(name, label)| {
+        .flat_map(|(name, label)| {
             let chooser = form.chooser(name);
             let mut field = match chooser {
                 Some(chooser) => chooser_widget(id(name), held(name), &chooser, id(NAME)),
@@ -311,9 +341,19 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
             // field a chooser stands in is as wide as the chooser, so the
             // dialog takes its width
             let caption = form.label().and_then(|_| id("label"));
-            field_row(label, caption, field, chooser.map(|c| c.w))
+            let row = field_row(label, caption, field, chooser.map(|c| c.w));
+            // the storage's tools, under the chooser that shows it
+            match chooser {
+                Some(_) => vec![row, storage::tools_row(|tool| id(tool.name()))],
+                None => vec![row],
+            }
         })
         .collect();
+    let mut rows = rows;
+    if has_chooser(form) {
+        let says = up.map_or("", |_| says_now);
+        rows.push(storage::says_line(id(SAYS), says));
+    }
     let buttons = footer(id("cancel"), id("ok"), form.accept());
     // the fields are the dialog's body, closer to each other than the
     // dialog's parts are
@@ -342,14 +382,14 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
 /// order `forms` gives, which is the order of their pages.
 #[must_use]
 pub fn stack<F: Spec>(forms: &[F], ids: &Ids) -> Option<Value> {
-    stack_with(forms, ids, None)
+    stack_with(forms, ids, None, "")
 }
 
 /// The stack, turned to the page of the form `up` with its fields holding
 /// what it holds -- the window drawn again while a dialog is up. **Forms may
 /// share a page**, a dialog that serves several questions: `forms` names the
 /// page by one of them, and a page is drawn as the question it is asking.
-fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<Value> {
+fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>, says: &str) -> Option<Value> {
     if !numbered(forms, ids) {
         return None;
     }
@@ -358,7 +398,7 @@ fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<V
         .chain(forms.iter().map(|form| {
             let open = up.filter(|open| open.form.page() == form.page());
             let asked = open.map_or(*form, |open| open.form);
-            json!({"type": "layout", "children": [dialog(asked, ids, open)]})
+            json!({"type": "layout", "children": [dialog(asked, ids, open, says)]})
         }))
         .collect();
     Some(json!({
@@ -390,6 +430,15 @@ pub enum Said {
     Picked(String, Vec<String>),
     /// A chooser went into this directory.
     Entered(String, String),
+    /// A chooser's change of the storage came to its end: why it was
+    /// refused, or nothing.
+    Changed(String, String),
+    /// A tool of the storage was pressed.
+    Tool(Tool),
+    /// **What the window is corrected with**, and nothing else to do: what
+    /// a tool asked of the chooser and what the tools say. [`Dialogs::read`]
+    /// answers it for [`Said::Tool`] and [`Said::Changed`].
+    Corrected(Vec<(i32, Value)>),
 }
 
 /// The paths a chooser's report carries, whether as arguments or as one
@@ -423,6 +472,14 @@ pub fn read<F: Spec>(form: F, name: &str, tag: &str, values: &[Value]) -> Option
     if let Some(chooser) = form.chooser(part) {
         let field = part.to_string();
         return match tag {
+            "changed" => Some(Said::Changed(
+                field,
+                values
+                    .first()
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            )),
             "select" => Some(Said::Chosen(field, paths(values))),
             "pick" => Some(Said::Picked(field, paths(values))),
             "path" => values
@@ -439,6 +496,9 @@ pub fn read<F: Spec>(form: F, name: &str, tag: &str, values: &[Value]) -> Option
         let index = tag.parse::<f64>().ok()?.round().max(0.0) as usize;
         let option = options.get(index)?;
         return Some(Said::Field(part.to_string(), (*option).to_string()));
+    }
+    if let Some(tool) = Tool::named(part).filter(|_| has_chooser(form)) {
+        return (tag == "click").then_some(Said::Tool(tool));
     }
     match part {
         "ok" => (tag == "click").then_some(Said::Accept),
@@ -571,6 +631,8 @@ pub struct Dialogs<F> {
     up: Option<Open<F>>,
     chosen: BTreeMap<String, Vec<String>>,
     dirs: BTreeMap<String, String>,
+    /// The storage's tools of the file form up.
+    storage: Storage,
 }
 
 impl<F> Default for Dialogs<F> {
@@ -580,6 +642,7 @@ impl<F> Default for Dialogs<F> {
             up: None,
             chosen: BTreeMap::new(),
             dirs: BTreeMap::new(),
+            storage: Storage::default(),
         }
     }
 }
@@ -616,8 +679,12 @@ impl<F: Spec> Dialogs<F> {
     /// its fields holding what they hold. The choosers in it are new, with
     /// nothing selected, so what they had chosen is forgotten with them.
     pub fn stack(&mut self, forms: &[F]) -> Option<Value> {
+        let fields: Vec<String> = self.chosen.keys().cloned().collect();
+        for field in fields {
+            self.forget_selection(&field);
+        }
         self.chosen.clear();
-        stack_with(forms, &self.ids, self.up.as_ref())
+        stack_with(forms, &self.ids, self.up.as_ref(), &self.storage.says)
     }
 
     /// **Opens `form`**, its fields holding `values`, and answers what the
@@ -645,7 +712,12 @@ impl<F: Spec> Dialogs<F> {
             values.insert(name.to_string(), dir.unwrap_or_else(|| START.into()));
         }
         let open = Open { form, values };
-        let shown = open.shown(&self.ids);
+        let mut shown = open.shown(&self.ids);
+        // the tools start with nothing to say
+        self.storage.reset();
+        if let Some(says) = self.ids.get(&format!("{prefix}:{SAYS}")) {
+            shown.insert(0, (*says, storage::says_props("")));
+        }
         self.up = Some(open);
         self.chosen.clear();
         shown
@@ -671,9 +743,19 @@ impl<F: Spec> Dialogs<F> {
     /// report that says nothing. Taking the dialog down is the caller's,
     /// once it has read what it needs.
     pub fn read(&mut self, name: &str, tag: &str, values: &[Value]) -> Option<Said> {
+        let said = read(self.up.as_ref()?.form, name, tag, values)?;
+        match said {
+            Said::Tool(tool) => return Some(Said::Corrected(self.tool(tool))),
+            Said::Changed(field, why) => {
+                self.storage.changed(&why);
+                self.chosen.remove(&field);
+                return Some(Said::Corrected(self.says()));
+            }
+            _ => {}
+        }
         let open = self.up.as_mut()?;
-        let said = read(open.form, name, tag, values)?;
         let saves = |field: &str| open.form.chooser(field).is_some_and(|c| c.saves);
+        let names = open.form.fields().iter().any(|(name, _)| *name == NAME);
         match &said {
             Said::Field(field, text) => {
                 open.values.insert(field.clone(), text.clone());
@@ -684,6 +766,7 @@ impl<F: Spec> Dialogs<F> {
                 if let Some(path) = paths.first() {
                     open.values.insert(NAME.to_string(), path.clone());
                 }
+                self.chosen.insert(field.clone(), paths.clone());
             }
             Said::Picked(field, paths) if saves(field) => {
                 if let Some(path) = paths.first() {
@@ -692,19 +775,122 @@ impl<F: Spec> Dialogs<F> {
                 return Some(Said::Accept);
             }
             // what a pick picks is what is chosen, for a form that reads it
-            // as `OK`
+            // as `OK`, and the name field follows it
             Said::Chosen(field, paths) | Said::Picked(field, paths) => {
+                if let (true, Some(path)) = (names, paths.last()) {
+                    open.values.insert(NAME.to_string(), path.clone());
+                }
                 self.chosen.insert(field.clone(), paths.clone());
             }
             Said::Entered(field, dir) => {
                 open.values.insert(field.clone(), dir.clone());
                 self.dirs
                     .insert(format!("{}:{field}", open.form.prefix()), dir.clone());
-                self.chosen.remove(field);
+                let field = field.clone();
+                let cleared = self.forget_selection(&field);
+                self.chosen.remove(&field);
+                if !cleared.is_empty() {
+                    return Some(Said::Corrected(cleared));
+                }
             }
-            Said::Accept | Said::Cancel | Said::Discard => {}
+            // a path typed in an Open form is opened as one chosen
+            Said::Accept if names => {
+                for (field, _) in open.form.fields() {
+                    let typed = open.path(field);
+                    if let (Some(_), Some(typed)) = (open.form.chooser(field), typed) {
+                        let chosen = self.chosen.entry(field.to_string()).or_default();
+                        if !chosen.contains(&typed) {
+                            *chosen = vec![typed];
+                        }
+                    }
+                }
+            }
+            Said::Accept
+            | Said::Cancel
+            | Said::Discard
+            | Said::Changed(..)
+            | Said::Tool(_)
+            | Said::Corrected(_) => {}
         }
         Some(said)
+    }
+
+    /// **A tool pressed in the file form up**: the change its chooser is
+    /// asked for, and what the tools now say.
+    fn tool(&mut self, tool: Tool) -> Vec<(i32, Value)> {
+        let Some(open) = self.up.as_mut() else {
+            return Vec::new();
+        };
+        let prefix = open.form.prefix();
+        let Some(field) = open
+            .form
+            .fields()
+            .into_iter()
+            .map(|(name, _)| name)
+            .find(|name| open.form.chooser(name).is_some())
+        else {
+            return Vec::new();
+        };
+        let dir = open.value(field).to_string();
+        let selected = self.chosen.get(field).and_then(|c| c.last()).cloned();
+        let typed = open.path(field);
+        let pressed = self
+            .storage
+            .press(tool, &dir, selected.as_deref(), typed.as_deref());
+        let mut out = Vec::new();
+        let chooser = self.ids.get(&format!("{prefix}:{field}")).copied();
+        if let (Some(to), Some(id)) = (&pressed.go, chooser) {
+            open.values.insert(field.to_string(), to.clone());
+            self.dirs.insert(format!("{prefix}:{field}"), to.clone());
+            out.push((id, json!({"path": to})));
+        }
+        if let (Some(change), Some(id)) = (pressed.change, chooser) {
+            out.push((id, json!({"change": change})));
+            self.chosen.remove(field);
+        }
+        if pressed.clear_name {
+            open.values.insert(NAME.to_string(), String::new());
+            if let Some(id) = self.ids.get(&format!("{prefix}:{NAME}")) {
+                out.push((*id, json!({"value": ""})));
+            }
+        }
+        out.extend(self.says());
+        out
+    }
+
+    /// **The name a chooser's selection put in the field, forgotten** with
+    /// the selection: a file chosen in a folder left behind, or in a
+    /// chooser drawn again, is no longer what an Open form opens. A name
+    /// typed stays, and so does a saving form's, which is the file it
+    /// writes. Answers the field's correction.
+    fn forget_selection(&mut self, field: &str) -> Vec<(i32, Value)> {
+        let Some(open) = self.up.as_mut() else {
+            return Vec::new();
+        };
+        let opens = open.form.chooser(field).is_some_and(|c| !c.saves);
+        let name = open.value(NAME).to_string();
+        let selected = self.chosen.get(field).is_some_and(|c| c.contains(&name));
+        if !(opens && selected) {
+            return Vec::new();
+        }
+        open.values.insert(NAME.to_string(), String::new());
+        self.ids
+            .get(&format!("{}:{NAME}", open.form.prefix()))
+            .map(|id| (*id, json!({"value": ""})))
+            .into_iter()
+            .collect()
+    }
+
+    /// What the line the tools speak in is corrected with.
+    fn says(&self) -> Vec<(i32, Value)> {
+        let Some(open) = self.up.as_ref() else {
+            return Vec::new();
+        };
+        self.ids
+            .get(&format!("{}:{SAYS}", open.form.prefix()))
+            .map(|id| (*id, storage::says_props(&self.storage.says)))
+            .into_iter()
+            .collect()
     }
 }
 
@@ -1039,6 +1225,124 @@ mod tests {
         // nothing typed names nothing
         d.read("keep:name", "  ", &[]);
         assert_eq!(d.up().unwrap().path("path"), None);
+    }
+
+    /// **A file form manages the storage it shows**: its tools and the line
+    /// they speak in are under its chooser; a rename asks the chooser to move
+    /// the file selected to the name typed, a delete asks once and then asks
+    /// the chooser to remove it, and the chooser's answer is said.
+    #[test]
+    fn a_file_form_manages_the_storage_it_shows() {
+        let forms = [Keep];
+        let mut d = Dialogs {
+            ids: names(&forms)
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name, 100 + i as i32))
+                .collect(),
+            ..Dialogs::default()
+        };
+        let (chooser, says) = (d.ids["keep:path"], d.ids["keep:says"]);
+        let stack = d.stack(&forms).unwrap();
+        // the copies to and from the disk are a page's alone
+        for tool in Tool::ALL {
+            let id = d.ids.get(&format!("keep:{}", tool.name()));
+            assert_eq!(id.is_some(), tool.shown(), "{tool:?}");
+            if let Some(id) = id {
+                assert_eq!(find(&stack, *id).unwrap()["type"], "button");
+            }
+        }
+        assert_eq!(find(&stack, says).unwrap()["shown"], false);
+        d.open(
+            Keep,
+            BTreeMap::from([("path".into(), "/takes/a.wav".into())]),
+        );
+        d.read("keep:path", "/takes/a.wav", &[]);
+        d.read("keep:name", "b.wav", &[]);
+        let Some(Said::Corrected(renamed)) = d.read("keep:rename", "click", &[]) else {
+            panic!("a tool corrects the window");
+        };
+        assert!(renamed.contains(&(
+            chooser,
+            json!({"change": {"op": "rename", "path": "/takes/a.wav", "to": "/takes/b.wav"}})
+        )));
+        d.read("keep:path", "/takes/b.wav", &[]);
+        let Some(Said::Corrected(asked)) = d.read("keep:delete", "click", &[]) else {
+            panic!("a delete asks");
+        };
+        assert!(asked.iter().all(|(id, _)| *id != chooser), "not yet");
+        assert_eq!(asked.last().unwrap().0, says);
+        assert_eq!(asked.last().unwrap().1["shown"], true);
+        let Some(Said::Corrected(gone)) = d.read("keep:delete", "click", &[]) else {
+            panic!("a delete asked goes on");
+        };
+        assert!(gone.contains(&(
+            chooser,
+            json!({"change": {"op": "remove", "path": "/takes/b.wav"}})
+        )));
+        assert_eq!(
+            d.read("keep:path", "changed", &[json!("/takes/b.wav: denied")]),
+            Some(Said::Corrected(vec![(
+                says,
+                json!({"text": "/takes/b.wav: denied", "shown": true})
+            )]))
+        );
+    }
+
+    /// An Open form with a name field: what is typed there is opened as a
+    /// file chosen, and a file chosen in a folder left behind is not.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Pick;
+
+    impl Spec for Pick {
+        fn prefix(self) -> &'static str {
+            "pick"
+        }
+        fn page(self) -> i32 {
+            1
+        }
+        fn title(self) -> &'static str {
+            "Open"
+        }
+        fn fields(self) -> Vec<(&'static str, &'static str)> {
+            vec![("path", ""), (NAME, "Name")]
+        }
+        fn chooser(self, name: &str) -> Option<Chooser> {
+            (name == "path").then_some(Chooser::open(&["wav"], false))
+        }
+    }
+
+    #[test]
+    fn an_open_form_opens_a_path_typed_as_one_chosen() {
+        let forms = [Pick];
+        let mut d = Dialogs {
+            ids: names(&forms)
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| (name, 100 + i as i32))
+                .collect(),
+            ..Dialogs::default()
+        };
+        let name = d.ids["pick:name"];
+        let stack = d.stack(&forms).unwrap();
+        assert_eq!(
+            find(&stack, d.ids["pick:path"]).unwrap()["bind"],
+            json!(["widget", name, "value"]),
+            "the chooser fills the name field"
+        );
+        d.open(Pick, BTreeMap::new());
+        d.read("pick:path", "/takes/a.wav", &[]);
+        assert_eq!(d.up().unwrap().value(NAME), "/takes/a.wav");
+        // the folder left behind takes its file with it, and the field
+        assert_eq!(
+            d.read("pick:path", "path", &[json!("/other")]),
+            Some(Said::Corrected(vec![(name, json!({"value": ""}))]))
+        );
+        assert_eq!(d.read("pick:ok", "click", &[]), Some(Said::Accept));
+        assert!(d.chosen("path").is_empty());
+        d.read("pick:name", "b.wav", &[]);
+        assert_eq!(d.read("pick:ok", "click", &[]), Some(Said::Accept));
+        assert_eq!(d.chosen("path"), ["/other/b.wav"]);
     }
 
     #[test]

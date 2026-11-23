@@ -307,6 +307,7 @@ quoted title lands here, on the link to the entry.
 - [A file says which application it belongs to, and the format is the file's (2026-11-10)](decisions/apps.md#a-file-says-which-application-it-belongs-to-and-the-format-is-the-files-2026-11-10)
 - [The applications' engine is a server, and the applications its client (2026-11-22)](decisions/apps.md#the-applications-engine-is-a-server-and-the-applications-its-client-2026-11-22)
 - [A window asks before a close unless its client says it keeps the work (2026-11-23)](decisions/apps.md#a-window-asks-before-a-close-unless-its-client-says-it-keeps-the-work-2026-11-23)
+- [A file dialog manages the storage it shows, and the chooser carries the change out (2026-11-23)](decisions/apps.md#a-file-dialog-manages-the-storage-it-shows-and-the-chooser-carries-the-change-out-2026-11-23)
 
 ## [Notation](decisions/notation.md)
 

@@ -1825,6 +1825,91 @@ fn a_listing_reaches_only_the_chooser_that_asked() {
     );
 }
 
+/// **A chooser changes the storage it lists**: its owner asks with the
+/// `change` prop, the front carries the change out once, and the chooser
+/// says how it went (`"changed"`, empty when it went well, the reason when
+/// it did not) and lists its folder again.
+#[test]
+fn a_chooser_carries_a_change_out_says_how_it_went_and_lists_again() {
+    use crate::host::gestures::GestureEffect;
+    use serde_json::json;
+    let dir = std::env::temp_dir().join(format!("clausters-change-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), b"a").unwrap();
+    let path = std::fs::canonicalize(&dir)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let window = format!(
+        r#"{{"type":"window","title":"w","children":[{{"id":10,"type":"files","path":"{path}"}}]}}"#
+    );
+    let mut host = Host::new();
+    host.handle_packet(def_msg(1, &window), from());
+    let (_, _, ask) = host.pending_listings()[0].clone();
+    assert!(host.deliver_listing(1, 10, ask.ticket, files::list_dir(&ask.path)));
+    assert!(host.pending_changes().is_empty(), "nothing asked");
+
+    let set = |change: serde_json::Value| {
+        OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(10),
+                OscType::String("change".into()),
+                OscType::String(change.to_string()),
+            ],
+        })
+    };
+    let a = format!("{path}/a.txt");
+    let b = format!("{path}/b.txt");
+    host.handle_packet(set(json!({"op": "rename", "path": a, "to": b})), from());
+    let changes = host.pending_changes();
+    assert_eq!(changes.len(), 1);
+    assert!(host.pending_changes().is_empty(), "asked once");
+    assert!(
+        host.registry
+            .get(10)
+            .is_some_and(|w| !w.props.contains_key("change")),
+        "a change is kept nowhere, so a window built again does not do it again"
+    );
+    let (def, widget, ask) = changes[0].clone();
+    assert_eq!(ask.change, files::Change::Rename(a.clone(), b.clone()));
+    let done = files::change_disk(&ask.change);
+    let effects = host.deliver_changed(def, widget, &ask, done);
+    let said: Vec<_> = effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit { args, .. } => Some(args.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        said,
+        vec![vec![
+            OscType::String("changed".into()),
+            OscType::String(String::new())
+        ]]
+    );
+    assert!(std::path::Path::new(&b).exists() && !std::path::Path::new(&a).exists());
+    let (_, _, again) = host.pending_listings()[0].clone();
+    assert_eq!(again.path, path, "the folder is listed again");
+    assert!(
+        host.deliver_changed(def, widget, &ask, Ok(())).is_empty(),
+        "an end is taken once"
+    );
+
+    // a change the disk refuses says why
+    host.handle_packet(set(json!({"op": "remove", "path": a})), from());
+    let (def, widget, ask) = host.pending_changes()[0].clone();
+    let done = files::change_disk(&ask.change);
+    let effects = host.deliver_changed(def, widget, &ask, done);
+    let Some(GestureEffect::Emit { args, .. }) = effects.first() else {
+        panic!("the chooser says how it went");
+    };
+    assert!(matches!(&args[1], OscType::String(why) if why.contains("a.txt")));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// **`/gui_server` points a running host at an audio server**: its share of
 /// the server's ids is taken at once, and the leg and the segment are the
 /// front's to open, with a UDP address's carrier read off.

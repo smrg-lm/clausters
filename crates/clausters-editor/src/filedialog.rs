@@ -4,20 +4,20 @@
 //! It is the protocol's file dialog: the host's `files` chooser, which
 //! lists the disk in a window and the page's storage in a tab, a field
 //! bound to what it selects, and the buttons. Since it is where the
-//! storage's files are seen, a new folder, a rename, a delete, an upload
-//! from the disk and a download to it are here too, which the platform
-//! carries out ([`Platform::change`]).
+//! storage's files are seen, the storage's tools are here too -- a new
+//! folder, a rename, a delete, and in a page an upload and a download --
+//! every application's ([`clausters_apps::forms::storage`]), which the
+//! chooser carries out (its `change`) and answers (`"changed"`).
 //!
 //! This is the dialog's state and its tree; the application shows it in its
 //! dialog place and hands it what the hand did.
-//!
-//! [`Platform::change`]: crate::platform::Platform::change
 
 use std::path::{Path, PathBuf};
 
+use clausters_apps::forms::storage::{self, Storage, Tool};
 use serde_json::{Value, json};
 
-use crate::platform::{Change, Purpose};
+use crate::platform::Purpose;
 
 /// Where the dialog's ids start: below the editor's own, above every id a
 /// client allocates or a script picks.
@@ -32,10 +32,22 @@ const DOWNLOAD: i32 = BASE + 6;
 const DELETE: i32 = BASE + 7;
 const CANCEL: i32 = BASE + 8;
 const ACCEPT: i32 = BASE + 9;
+const SAYS: i32 = BASE + 10;
 /// Where its nodes with no role of their own are numbered from.
 pub const SPARE: i32 = BASE + 20;
 /// Past the dialog's ids.
 const END: i32 = BASE + 100;
+
+/// The id of a tool's button.
+fn tool_id(tool: Tool) -> i32 {
+    match tool {
+        Tool::Upload => UPLOAD,
+        Tool::Download => DOWNLOAD,
+        Tool::NewFolder => NEW_FOLDER,
+        Tool::Rename => RENAME,
+        Tool::Delete => DELETE,
+    }
+}
 
 /// What the hand did in the dialog, for the application to carry out.
 #[derive(Debug, PartialEq)]
@@ -44,23 +56,23 @@ pub enum Does {
     Nothing,
     /// The dialog is drawn again as it is now.
     Redraw,
-    /// A change to the storage, after which the folder is listed again.
-    Change(Change),
+    /// Widgets of the dialog set, the dialog standing as it is: the chooser
+    /// asked for a change of the storage or sent to a folder, the name field
+    /// cleared, the line the tools speak in. Drawing the dialog again would
+    /// build its chooser afresh, and with it the change it was asked for.
+    Set(Vec<(i32, Value)>),
     /// The path was chosen, or nothing (`None`): the dialog goes.
     Chosen(Option<PathBuf>),
 }
 
 /// **The dialog that is up**: what it was opened for, the folder its
-/// chooser shows, the file it selects, the path typed, and what it last
-/// has to say.
+/// chooser shows, the file it selects, the path typed, and its tools.
 pub struct FileDialog {
     pub purpose: Purpose,
     dir: PathBuf,
     selected: Option<PathBuf>,
     typed: String,
-    says: String,
-    /// A delete asked once, which a second asks to go on with.
-    armed: Option<PathBuf>,
+    storage: Storage,
 }
 
 impl FileDialog {
@@ -81,8 +93,7 @@ impl FileDialog {
             typed: file
                 .map(|f| f.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            says: String::new(),
-            armed: None,
+            storage: Storage::default(),
         }
     }
 
@@ -97,11 +108,6 @@ impl FileDialog {
         (BASE..END).contains(&id)
     }
 
-    /// A change that did not happen says why; one that did says nothing.
-    pub fn changed(&mut self, done: Result<(), String>) {
-        self.says = done.err().unwrap_or_default();
-    }
-
     /// The path the field names: from the root when it starts with one,
     /// else in the folder shown.
     fn path(&self) -> Option<PathBuf> {
@@ -114,11 +120,6 @@ impl FileDialog {
         } else {
             self.dir.join(typed)
         })
-    }
-
-    /// The file selected, or the folder shown with none.
-    fn target(&self) -> PathBuf {
-        self.selected.clone().unwrap_or_else(|| self.dir.clone())
     }
 
     /// **What an event in the dialog does**: its tag, and its first
@@ -141,72 +142,70 @@ impl FileDialog {
                 self.selected = None;
                 Does::Nothing
             }
+            // what is selected, reported whether or not the field is bound
+            (FILES, "select") => {
+                self.selected = (!text.is_empty()).then(|| PathBuf::from(&text));
+                if !text.is_empty() {
+                    self.typed = text;
+                }
+                Does::Nothing
+            }
             (FILES, "pick") => Does::Chosen(Some(PathBuf::from(text))),
+            // the chooser carried a change out: what went wrong, if anything
+            (FILES, "changed") => {
+                self.storage.changed(&text);
+                self.selected = None;
+                Does::Set(vec![(SAYS, storage::says_props(&self.storage.says))])
+            }
             (DIALOG, "cancel") | (CANCEL, "click") => Does::Chosen(None),
             (ACCEPT, "click") => match self.path() {
                 Some(path) => Does::Chosen(Some(path)),
-                None => self.say("Type a file's name first."),
-            },
-            (UPLOAD, "click") => Does::Change(Change::Upload(self.dir.clone())),
-            (NEW_FOLDER, "click") => match self.path() {
-                Some(path) => {
-                    self.typed.clear();
-                    Does::Change(Change::MakeFolder(path))
+                None => {
+                    self.storage.says = "Type a file's name first.".into();
+                    Does::Set(vec![(SAYS, storage::says_props(&self.storage.says))])
                 }
-                None => self.say("Type the new folder's name first."),
             },
-            (RENAME, "click") => match (self.selected.clone(), self.path()) {
-                (Some(from), Some(to)) if from != to => {
-                    self.selected = None;
-                    Does::Change(Change::Rename(from, to))
-                }
-                _ => self.say("Select a file, then type its new name."),
+            (id, "click") => match Tool::ALL.into_iter().find(|t| tool_id(*t) == id) {
+                Some(tool) => self.tool(tool),
+                None => Does::Nothing,
             },
-            (DOWNLOAD, "click") => match self.selected.clone() {
-                Some(path) => Does::Change(Change::Download(path)),
-                None => self.say("Select the file to download."),
-            },
-            (DELETE, "click") => self.delete(),
             _ => Does::Nothing,
         }
     }
 
-    fn say(&mut self, says: &str) -> Does {
-        self.says = says.into();
-        Does::Redraw
-    }
-
-    /// **A delete asks once**: the file selected, or the folder shown and
-    /// everything in it; its second press goes on.
-    fn delete(&mut self) -> Does {
-        let target = self.target();
-        if self.armed.take().as_ref() == Some(&target) {
-            if self.selected.take().is_none() {
-                self.dir = self
-                    .dir
-                    .parent()
-                    .map_or_else(|| "/".into(), Path::to_path_buf);
-            }
-            return Does::Change(Change::Remove(target));
+    /// **A tool pressed**: the change the chooser is asked for, or what the
+    /// tools say instead.
+    fn tool(&mut self, tool: Tool) -> Does {
+        let text = |p: &Path| p.to_string_lossy().into_owned();
+        let (dir, selected, typed) = (
+            text(&self.dir),
+            self.selected.as_deref().map(text),
+            self.path().as_deref().map(text),
+        );
+        let pressed = self
+            .storage
+            .press(tool, &dir, selected.as_deref(), typed.as_deref());
+        let mut set = Vec::new();
+        if let Some(to) = pressed.go {
+            self.dir = PathBuf::from(&to);
+            set.push((FILES, json!({"path": to})));
         }
-        if target.parent().is_none() {
-            return self.say("The storage's root is not deleted.");
+        if let Some(change) = pressed.change {
+            self.selected = None;
+            set.push((FILES, json!({"change": change})));
         }
-        let what = if self.selected.is_some() {
-            ""
-        } else {
-            " and everything in it"
-        };
-        self.says = format!("Delete {}{what}? Delete again to go on.", target.display());
-        self.armed = Some(target);
-        Does::Redraw
+        if pressed.clear_name {
+            self.typed.clear();
+            set.push((NAME, json!({"value": ""})));
+        }
+        set.push((SAYS, storage::says_props(&self.storage.says)));
+        Does::Set(set)
     }
 
     /// **The dialog's tree**, as it is now: every application's file dialog
-    /// ([`clausters_apps::forms`]) -- the chooser, the name it fills, the
-    /// buttons -- with the storage's own changes between them, the copies
-    /// to and from the disk where the storage is not the disk (`transfers`).
-    pub fn tree(&self, transfers: bool) -> Value {
+    /// ([`clausters_apps::forms`]) -- the chooser, the storage's tools under
+    /// it, the name it fills, the line the tools speak in, the buttons.
+    pub fn tree(&self) -> Value {
         use clausters_apps::forms::{Chooser, chooser_widget, field_row, footer};
         let (title, accept) = match self.purpose {
             Purpose::SaveAs { .. } => ("Save as", "Save"),
@@ -215,16 +214,6 @@ impl FileDialog {
         // a file to open is chosen or typed alike, so the chooser fills the
         // field either way
         let chooser = Chooser::save(&[]);
-        let tool = |id: i32, label: &str| json!({"id": id, "type": "button", "label": label, "variant": "ghost", "size": "sm"});
-        let mut tools = Vec::new();
-        if transfers {
-            tools.extend([tool(UPLOAD, "Upload..."), tool(DOWNLOAD, "Download")]);
-        }
-        tools.extend([
-            tool(NEW_FOLDER, "New folder"),
-            tool(RENAME, "Rename"),
-            tool(DELETE, "Delete"),
-        ]);
         let files = chooser_widget(
             Some(FILES),
             &self.dir.to_string_lossy(),
@@ -236,11 +225,9 @@ impl FileDialog {
             "id": DIALOG, "type": "layout", "modal": 1, "hug": 1, "title": title, "flow": "col",
             "children": [
                 field_row("", None, files, Some(chooser.w)),
-                {"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 4,
-                    "children": tools},
+                storage::tools_row(|tool| Some(tool_id(tool))),
                 field_row("Name", None, name, None),
-                {"type": "label", "text": self.says, "wrap": 1, "muted": 1,
-                    "shown": !self.says.is_empty()},
+                storage::says_line(Some(SAYS), &self.storage.says),
                 footer(Some(CANCEL), Some(ACCEPT), accept),
             ]
         })
@@ -259,10 +246,7 @@ mod tests {
             Purpose::SaveAs { win: 1 },
             Some(Path::new("/sketches/a.mjs")),
         );
-        assert_eq!(
-            d.tree(true)["children"][0]["children"][0]["path"],
-            "/sketches"
-        );
+        assert_eq!(d.tree()["children"][0]["children"][0]["path"], "/sketches");
         assert_eq!(
             d.on(ACCEPT, "click", String::new()),
             Does::Chosen(Some("/sketches/a.mjs".into()))
@@ -290,25 +274,49 @@ mod tests {
         );
     }
 
-    /// A delete asks once before it goes on, and a rename moves the file
-    /// selected to the path typed.
+    /// **The tools are every dialog's**: a delete asks once and then asks
+    /// the chooser to remove the file selected, a rename moves it to the
+    /// path typed, and the chooser's answer is said.
     #[test]
-    fn a_delete_asks_and_a_rename_moves() {
+    fn the_tools_ask_the_chooser_and_say_its_answer() {
+        let says = |text: &str| (SAYS, storage::says_props(text));
         let mut d = FileDialog::new(Purpose::Open, None);
         d.on(FILES, "", "/a.mjs".into());
-        assert_eq!(d.on(DELETE, "click", String::new()), Does::Redraw);
+        let Does::Set(asked) = d.on(DELETE, "click", String::new()) else {
+            panic!("a delete asks");
+        };
+        assert!(asked.iter().all(|(id, _)| *id != FILES), "not yet");
         assert_eq!(
             d.on(DELETE, "click", String::new()),
-            Does::Change(Change::Remove("/a.mjs".into()))
+            Does::Set(vec![
+                (FILES, json!({"change": {"op": "remove", "path": "/a.mjs"}})),
+                says(""),
+            ])
         );
         d.on(FILES, "", "/a.mjs".into());
         d.on(NAME, "", "b.mjs".into());
         assert_eq!(
             d.on(RENAME, "click", String::new()),
-            Does::Change(Change::Rename("/a.mjs".into(), "/b.mjs".into()))
+            Does::Set(vec![
+                (
+                    FILES,
+                    json!({"change": {"op": "rename", "path": "/a.mjs", "to": "/b.mjs"}})
+                ),
+                says(""),
+            ])
         );
+        assert_eq!(
+            d.on(FILES, "changed", "/b.mjs: taken".into()),
+            Does::Set(vec![says("/b.mjs: taken")])
+        );
+        assert_eq!(d.tree()["children"][3]["text"], "/b.mjs: taken");
         // the folder shown, with nothing selected, and never the root
-        assert_eq!(d.on(DELETE, "click", String::new()), Does::Redraw);
-        assert!(d.says.contains("root"));
+        d.on(DELETE, "click", String::new());
+        assert!(
+            d.tree()["children"][3]["text"]
+                .as_str()
+                .unwrap()
+                .contains("root")
+        );
     }
 }
