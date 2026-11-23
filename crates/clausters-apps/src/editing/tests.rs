@@ -756,6 +756,53 @@ fn window_save_keeps_its_destination_and_dirty_checkpoint_until_confirmation() {
     );
 }
 
+/// **A file saved under a new path is named by it in the list**: the save's
+/// answer corrects the Files table, whose row said `untitled`, with the
+/// name of the file it was written as.
+#[test]
+fn a_saved_untitled_file_is_named_in_the_list_by_its_new_file() {
+    let mut editing = Editing::new();
+    let opened = call(
+        &mut editing,
+        json!({"verb": "openAudio", "key": "new:1", "workspace": "/work", "frames": 0,
+               "channels": 1, "rate": 48000, "untitled": true}),
+    );
+    let member = opened["member"].as_u64().unwrap() as MemberId;
+    call(
+        &mut editing,
+        json!({"verb": "member", "member": member,
+               "call": {"verb": "window", "widget": 12, "filesWidget": 30}}),
+    );
+    call(
+        &mut editing,
+        json!({"verb": "member", "member": member, "call": {"verb": "attach_view"}}),
+    );
+    let opening = raw_call(
+        &mut editing,
+        json!({"verb":"operation","action":"prepare","member":member,"command":{"kind":"open"}}),
+    );
+    settle_operation(&mut editing, opening);
+    let rows = |answer: &Value| -> Vec<Value> {
+        answer["answer"]["corrections"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|c| c["widget"] == 30)
+            .map(|c| c["props"]["rows"].clone())
+            .collect()
+    };
+    let prepared = raw_call(
+        &mut editing,
+        json!({"verb":"operation", "action":"prepare", "member":member,
+        "command":{"kind":"save", "path":"/takes/named.wav"}}),
+    );
+    let (saved, _) = settle_operation(&mut editing, prepared);
+    assert_eq!(saved["committed"], true, "{saved}");
+    let shown = rows(&saved["outcome"]);
+    assert_eq!(shown.len(), 1, "the list is corrected: {saved}");
+    assert_eq!(shown[0][0][1], "named.wav");
+}
+
 #[test]
 fn saving_one_audio_window_does_not_acknowledge_in_another_context() {
     let mut origin = Editing::new();

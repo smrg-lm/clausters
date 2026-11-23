@@ -833,6 +833,10 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
         call(&mut editor, json!({"verb": "file"}))["path"],
         Value::Null
     );
+    assert_eq!(
+        call(&mut editor, json!({"verb": "files"}))["files"][0]["label"],
+        "untitled"
+    );
     let asked = event(&mut editor, json!([900, 1, 0, "save"]));
     assert!(asked.get("steps").is_none(), "nothing is written yet");
     let corrections = asked["answer"]["corrections"].to_string();
@@ -857,6 +861,11 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
     let file = call(&mut editor, json!({"verb": "file"}));
     assert_eq!(file["path"], "/takes/new.wav");
     assert_eq!(file["untitled"], false);
+    // **the list names it by the file it was saved as**, untitled no more
+    let label = |editor: &mut AudioEditor| {
+        call(editor, json!({"verb": "files"}))["files"][0]["label"].clone()
+    };
+    assert_eq!(label(&mut editor), "new.wav");
     // and the next Ctrl+S writes there with no form
     let (requested, again) = window_save(&mut editor, json!([900, 4, 0, "save"]));
     assert!(requested);

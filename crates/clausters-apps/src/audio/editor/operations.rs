@@ -548,6 +548,11 @@ impl Application for AudioEditor {
                         {
                             *stamp = None;
                         }
+                        // **a file saved under a new path is called by it**,
+                        // wherever it is named: the list, the pane
+                        if editor.file.target != target {
+                            editor.file.name = None;
+                        }
                         editor.file.target = target;
                         editor.file.written_format = Some(format);
                         editor.file.saved_revision = revision;
@@ -625,6 +630,8 @@ impl Application for AudioEditor {
             }
             corrections.extend(self.focus_corrections());
             corrections.extend(self.pane_correction());
+            // the list names each file as it is now: a save may have named it
+            corrections.extend(self.files_corrections());
             delta.outcome.answer = Some(conversation::answer(seq, 0, reason, corrections));
         }
         delta.outcome.prepared_complete = true;
