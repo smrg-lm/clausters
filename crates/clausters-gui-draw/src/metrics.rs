@@ -282,10 +282,6 @@ metrics_roles! {
     /// The large lift: a submenu's list, a dialog.
     shadow_lg: fine,
 
-    // -- States --
-    /// How far a pressed button goes down.
-    press_shift: hairline,
-
     // -- Spacing per component --
     /// The application bar's height.
     bar_h: grid,
@@ -518,7 +514,6 @@ impl Metrics {
             shadow_xs: fine(k),
             shadow_md: fine(4.0 * k),
             shadow_lg: fine(10.0 * k),
-            press_shift: hairline(k),
 
             bar_h: spec(40.0),
             bar_inset: spec(6.0),

@@ -90,6 +90,8 @@ pub(super) struct Bar {
     /// What a press in a field selected and by what unit, while a drag
     /// grows it.
     held: Option<(Field, (usize, usize), Unit)>,
+    /// The part a press holds, drawn held until the release.
+    pressed: Option<Part>,
 }
 
 /// **Where the parts of the bar are**: the strip, every part's box and the
@@ -113,6 +115,7 @@ impl Default for Bar {
             finder: Finder::new(&Query::default()),
             matches: RefCell::new(None),
             held: None,
+            pressed: None,
         }
     }
 }
@@ -378,6 +381,7 @@ impl Bar {
         m: &Metrics,
     ) -> Option<Part> {
         let part = layout.part_at(at)?;
+        self.pressed = Some(part);
         if let Part::Field(field) = part {
             let rect = layout.rect_of(part)?;
             self.focus = Some(field);
@@ -436,6 +440,7 @@ impl Bar {
 
     pub fn release(&mut self) {
         self.held = None;
+        self.pressed = None;
     }
 
     /// **The bar drawn**: its strip, its fields (the focused one with its
@@ -488,6 +493,10 @@ impl Bar {
                         Part::Previous => controls::icon("chevron-up", font::symbol::UP),
                         _ => controls::icon("x", font::symbol::CLOSE),
                     };
+                    let flat = ButtonLook {
+                        held: self.pressed == Some(*part),
+                        ..flat
+                    };
                     controls::button(d, None, Some(symbol), inset(*rect, d.m), flat, size);
                 }
                 Part::Replace | Part::All | Part::Go => {
@@ -495,6 +504,10 @@ impl Bar {
                         Part::Replace => "Replace",
                         Part::All => "All",
                         _ => "Go",
+                    };
+                    let look = ButtonLook {
+                        held: self.pressed == Some(*part),
+                        ..look
                     };
                     controls::button(d, Some(label), None, inset(*rect, d.m), look, size);
                 }

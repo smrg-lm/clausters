@@ -301,7 +301,6 @@ The 114 roles, with the value each takes at `scale = 1.0`:
 | `shadow_xs` | 1 | The extra small lift: a field, an outlined button. |
 | `shadow_md` | 4 | The medium lift: a menu's list, a hover card. |
 | `shadow_lg` | 10 | The large lift: a submenu's list, a dialog. |
-| `press_shift` | 1 | How far a pressed button goes down. |
 | `bar_h` | 40 | The application bar's height. |
 | `bar_inset` | 6 | The application bar's inset at its ends. |
 | `footer_h` | 24 | The status footer's height. |

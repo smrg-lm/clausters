@@ -218,6 +218,8 @@ pub struct DocsView {
     scroll: Cell<f32>,
     /// The scroll bar's thumb a press holds.
     thumb: Option<controls::ThumbGrip>,
+    /// The part of the strips a press holds, drawn held until the release.
+    pressed: Option<Part>,
     /// A place to be brought to the top once the page is laid out.
     reveal: RefCell<Option<String>>,
     /// The page laid out: for which page, at which width and size.
@@ -304,6 +306,7 @@ impl DocsView {
             pos: 0,
             scroll: Cell::new(0.0),
             thumb: None,
+            pressed: None,
             reveal: RefCell::new(None),
             laid: RefCell::new(None),
             index: RefCell::new(None),
@@ -1241,7 +1244,11 @@ impl DocsView {
                         _ => (controls::icon("x", font::symbol::CLOSE), true),
                     };
                     if live {
-                        controls::button(d, None, Some(symbol), inset(r), flat, g.ui);
+                        let look = ButtonLook {
+                            held: self.pressed == Some(*part),
+                            ..flat
+                        };
+                        controls::button(d, None, Some(symbol), inset(r), look, g.ui);
                     } else {
                         let (mesh, _, theme) = d.parts();
                         font::text_centered(
@@ -1547,6 +1554,7 @@ impl Element for DocsView {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(&(part, r)) = g.parts.iter().find(|(_, r)| r.contains(at.0, at.1)) {
             self.find_focus = part == Part::Field;
+            self.pressed = Some(part);
             match part {
                 Part::Back => {
                     self.step(-1);
@@ -1671,6 +1679,7 @@ impl Element for DocsView {
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.thumb = None;
         self.held = None;
+        self.pressed = None;
         Events::none()
     }
 

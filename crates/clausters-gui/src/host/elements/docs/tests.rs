@@ -489,3 +489,43 @@ fn a_code_blocks_text_is_selected_and_copied() {
     v.release(word, true, &input(&m));
     assert_eq!(v.selected_text().as_deref(), Some("b = Buffer.read("));
 }
+
+/// **A tool of the strip is drawn held while the hand holds it**, as
+/// every button is, and up again at the release.
+#[test]
+fn a_tool_of_the_strip_is_drawn_held() {
+    let m = Metrics::default();
+    let theme = Theme::default();
+    let world = crate::host::world::World::default();
+    let mut v = panel();
+    let lit = |v: &DocsView| {
+        let mut mesh = clausters_gui_draw::paint::Mesh::new();
+        let ctx = Ctx {
+            world: &world,
+            metrics: &m,
+            rect: RECT,
+            indent: 0.0,
+            clip: None,
+            scale: 1.0,
+            time: None,
+            focused: true,
+            hovered: false,
+            clock: 0.0,
+            text_fit: 1.0,
+            header: None,
+        };
+        v.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx);
+        mesh.colors_by_y().any(|(_, c)| c == theme.hilite)
+    };
+    assert!(!lit(&v));
+    let g = v.geometry(RECT, 1.0, &m, None);
+    let (_, home) = g.parts.iter().find(|(p, _)| *p == Part::Home).unwrap();
+    let at = (
+        f64::from(home.x + home.w * 0.5),
+        f64::from(home.y + home.h * 0.5),
+    );
+    v.press(at, &input(&m));
+    assert!(lit(&v), "held");
+    v.release(at, true, &input(&m));
+    assert!(!lit(&v), "up again");
+}

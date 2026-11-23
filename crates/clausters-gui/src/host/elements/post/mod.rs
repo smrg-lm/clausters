@@ -66,6 +66,8 @@ pub struct PostView {
     held: Option<((Pos, Pos), Unit)>,
     /// Whether a press holds the scroll bar's thumb.
     thumb: bool,
+    /// Whether a press holds the clear tool, drawn held until the release.
+    clearing: bool,
     /// The rows of the lines measured, at the width and size they were.
     rows: RefCell<Rows>,
 }
@@ -122,6 +124,7 @@ impl PostView {
             sel: None,
             held: None,
             thumb: false,
+            clearing: false,
             rows: RefCell::default(),
         };
         for (key, value) in props {
@@ -425,6 +428,7 @@ impl PostView {
         let inset = (d.m.pad * 0.5).round();
         let flat = ButtonLook {
             flat: true,
+            held: self.clearing,
             ..ButtonLook::default()
         };
         let clear = controls::icon("eraser", CLEAR);
@@ -652,6 +656,7 @@ impl Element for PostView {
         if let Some(s) = g.strip {
             if s.clear.contains(at.0, at.1) {
                 self.clear();
+                self.clearing = true;
                 return Claim::events(Events::message(vec![OscType::String("clear".into())]));
             }
             if s.autoscroll.contains(at.0, at.1) {
@@ -705,6 +710,7 @@ impl Element for PostView {
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.held = None;
         self.thumb = false;
+        self.clearing = false;
         Events::none()
     }
 
