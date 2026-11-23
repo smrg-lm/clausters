@@ -514,6 +514,40 @@ fn a_key_sheet_leaves_out_what_a_window_does_not_do() {
     assert!(host.offers(1, "split"), "a key still says why");
 }
 
+/// **A name an application's window has no verb for is said, not passed
+/// on**: a window that publishes its actions answers those and no other, so
+/// a script's `/gui_verb` naming none of them is refused on the status bar
+/// instead of reaching an owner that would do nothing with it. A verb it
+/// has still reaches the owner.
+#[test]
+fn a_name_an_application_s_window_has_no_verb_for_is_said() {
+    let mut host = host_from(ROLL);
+    publish_actions(
+        &mut host,
+        serde_json::json!({"spectrogram_settings": reading("toggle")}),
+    );
+    let ctx = ctx();
+    let effects = Gestures::default().command(&mut host, &ctx, "show_spectrogram_settings");
+    assert!(
+        emitted(&effects).is_empty(),
+        "the owner is not told: {effects:?}"
+    );
+    assert!(
+        said(&host)
+            .iter()
+            .any(|l| l.contains("show_spectrogram_settings") && l.contains("no such verb")),
+        "{:?}",
+        said(&host)
+    );
+    let effects = Gestures::default().command(&mut host, &ctx, "spectrogram_settings");
+    assert!(
+        emitted(&effects).iter().any(|(_, args)| args
+            .iter()
+            .any(|a| matches!(a, OscType::String(s) if s == "spectrogram_settings"))),
+        "a verb it has reaches the owner: {effects:?}"
+    );
+}
+
 /// **An action that cannot be taken is refused alike** from a tool, a
 /// client's command and a key, its entry is disabled, and the same verb runs
 /// from all three once the owner says it can.

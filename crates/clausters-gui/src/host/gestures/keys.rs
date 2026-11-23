@@ -373,6 +373,24 @@ impl Gestures {
         }
         let mut out = Vec::new();
         if super::popups::pick_verb(host, ctx, &mut out, name).is_none() {
+            // **A name the window does not have is said, not passed on**: a
+            // window that publishes its actions has one for every verb it
+            // answers, so a name with none -- a script's `/gui_verb` that
+            // names no verb of the window -- would reach an owner that does
+            // nothing with it, and the script would read the silence as
+            // done. A window that publishes none (a script's own GuiDef) has
+            // its owner read the name, whatever it is.
+            if host
+                .window_def(ctx.def_id)
+                .is_some_and(|tree| !tree.actions.is_empty())
+                && host.action_state(ctx.def_id, name, clipboard).is_none()
+            {
+                host.say(
+                    ctx.def_id,
+                    Line::of_reason(None, &format!("{name}: this window has no such verb")),
+                );
+                return vec![GestureEffect::Redraw(ctx.def_id)];
+            }
             emit(
                 host,
                 &mut out,

@@ -756,9 +756,10 @@ class GuiHost:
         The window's verbs are an API, and this is its door: the verb is
         offered to the focused element, the window's ``main`` view and the
         window, and one none of them performs goes to the window's owner as
-        the window would tell it. What it edits reaches the owner as the same
-        ``/gui_event`` a gesture sends. An editor calls it as
-        ``editor.verb(name)``.
+        the window would tell it. A name an application's window has no verb
+        for is refused on its status bar instead. What it edits reaches the
+        owner as the same ``/gui_event`` a gesture sends. An editor calls it
+        as ``editor.verb(name)``.
         """
         self._send("/gui_verb", int(getattr(id, "id", id)), str(verb))
 
