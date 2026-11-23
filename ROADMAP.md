@@ -102,10 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The roll's File menu has no file section when a client holds its
-  sequence** *(`crates/clausters-apps/PLAN.md`, Found by use)*. Takes the
-  multitrack's shape.
-
 - ⬜ **The spectrogram's settings read as two panels**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. One panel with two
   sections; best taken with the panel below.

@@ -3979,3 +3979,22 @@ code in `X15`. The reported bugs motivate tests, not presumed diagnoses.
   editor's test reads the sequence right after `join`, `unjoin` and the
   transpositions, with no wait of its own; `docs/gui-protocol.md` and
   `docs/bindings.md` say so.
+
+- ✅ **The roll's File menu has no file section when a client holds its
+  sequence** *(found by the user, 2026-11-22; fixed 2026-11-23)*. The rule
+  that a window's file verbs are its document's and not its holder's was
+  already the multitrack's and the score's (a page over a sequence is the
+  one without them); the roll had not taken it. `chrome::entries` gave the
+  roll New, Open... and Close File only where it was its sequence's only
+  holder, and its `no_file` refused the verbs whenever a client held it.
+  The menu and the window's actions now take `files` beside `saves`, the
+  roll's `view` (a multitrack's box, or a roll opened beside another
+  window) is the one case with no file of its own, as the score's `over`
+  is, and a client's roll hands its sequence back on New, Open... or Close
+  File as a multitrack does, saving nothing. Both clients' roll handlers
+  gain `new_file`, `open_file` and `close_file`, the score's verbs, which the
+  roll's door already answered. Checked by
+  `every_application_s_file_menu_starts_alike` (the roll a client holds
+  beside the multitrack's), `a_client_s_roll_has_new_open_and_close_file_and_a_view_none`
+  and, through the host, `a_client_s_roll_hands_its_sequence_back_on_new`.
+

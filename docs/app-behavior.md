@@ -798,16 +798,22 @@ code that keeps it lives.
   has no spelling in the spec. A conversion to the format the sequence has
   is refused. What the notation mode shows (the system, a part, a staff) and
   the voice it edits are the window's.
-- **A roll the host holds alone has a file; a client's roll and a box's do
-  not.** A roll opened by `clausters-gui --roll` or over a conversion's
-  copy is its sequence's only holder, so its File menu has New, Open...,
-  Save, Save as... and Close file, the title wears the unsaved mark, and a
+- **A roll has a file of its own unless it is a view of another window's
+  sequence.** Its File menu takes the multitrack's shape: New, Open... and
+  Close File whoever holds the sequence, and Save, Save as... where the
+  window is its sequence's only holder -- a roll opened by
+  `clausters-gui --roll`, over a conversion's copy, or by a client that does
+  not keep the sequence. There the title wears the unsaved mark, and a
   close or a change of file with changes the file does not hold asks first,
   as every application's window does (`crate::file`, the score editor's
   rule written once). Save writes the file of the format: MEI for a page, a
   Standard MIDI File for MIDI 1.0, MPE and a sequence for the server, a Clip
-  File for MIDI 2.0. A roll over a client's sequence or a multitrack box's
-  edits what its holder keeps, and refuses the file verbs with why.
+  File for MIDI 2.0. A roll over a client's sequence hands it back when New,
+  Open... or Close File put another in its place, as a multitrack does, and
+  saves nothing. A roll over a multitrack box's sequence, or opened beside
+  another window over its sequence, is a view of that window's document:
+  it has no file verbs and refuses them with why, as a page over a sequence
+  does.
 - **In notation mode a gesture writes what a page writes.** An onset lands on
   the reading's grid and a length on a written value; a note drawn is in the
   voice edited; a velocity moved is written as the dynamic it is nearest; and

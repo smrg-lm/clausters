@@ -1498,6 +1498,61 @@ fn a_closed_multitrack_is_told_back_to_its_opener() {
     assert_eq!(snapshot["session"]["multitrack"], last);
 }
 
+/// **A roll a client holds hands its sequence back, as a multitrack
+/// does**: File > New in its window puts another sequence in its place and
+/// tells the opener what the window left the first as.
+#[test]
+fn a_client_s_roll_hands_its_sequence_back_on_new() {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    let mut host = host();
+    let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_997)));
+    let sequence = serde_json::to_value(clausters_document::EventSequence::new(vec![
+        clausters_document::events::Event::new(0.0, json!({"midinote": 72, "sustain": 1.0})),
+    ]))
+    .unwrap();
+    let options = json!({"sequence": sequence, "title": "held", "keeps": true}).to_string();
+    let first = door(
+        &mut host,
+        GUI_APP_OPEN,
+        vec![
+            OscType::Int(1),
+            OscType::String("notes".into()),
+            OscType::String(options),
+        ],
+        client,
+    );
+    let window = answered(&mut host, first, 1)["ok"]["window"]
+        .as_i64()
+        .expect("a window") as i32;
+    until(&mut host, "the window was never drawn", |h| {
+        h.window_def(window).is_some()
+    });
+    let _rx = host.ask_audio(window, json!({"do": {"verb": "new_file"}}));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let released = loop {
+        let told = host.take_effects().into_iter().find_map(|e| match e {
+            HostEffect::Send { to, msg } if to == client && msg.addr == GUI_APP_RELEASED => {
+                Some(msg.args)
+            }
+            _ => None,
+        });
+        if let Some(told) = told {
+            break told;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the opener was never handed its sequence"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    assert_eq!(released[0], OscType::Int(window));
+    let Some(OscType::String(snapshot)) = released.get(1) else {
+        panic!("the release carries no snapshot: {released:?}");
+    };
+    assert!(snapshot.contains("72"), "{snapshot}");
+}
+
 /// **A window that lets go of the session a client handed it hands it
 /// back**: another session in its place tells the opener what the
 /// window left the first as, and the window is the host's own from

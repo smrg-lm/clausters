@@ -189,6 +189,36 @@ export class NotesEditor extends SequenceHandler {
     #end: End = null;
 
     /**
+     * **A new, empty sequence in the window**, as its File > New puts one
+     * there. The document is another one, not an edit: the window lets go of
+     * the sequence it was opened over, which holds what the window left it as,
+     * as a close leaves it, and the window goes on as the host's own. A roll
+     * over another window's sequence has no file of its own, and this rejects.
+     */
+    async newFile(): Promise<void> {
+        await this.act("new_file");
+    }
+
+    /**
+     * **The sequence in the file at `path` in the window** (a Standard MIDI
+     * File, a Clip File, MEI), as its File > Open opens one, letting go of the
+     * sequence it was opened over as {@link NotesEditor.newFile} does. A file
+     * that does not read rejects and leaves everything as it was.
+     */
+    async openFile(path: string): Promise<void> {
+        await this.act("open_file", { path: String(path) });
+    }
+
+    /**
+     * **No sequence in the window**, as its File > Close File leaves it,
+     * letting go of the one it was opened over as {@link NotesEditor.newFile}
+     * does.
+     */
+    async closeFile(): Promise<void> {
+        await this.act("close_file");
+    }
+
+    /**
      * **Play the sequence** from `beat` -- or from the position cursor, or the
      * start -- on its window's transport.
      *

@@ -218,15 +218,17 @@ pub fn file_menu(file: &File<'_>) -> Value {
 }
 
 /// **The menu bar**, as the window's `menu` value, its labels in header
-/// capitalization (`verbs::titled`). `saves` says whether the window writes
-/// its work itself -- File has Save then.
+/// capitalization (`verbs::titled`). `files` says whether the window has a
+/// document of its own -- File has New, Open... and Close File then, whoever
+/// holds it: only a view of another window's document has none -- and
+/// `saves` whether it writes its work itself -- File has Save then.
 #[must_use]
-pub fn menu(app: App, saves: bool) -> Value {
-    verbs::titled(entries(app, saves))
+pub fn menu(app: App, files: bool, saves: bool) -> Value {
+    verbs::titled(entries(app, files, saves))
 }
 
 /// The menu bar's entries, in the verb table's words.
-fn entries(app: App, saves: bool) -> Value {
+fn entries(app: App, files: bool, saves: bool) -> Value {
     // a curve is drawn and walked through, and nothing else: what the bar
     // would offer of the others' is refused where it is asked (`actions`)
     if app == App::Points {
@@ -236,8 +238,6 @@ fn entries(app: App, saves: bool) -> Value {
             sub("Help", vec![entry(app, "keys")]),
         ]);
     }
-    // a roll has a file when its window is its sequence's only holder
-    let files = matches!(app, App::Audio | App::Multitrack) || (app == App::Notes && saves);
     // a conversion opens a copy in another format in a roll of its own
     let own = if app == App::Notes {
         vec![
@@ -473,12 +473,14 @@ fn entries(app: App, saves: bool) -> Value {
 /// **The actions of a window over a grid** -- the multitrack's and the
 /// roll's -- as they read now: every verb of the window's and of `app`'s,
 /// a paste that adds (`mix`) aside, available but for a walk through a history
-/// that has nothing to walk over and a `save` that writes nowhere (`saves`);
+/// that has nothing to walk over, the file verbs of a window with no document
+/// of its own (`files`) and a `save` that writes nowhere (`saves`);
 /// the snap switch, and whatever `checked` reads of the application's own
 /// switches and choices. A switch the host keeps (`loop`) is read where it
 /// is kept.
 pub(crate) fn grid_actions(
     app: App,
+    files: bool,
     saves: bool,
     undo: bool,
     redo: bool,
@@ -494,10 +496,9 @@ pub(crate) fn grid_actions(
             match verb.name {
                 "undo" if !undo => state.refuse("there is nothing to undo"),
                 "redo" if !redo => state.refuse("there is nothing to redo"),
-                // a roll's and a curve's are the script's: never a file of theirs
-                "new_file" | "open_file" | "save" | "save_as" | "close_file"
-                    if !saves && matches!(app, App::Notes | App::Points) =>
-                {
+                // a curve's, and a roll's over another window's sequence:
+                // never a file of theirs
+                "new_file" | "open_file" | "save" | "save_as" | "close_file" if !files => {
                     state.refuse_absent("this window has no file of its own");
                 }
                 "save" | "save_as" if !saves => state.refuse("this window writes no file"),
@@ -698,11 +699,11 @@ pub(crate) mod tests {
     #[test]
     fn the_menus_keep_the_field_s_order() {
         assert_eq!(
-            titles(&menu(App::Audio, true)),
+            titles(&menu(App::Audio, true, true)),
             ["File", "Edit", "View", "Transport", "Process", "Help"]
         );
         assert_eq!(
-            titles(&menu(App::Multitrack, false)),
+            titles(&menu(App::Multitrack, true, false)),
             ["File", "Edit", "View", "Transport", "Track", "Help"]
         );
     }
@@ -728,16 +729,16 @@ pub(crate) mod tests {
             "keys",
         ];
         for app in [App::Audio, App::Multitrack, App::Notes] {
-            let said = verbs(&menu(app, false));
+            let said = verbs(&menu(app, true, false));
             for verb in common {
                 assert!(said.iter().any(|v| v == verb), "{app:?} lacks {verb}");
             }
         }
-        let audio = verbs(&menu(App::Audio, true));
+        let audio = verbs(&menu(App::Audio, true, true));
         assert!(audio.contains(&"save".into()) && audio.contains(&"mix".into()));
         // the processes, in a menu of the audio editor's own
         assert!(audio.contains(&"reverse".into()));
-        let bar = menu(App::Audio, true);
+        let bar = menu(App::Audio, true, true);
         let process = bar
             .as_array()
             .unwrap()
@@ -765,9 +766,9 @@ pub(crate) mod tests {
             "the gain curve is a process"
         );
         assert!(!audio.contains(&"split".into()));
-        let notes = verbs(&menu(App::Notes, false));
+        let notes = verbs(&menu(App::Notes, true, false));
         assert!(!notes.contains(&"save".into()) && notes.contains(&"quantize".into()));
-        let multitrack = verbs(&menu(App::Multitrack, false));
+        let multitrack = verbs(&menu(App::Multitrack, true, false));
         for verb in [
             "add_track",
             "pause",
@@ -812,22 +813,29 @@ pub(crate) mod tests {
             (App::Multitrack, FILE_SECTION.to_vec()),
             (App::Notes, FILE_SECTION.to_vec()),
         ] {
-            let labels = file_labels(&menu(app, true));
+            let labels = file_labels(&menu(app, true, true));
             assert_eq!(labels[..file.len()], file, "{app:?}");
             assert_eq!(labels.last().map(String::as_str), Some("Close"), "{app:?}");
         }
         // a new take asks its shape first, and says so
-        let audio = file_labels(&menu(App::Audio, true));
+        let audio = file_labels(&menu(App::Audio, true, true));
         assert_eq!(audio[0], "New...");
         assert_eq!(audio[1..FILE_SECTION.len()], FILE_SECTION[1..]);
-        // without a file of its own, what the application adds and the close
-        let roll = file_labels(&menu(App::Notes, false));
-        assert_eq!(roll[0], "Convert to Notation...");
+        // a window that does not write its work -- a client holds it -- has
+        // the file and no save, the roll as the multitrack
+        let file = ["New", "Open...", "Close File", "-"];
+        let multitrack = file_labels(&menu(App::Multitrack, true, false));
+        assert_eq!(multitrack, [&file[..], &["Close"]].concat());
+        let roll = file_labels(&menu(App::Notes, true, false));
+        assert_eq!(roll[..file.len()], file);
+        assert_eq!(roll[file.len()], "Convert to Notation...");
         assert_eq!(roll.last().map(String::as_str), Some("Close"));
-        assert_eq!(file_labels(&menu(App::Points, false)), ["Close"]);
-        // a window that does not write its work has the file and no save
-        let multitrack = file_labels(&menu(App::Multitrack, false));
-        assert_eq!(multitrack, ["New", "Open...", "Close File", "-", "Close"]);
+        // a view of another window's document has none: what the
+        // application adds and the close
+        let view = file_labels(&menu(App::Notes, false, false));
+        assert_eq!(view[0], "Convert to Notation...");
+        assert_eq!(view.last().map(String::as_str), Some("Close"));
+        assert_eq!(file_labels(&menu(App::Points, false, false)), ["Close"]);
     }
 
     /// A tool is a verb and nothing else: no id, since what it does is the
@@ -835,7 +843,7 @@ pub(crate) mod tests {
     #[test]
     fn every_tool_names_a_verb_the_menu_has() {
         for app in [App::Audio, App::Multitrack, App::Notes] {
-            let said = verbs(&menu(app, true));
+            let said = verbs(&menu(app, true, true));
             let bar = toolbar(app, None);
             for tool in bar["children"].as_array().into_iter().flatten() {
                 if tool["type"] == "button" {
@@ -853,7 +861,7 @@ pub(crate) mod tests {
         dress(
             &mut window,
             App::Notes,
-            menu(App::Notes, false),
+            menu(App::Notes, true, false),
             toolbar(App::Notes, None),
             4,
         );

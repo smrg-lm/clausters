@@ -386,6 +386,8 @@ impl Editing {
             map.insert("version".into(), json!(self.version));
         }
         let mut editor = notes::new_json(sequence.clone(), &request.to_string());
+        // beside another window, the sequence is that window's document
+        editor.set_view(matches!(placing, Placing::At(super::Place::Beside(_))));
         editor.set_outlines(self.mark_outlines());
         editor.set_scores(self.score_reader());
         let again = self.unwindowed.iter().copied().find(|member| {

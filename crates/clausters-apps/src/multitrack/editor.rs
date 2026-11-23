@@ -580,6 +580,7 @@ impl MultitrackEditor {
         let open = self.has_session();
         let mut actions = crate::chrome::grid_actions(
             crate::chrome::App::Multitrack,
+            true,
             self.saves,
             undo || !open,
             redo || !open,

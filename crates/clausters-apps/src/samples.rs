@@ -293,7 +293,7 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
         "children": body,
     });
     if !w.bare {
-        let mut menu = crate::chrome::menu(crate::chrome::App::Audio, true);
+        let mut menu = crate::chrome::menu(crate::chrome::App::Audio, true, true);
         crate::chrome::channel_entries(&mut menu, w.channels);
         crate::chrome::dress(
             &mut window,

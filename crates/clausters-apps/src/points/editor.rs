@@ -163,8 +163,14 @@ impl PointsEditor {
         undo: bool,
         redo: bool,
     ) -> std::collections::BTreeMap<&'static str, clausters_editing::verbs::ActionState> {
-        let mut actions =
-            crate::chrome::grid_actions(crate::chrome::App::Points, false, undo, redo, &|_| None);
+        let mut actions = crate::chrome::grid_actions(
+            crate::chrome::App::Points,
+            false,
+            false,
+            undo,
+            redo,
+            &|_| None,
+        );
         for (verb, state) in &mut actions {
             match *verb {
                 "play" if self.plays => {}
@@ -216,7 +222,7 @@ impl PointsEditor {
             chrome::dress(
                 &mut window,
                 App::Points,
-                chrome::menu(App::Points, false),
+                chrome::menu(App::Points, false, false),
                 Value::Null,
                 ids.curve,
             );

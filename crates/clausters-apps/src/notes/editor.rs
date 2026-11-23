@@ -103,8 +103,12 @@ pub const MONOPHONIC_VERB: &str = "monophonic";
 /// ([`crate::file`]).
 pub const FILE_VERBS: &[&str] = &["new_file", "open_file", "save", "save_as", "close_file"];
 
-/// Why a roll whose sequence another holds has no file.
-const NO_FILE: &str = "this roll edits a sequence its holder keeps: it has no file of its own";
+/// Why a roll whose client keeps its sequence does not save it, as the
+/// window's actions say it.
+const WRITES_NO_FILE: &str = "this window writes no file";
+
+/// Why a roll over another window's sequence has no file.
+const NO_FILE: &str = "this roll is a view of another window's sequence: it has no file of its own";
 
 /// **The conversions**, each into a copy in another format, which opens in a
 /// roll of its own: the page (asked how in a window with the dialog) and the
@@ -235,6 +239,12 @@ pub struct NotesEditor {
     /// file, and asks before a close loses what its file does not hold
     /// ([`crate::closing`]). A client's roll and a box's have none.
     asks: bool,
+    /// **Whether the roll is a view of another window's sequence** -- a
+    /// multitrack's box, or a window it opened beside -- which is that
+    /// window's document: it has no file of its own, as a page over a
+    /// sequence has none. Any other roll has New, Open... and Close File,
+    /// whoever holds its sequence: a client's hands it back.
+    view: bool,
     /// The file the sequence is saved to: the one it was read from, or the
     /// last one a save named. `None` for one with no file yet.
     path: Option<String>,
@@ -373,6 +383,7 @@ impl NotesEditor {
             display: display::Display::default(),
             display_panel: false,
             asks: false,
+            view: false,
             path: None,
             saved,
             saves: 0,
@@ -397,6 +408,12 @@ impl NotesEditor {
     /// application holds ([`super::file::ScoreReader`]).
     pub fn set_scores(&mut self, scores: Option<super::file::ScoreReader>) {
         self.scores = super::file::Scores(scores);
+    }
+
+    /// **The roll is a view of another window's sequence** (its `view`):
+    /// it has no file of its own.
+    pub fn set_view(&mut self, view: bool) {
+        self.view = view;
     }
 
     /// **The window is its sequence's only holder** (its `asks`):
@@ -469,6 +486,13 @@ impl NotesEditor {
         out: &mut Outcome,
     ) -> Option<(Option<String>, Vec<Correction>)> {
         use crate::closing::FileChange;
+        // a window a client holds writes no file: its holder keeps the work
+        if matches!(verb, "save" | "save_as")
+            && !self.asks
+            && crate::file::FileWindow::no_file(self).is_none()
+        {
+            return Some((Some(WRITES_NO_FILE.into()), Vec::new()));
+        }
         Some(match verb {
             "save" => crate::file::save(self, out),
             "save_as" => self.open_file_form(dialogs::Form::SaveAs),
@@ -578,8 +602,13 @@ impl NotesEditor {
             let held = self.held();
             roll::channel_refused(&held, Mode::of(&held))
         };
-        crate::chrome::grid_actions(crate::chrome::App::Notes, self.asks, undo, redo, &|verb| {
-            match verb {
+        crate::chrome::grid_actions(
+            crate::chrome::App::Notes,
+            !self.view,
+            self.asks,
+            undo,
+            redo,
+            &|verb| match verb {
                 SNAP_VERB => Some(self.snap),
                 MONOPHONIC_VERB => Some(self.editing.monophonic),
                 PANEL_VERB => Some(self.panel),
@@ -605,8 +634,8 @@ impl NotesEditor {
                 "color_staff" => Some(self.editing.color_by == ColorBy::Staff),
                 "color_part" => Some(self.editing.color_by == ColorBy::Part),
                 _ => self.ruler_unit.chosen_by(verb),
-            }
-        })
+            },
+        )
         .into_iter()
         .map(|(verb, mut state)| {
             // what is a page's is the notation mode's
@@ -954,7 +983,7 @@ impl NotesEditor {
             chrome::dress(
                 &mut window,
                 App::Notes,
-                chrome::menu(App::Notes, self.asks),
+                chrome::menu(App::Notes, !self.view, self.asks),
                 chrome::toolbar(App::Notes, None),
                 widget,
             );
@@ -1913,7 +1942,7 @@ impl crate::file::FileWindow for NotesEditor {
     }
 
     fn no_file(&self) -> Option<&'static str> {
-        (!self.asks).then_some(NO_FILE)
+        self.view.then_some(NO_FILE)
     }
 
     fn confirm_saved(&mut self, saved: &crate::file::Saved) {

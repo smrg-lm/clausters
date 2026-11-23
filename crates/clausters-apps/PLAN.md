@@ -3488,17 +3488,6 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The roll's File menu has no file section when a client holds its
-  sequence** *(found by the user, 2026-11-22)*. Every menu bar's File is
-  `chrome::file_menu`, but `chrome::entries` gives the roll its file
-  section (New, Open..., Close File, Save, Save As...) only when the window
-  is its sequence's only holder (`saves`); otherwise File is the
-  conversions and Close. The multitrack in the same case keeps New, Open...
-  and Close File. The roll takes the multitrack's shape, and every
-  application with a menu bar is checked against `FILE_SECTION`
-  (`every_application_s_file_menu_starts_alike` tests the roll only with a
-  file).
-
 - ⬜ **The spectrogram's settings read as two panels** *(found by the user,
   2026-11-22)*. `audio::settings` builds Analysis and Display as two framed
   sections of the column, each with its own title strip, so they look like

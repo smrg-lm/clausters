@@ -179,6 +179,29 @@ class NotesEditor(Marking, SequenceHandler):
         through."""
         return self.structure.tempo_map
 
+    # ---- its document ----
+
+    def new_file(self) -> None:
+        """**A new, empty sequence in the window**, as its File > New puts
+        one there. The document is another one, not an edit: the window lets
+        go of the sequence it was opened over, which holds what the window
+        left it as, as a close leaves it, and the window goes on as the
+        host's own. A roll over another window's sequence has no file of its
+        own, and this raises."""
+        self._do("new_file")
+
+    def open_file(self, path) -> None:
+        """**The sequence in the file at ``path`` in the window** (a Standard
+        MIDI File, a Clip File, MEI), as its File > Open opens one, letting
+        go of the sequence it was opened over as `new_file` does. A file
+        that does not read raises and leaves everything as it was."""
+        self._do("open_file", path=str(path))
+
+    def close_file(self) -> None:
+        """**No sequence in the window**, as its File > Close File leaves it,
+        letting go of the one it was opened over as `new_file` does."""
+        self._do("close_file")
+
     # ---- playing it ----
 
     @property

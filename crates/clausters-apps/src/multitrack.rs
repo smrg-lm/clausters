@@ -237,7 +237,7 @@ pub fn window(w: &Window<'_>) -> Value {
         chrome::dress(
             &mut window,
             App::Multitrack,
-            chrome::menu(App::Multitrack, w.saves),
+            chrome::menu(App::Multitrack, true, w.saves),
             bar,
             w.widget,
         );

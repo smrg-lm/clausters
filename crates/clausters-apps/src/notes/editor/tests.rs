@@ -1335,17 +1335,37 @@ fn a_roll_with_a_file_saves_and_asks_before_a_close_loses_work() {
     assert!(out.close, "Don't save closes");
 }
 
-/// **A client's roll has no file**: the sequence is its holder's, so its
-/// file verbs are refused with why, and its menu has none.
+/// **A client's roll has the file section a multitrack's has**: New,
+/// Open... and Close File, which hand the sequence back to its holder, and no
+/// Save, since the holder keeps the work. A roll over another window's
+/// sequence is a view of that window's document and has no file of its own.
 #[test]
-fn a_client_s_roll_has_no_file_of_its_own() {
+fn a_client_s_roll_has_new_open_and_close_file_and_a_view_none() {
     let mut e = editor(shared());
+    let actions = e.actions(false, false);
+    for verb in ["new_file", "open_file", "close_file"] {
+        assert!(actions[verb].enabled, "{verb}");
+    }
+    assert!(!actions["save"].enabled && !actions["save_as"].enabled);
+    let file = e.window(40)["menu"][0]["menu"].to_string();
+    assert!(
+        file.contains("open_file") && file.contains("close_file") && !file.contains("\"save\""),
+        "{file}"
+    );
     let out = e.event(&window_verb("save"), 1);
     let told = serde_json::to_string(&out.answer).unwrap();
+    assert!(told.contains("writes no file"), "{told}");
+    // New lets the sequence go at once: nothing is asked of a client's
+    let out = e.event(&window_verb("new_file"), 2);
+    assert_eq!(out.file, Some(crate::closing::FileChange::New));
+
+    let mut view = editor(shared());
+    view.set_view(true);
+    let out = view.event(&window_verb("new_file"), 1);
+    let told = serde_json::to_string(&out.answer).unwrap();
     assert!(told.contains("no file of its own"), "{told}");
-    assert!(!e.actions(false, false)["open_file"].enabled);
-    let tree = e.window(40);
-    let file = tree["menu"][0]["menu"].to_string();
+    assert!(!view.actions(false, false)["open_file"].enabled);
+    let file = view.window(40)["menu"][0]["menu"].to_string();
     assert!(
         !file.contains("open_file") && !file.contains("\"save\""),
         "{file}"
