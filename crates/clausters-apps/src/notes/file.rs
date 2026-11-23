@@ -14,6 +14,8 @@ use std::sync::Arc;
 use clausters_document::EventSequence;
 use clausters_document::events::{Format, MidiSpec};
 
+use crate::forms::FileType;
+
 /// **A score's text read as the sequence it plays as**: the engraver the
 /// application holds (MEI, MusicXML, ABC -- whatever it reads), handed in as
 /// a mark's outlines are ([`super::OutlineSource`]).
@@ -34,10 +36,31 @@ impl std::fmt::Debug for Scores {
 /// and `to_smf` write at.
 const PPQ: u16 = 480;
 
-/// **The extensions a roll opens**, a MIDI file's and a score's.
-pub const OPENS: &[&str] = &[
-    "mid", "midi", "smf", "midi2", "mei", "musicxml", "xml", "mxl", "abc",
-];
+/// **The kinds of file a roll opens**, a MIDI file and a score.
+pub const OPENS: &[FileType] = &[SMF, CLIP, MEI, MUSICXML, ABC];
+
+/// A Standard MIDI File: what MIDI 1.0, MPE and a sequence for the server
+/// are written as.
+const SMF: FileType = FileType::new("MIDI file", &["mid", "midi", "smf"]);
+/// A MIDI 2.0 Clip File: what MIDI 2.0 is written as.
+const CLIP: FileType = FileType::new("MIDI 2.0 clip", &["midi2"]);
+/// An MEI file: what a page is written as.
+const MEI: FileType = FileType::new("MEI", &["mei"]);
+/// A MusicXML file, read as a score.
+const MUSICXML: FileType = FileType::new("MusicXML", &["musicxml", "xml", "mxl"]);
+/// An ABC file, read as a score.
+const ABC: FileType = FileType::new("ABC", &["abc"]);
+
+/// **The kind of file a sequence of `format` is saved as**: the one its
+/// format is written in ([`extension`]).
+#[must_use]
+pub fn written(format: Format) -> &'static [FileType] {
+    match format {
+        Format::Notation => &[MEI],
+        Format::Midi(MidiSpec::Midi2) => &[CLIP],
+        Format::Midi(_) | Format::Events => &[SMF],
+    }
+}
 
 /// **The extension a file of `format` is written with.**
 #[must_use]

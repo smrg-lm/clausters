@@ -132,7 +132,7 @@ impl ScoreEditor {
             Form::File(file) => {
                 let path = match file {
                     dialogs::File::Open => self.dialogs.chosen("path").first().cloned(),
-                    _ => open.path("path"),
+                    _ => open.save_path("path"),
                 }
                 .unwrap_or_default();
                 match file.format() {

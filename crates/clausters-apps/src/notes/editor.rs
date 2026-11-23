@@ -500,7 +500,10 @@ impl NotesEditor {
         }
         Some(match verb {
             "save" => crate::file::save(self, out),
-            "save_as" => self.open_file_form(dialogs::Form::SaveAs),
+            "save_as" => {
+                let format = self.held().format();
+                self.open_file_form(dialogs::Form::SaveAs(format))
+            }
             "open_file" => self.open_file_form(dialogs::Form::Open),
             "new_file" => crate::file::change_file(self, FileChange::New, out),
             "close_file" => crate::file::change_file(self, FileChange::Close, out),
@@ -519,7 +522,7 @@ impl NotesEditor {
             return (Some("this window has no dialogs".into()), Vec::new());
         }
         let offered = match form {
-            dialogs::Form::SaveAs => self.path.clone().unwrap_or_else(|| {
+            dialogs::Form::SaveAs(_) => self.path.clone().unwrap_or_else(|| {
                 let format = self.held().format();
                 format!("untitled.{}", super::file::extension(format))
             }),
@@ -900,8 +903,8 @@ impl NotesEditor {
                     let paths = self.dialogs.chosen("path").to_vec();
                     self.open_chosen(&paths, out)
                 }
-                Form::SaveAs => {
-                    let path = open.path("path").unwrap_or_default();
+                Form::SaveAs(_) => {
+                    let path = open.save_path("path").unwrap_or_default();
                     crate::file::path_given(self, false, &path, out)
                 }
                 Form::Close => crate::file::save_then_go(self, out),
@@ -2020,7 +2023,8 @@ impl crate::file::FileWindow for NotesEditor {
     }
 
     fn ask_where(&mut self) -> (Option<String>, Vec<Correction>) {
-        self.open_file_form(dialogs::Form::SaveAs)
+        let format = self.held().format();
+        self.open_file_form(dialogs::Form::SaveAs(format))
     }
 }
 

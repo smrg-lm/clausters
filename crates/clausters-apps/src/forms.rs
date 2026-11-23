@@ -106,14 +106,92 @@ fn option_index(options: &[&str], text: &str) -> usize {
     options.iter().position(|o| *o == text).unwrap_or(0)
 }
 
-/// **A field chosen in the host's file chooser**: which files it shows,
-/// whether several can be chosen at once, whether it saves, and how much
-/// room it takes.
+/// **A kind of file a chooser opens or saves**: what it is called and the
+/// extensions its files have, without the dot -- the first the one a save
+/// gives a name that has none of them. None is every file
+/// ([`ALL_FILES`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileType {
+    pub name: &'static str,
+    pub extensions: &'static [&'static str],
+}
+
+impl FileType {
+    /// The kind `name`, whose files have `extensions`.
+    #[must_use]
+    pub const fn new(name: &'static str, extensions: &'static [&'static str]) -> Self {
+        FileType { name, extensions }
+    }
+}
+
+/// **Every file, whatever its extension**: the last kind an open lists, so
+/// a file saved with no extension, or with another, can still be chosen --
+/// and opening one the application does not read says so.
+pub const ALL_FILES: FileType = FileType::new("All files", &[]);
+
+/// **The field a chooser's kinds are chosen in**, which every file form has
+/// under its name: the kind a save writes, and the files an open lists.
+pub const TYPE: &str = "type";
+
+/// **One kind in a form's file-type field**: its words, the extensions of
+/// the files it lists (none for every file), and the one a save gives a
+/// name that has none of them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeChoice {
+    pub label: String,
+    pub extensions: Vec<&'static str>,
+}
+
+impl TypeChoice {
+    fn of(name: &str, extensions: Vec<&'static str>) -> Self {
+        let globs = if extensions.is_empty() {
+            "*.*".to_string()
+        } else {
+            extensions
+                .iter()
+                .map(|e| format!("*.{e}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        TypeChoice {
+            label: format!("{name} ({globs})"),
+            extensions,
+        }
+    }
+
+    /// **Whether `path` is a file of this kind**: by its extension, in any
+    /// case -- every file, for the kind that names none.
+    #[must_use]
+    pub fn holds(&self, path: &str) -> bool {
+        if self.extensions.is_empty() {
+            return true;
+        }
+        std::path::Path::new(path)
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .is_some_and(|e| self.extensions.iter().any(|x| *x == e))
+    }
+
+    /// **`path` as a file of this kind is named**: as it is when its
+    /// extension is one of the kind's, else with the kind's first added --
+    /// a name typed with none, or with another kind's, is saved as what the
+    /// form says it writes.
+    #[must_use]
+    pub fn named(&self, path: &str) -> String {
+        match self.extensions.first() {
+            Some(ext) if !self.holds(path) => format!("{path}.{ext}"),
+            _ => path.to_string(),
+        }
+    }
+}
+
+/// **A field chosen in the host's file chooser**: the kinds of file it
+/// opens or saves, whether several can be chosen at once, whether it saves,
+/// and how much room it takes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chooser {
-    /// The extensions a file must have to be shown, without the dot; empty
-    /// shows every file.
-    pub filter: &'static [&'static str],
+    /// The kinds of file it opens, or the kinds a save writes.
+    pub types: &'static [FileType],
     /// Whether Ctrl and Shift choose several files.
     pub multiple: bool,
     /// **Whether it says where a file is written**: the file it selects
@@ -134,12 +212,12 @@ pub const CHOOSER_W: f64 = 520.0;
 pub const CHOOSER_H: f64 = 300.0;
 
 impl Chooser {
-    /// **A chooser that opens** the files `filter` shows: one, or several
-    /// with Ctrl and Shift.
+    /// **A chooser that opens** files of `types`: one, or several with
+    /// Ctrl and Shift.
     #[must_use]
-    pub const fn open(filter: &'static [&'static str], multiple: bool) -> Self {
+    pub const fn open(types: &'static [FileType], multiple: bool) -> Self {
         Chooser {
-            filter,
+            types,
             multiple,
             saves: false,
             w: CHOOSER_W,
@@ -147,27 +225,72 @@ impl Chooser {
         }
     }
 
-    /// **A chooser that saves**, listing the files `filter` shows beside
-    /// the one written.
+    /// **A chooser that saves** a file of one of `types`, listing the
+    /// files of the kind chosen beside the one written.
     #[must_use]
-    pub const fn save(filter: &'static [&'static str]) -> Self {
+    pub const fn save(types: &'static [FileType]) -> Self {
         Chooser {
             saves: true,
-            ..Chooser::open(filter, false)
+            ..Chooser::open(types, false)
         }
+    }
+
+    /// **The kinds its file-type field offers**, the first chosen when it
+    /// opens. A save offers the kinds it writes. An open offers every
+    /// kind it reads at once first, where it reads several, then each of
+    /// them, then every file ([`ALL_FILES`]): as file dialogs have for
+    /// decades.
+    #[must_use]
+    pub fn choices(&self) -> Vec<TypeChoice> {
+        let one = |t: &FileType| TypeChoice::of(t.name, t.extensions.to_vec());
+        if self.saves {
+            return self.types.iter().map(one).collect();
+        }
+        let mut out = Vec::new();
+        if self.types.len() > 1 {
+            let every = self
+                .types
+                .iter()
+                .flat_map(|t| t.extensions.iter().copied())
+                .collect();
+            out.push(TypeChoice::of("All supported", every));
+        }
+        out.extend(self.types.iter().map(one));
+        out.push(one(&ALL_FILES));
+        out
+    }
+
+    /// **The kind whose words are `label`**, else the first: what the
+    /// file-type field holds.
+    #[must_use]
+    pub fn choice(&self, label: &str) -> TypeChoice {
+        let choices = self.choices();
+        choices
+            .iter()
+            .find(|c| c.label == label)
+            .or_else(|| choices.first())
+            .cloned()
+            .unwrap_or_else(|| TypeChoice::of(ALL_FILES.name, Vec::new()))
     }
 }
 
-/// **The `files` widget a chooser is**, numbered `id`, listing `dir`; it
-/// fills the field numbered `name`, where there is one, with the file it
-/// selects.
+/// **The `files` widget a chooser is**, numbered `id`, listing `dir` with
+/// the files of the kind `kind` (its words; the first kind for none it
+/// offers); it fills the field numbered `name`, where there is one, with
+/// the file it selects.
 #[must_use]
-pub fn chooser_widget(id: Option<i32>, dir: &str, chooser: &Chooser, name: Option<i32>) -> Value {
+pub fn chooser_widget(
+    id: Option<i32>,
+    dir: &str,
+    chooser: &Chooser,
+    kind: &str,
+    name: Option<i32>,
+) -> Value {
     let mut widget = json!({
         "type": "files",
         "id": id,
         "path": Some(dir).filter(|dir| !dir.is_empty()).unwrap_or(START),
-        "filter": chooser.filter,
+        "filter": chooser.choice(kind).extensions,
         "multiple": chooser.multiple,
         "weight": 1,
         "h": chooser.h,
@@ -269,8 +392,9 @@ pub fn names<F: Spec>(forms: &[F]) -> Vec<String> {
         if form.closes().is_some() {
             out.push(format!("{prefix}:discard"));
         }
-        // a file form's tools, and the line they speak in
+        // a file form's kinds, its tools, and the line they speak in
         if has_chooser(*form) {
+            out.push(format!("{prefix}:{TYPE}"));
             out.extend(
                 Tool::ALL
                     .iter()
@@ -284,11 +408,42 @@ pub fn names<F: Spec>(forms: &[F]) -> Vec<String> {
 }
 
 /// Whether `form` chooses a file: it is then a file dialog, with the
-/// storage's tools.
+/// storage's tools and a file-type field.
 fn has_chooser<F: Spec>(form: F) -> bool {
+    file_field(form).is_some()
+}
+
+/// **The field `form` chooses a file in**, and its chooser.
+fn file_field<F: Spec>(form: F) -> Option<(&'static str, Chooser)> {
     form.fields()
+        .into_iter()
+        .find_map(|(name, _)| form.chooser(name).map(|c| (name, c)))
+}
+
+/// **The file-type field**, numbered `id`, offering `chooser`'s kinds with
+/// the one whose words are `kind` chosen.
+fn type_widget(id: Option<i32>, chooser: &Chooser, kind: &str) -> Value {
+    json!({
+        "type": "choice",
+        "id": id,
+        "options": type_options(chooser),
+        "index": type_index(chooser, kind),
+    })
+}
+
+/// The words of `chooser`'s kinds, as its file-type field lists them.
+fn type_options(chooser: &Chooser) -> Vec<String> {
+    chooser.choices().into_iter().map(|c| c.label).collect()
+}
+
+/// Where the kind whose words are `kind` is among `chooser`'s: the first
+/// when it is none of them.
+fn type_index(chooser: &Chooser, kind: &str) -> usize {
+    chooser
+        .choices()
         .iter()
-        .any(|(name, _)| form.chooser(name).is_some())
+        .position(|c| c.label == kind)
+        .unwrap_or(0)
 }
 
 /// Whether `ids` numbers every widget of the dialogs: a window has all of
@@ -323,7 +478,9 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>, says_now: &str) -> 
         .flat_map(|(name, label)| {
             let chooser = form.chooser(name);
             let mut field = match chooser {
-                Some(chooser) => chooser_widget(id(name), held(name), &chooser, id(NAME)),
+                Some(chooser) => {
+                    chooser_widget(id(name), held(name), &chooser, held(TYPE), id(NAME))
+                }
                 None => match form.options(name) {
                     Some(options) => json!({
                         "type": "choice",
@@ -350,7 +507,11 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>, says_now: &str) -> 
         })
         .collect();
     let mut rows = rows;
-    if has_chooser(form) {
+    if let Some((_, chooser)) = file_field(form) {
+        // **the kind of file**, under its name: the one a save writes, the
+        // files an open lists
+        let kinds = type_widget(id(TYPE), &chooser, held(TYPE));
+        rows.push(field_row("File type", None, kinds, Some(chooser.w)));
         let says = up.map_or("", |_| says_now);
         rows.push(storage::says_line(id(SAYS), says));
     }
@@ -490,6 +651,15 @@ pub fn read<F: Spec>(form: F, name: &str, tag: &str, values: &[Value]) -> Option
             _ => None,
         };
     }
+    // the file-type field reports the index of the kind chosen, which the
+    // form holds as its words
+    if part == TYPE
+        && let Some((_, chooser)) = file_field(form)
+    {
+        let index = tag.parse::<f64>().ok()?.round().max(0.0) as usize;
+        let choice = chooser.choices().into_iter().nth(index)?;
+        return Some(Said::Field(TYPE.to_string(), choice.label));
+    }
     // A choice reports the index of what was chosen, which the field holds
     // as the option's text.
     if let Some(options) = form.options(part) {
@@ -551,6 +721,26 @@ impl<F: Spec> Open<F> {
         )
     }
 
+    /// **The path a saving chooser `field` says, as the file it writes**:
+    /// [`Self::path`], named as a file of the kind its file-type field
+    /// chose ([`TypeChoice::named`]) -- the kind's extension added to a
+    /// name that has none of its own, or another kind's.
+    #[must_use]
+    pub fn save_path(&self, field: &str) -> Option<String> {
+        let path = self.path(field)?;
+        Some(match self.form.chooser(field) {
+            Some(chooser) => chooser.choice(self.value(TYPE)).named(&path),
+            None => path,
+        })
+    }
+
+    /// **The kind of file the form's file-type field chose**, where it has
+    /// one.
+    #[must_use]
+    pub fn kind(&self) -> Option<TypeChoice> {
+        file_field(self.form).map(|(_, chooser)| chooser.choice(self.value(TYPE)))
+    }
+
     /// **What the window is corrected with to show it**: every field's text,
     /// the caption it asks with, its title, and the stack turned to its page.
     #[must_use]
@@ -569,7 +759,7 @@ impl<F: Spec> Open<F> {
                     (Some(chooser), _) => {
                         let dir = Some(self.value(name)).filter(|d| !d.is_empty());
                         let props = json!({"path": dir.unwrap_or(START), "focus": 1,
-                            "filter": chooser.filter});
+                            "filter": chooser.choice(self.value(TYPE)).extensions});
                         (id, props)
                     }
                     (None, Some(options)) => (
@@ -580,6 +770,17 @@ impl<F: Spec> Open<F> {
                 })
             })
             .collect();
+        // the kinds it offers, a page that serves several forms offering
+        // each one's
+        if let (Some((_, chooser)), Some(id)) =
+            (file_field(self.form), ids.get(&format!("{prefix}:{TYPE}")))
+        {
+            out.push((
+                *id,
+                json!({"options": type_options(&chooser),
+                    "index": type_index(&chooser, self.value(TYPE))}),
+            ));
+        }
         if let (Some(label), Some(id)) = (self.form.label(), ids.get(&format!("{prefix}:label"))) {
             out.push((*id, json!({"text": label})));
         }
@@ -711,6 +912,12 @@ impl<F: Spec> Dialogs<F> {
             }
             values.insert(name.to_string(), dir.unwrap_or_else(|| START.into()));
         }
+        // the kind its file-type field opens on: the one the caller names,
+        // else the first it offers
+        if let Some((_, chooser)) = file_field(form) {
+            let kind = chooser.choice(values.get(TYPE).map_or("", String::as_str));
+            values.insert(TYPE.to_string(), kind.label);
+        }
         let open = Open { form, values };
         let mut shown = open.shown(&self.ids);
         // the tools start with nothing to say
@@ -757,6 +964,17 @@ impl<F: Spec> Dialogs<F> {
         let saves = |field: &str| open.form.chooser(field).is_some_and(|c| c.saves);
         let names = open.form.fields().iter().any(|(name, _)| *name == NAME);
         match &said {
+            // **a kind chosen lists its files**: the chooser is filtered to
+            // its extensions, every file for every file
+            Said::Field(field, text) if field == TYPE => {
+                open.values.insert(field.clone(), text.clone());
+                let prefix = open.form.prefix();
+                let filtered = file_field(open.form).and_then(|(name, chooser)| {
+                    let id = self.ids.get(&format!("{prefix}:{name}"))?;
+                    Some((*id, json!({"filter": chooser.choice(text).extensions})))
+                });
+                return Some(Said::Corrected(filtered.into_iter().collect()));
+            }
             Said::Field(field, text) => {
                 open.values.insert(field.clone(), text.clone());
             }
@@ -930,12 +1148,15 @@ mod tests {
         fn chooser(self, name: &str) -> Option<Chooser> {
             (self == Form::Load && name == "files").then_some(Chooser {
                 w: 400.0,
-                ..Chooser::open(&["wav"], true)
+                ..Chooser::open(WAVS, true)
             })
         }
     }
 
     const FORMS: [Form; 2] = [Form::Name, Form::Load];
+
+    /// The one kind the tests' choosers open.
+    const WAVS: &[FileType] = &[FileType::new("WAV", &["wav"])];
 
     fn dialogs() -> Dialogs<Form> {
         Dialogs {
@@ -990,6 +1211,95 @@ mod tests {
             "a chooser is not typed into"
         );
         assert_eq!(find(&stack, d.ids["name:text"]).unwrap()["type"], "text");
+    }
+
+    /// **An open offers every kind it reads at once, each, and every
+    /// file; a save the kinds it writes**, as file dialogs have for decades.
+    #[test]
+    fn a_chooser_offers_its_kinds_and_an_open_every_file() {
+        const KINDS: &[FileType] = &[
+            FileType::new("WAV", &["wav", "wave"]),
+            FileType::new("FLAC", &["flac"]),
+        ];
+        let labels =
+            |c: Chooser| -> Vec<String> { c.choices().into_iter().map(|c| c.label).collect() };
+        assert_eq!(
+            labels(Chooser::open(KINDS, false)),
+            [
+                "All supported (*.wav, *.wave, *.flac)",
+                "WAV (*.wav, *.wave)",
+                "FLAC (*.flac)",
+                "All files (*.*)"
+            ]
+        );
+        assert_eq!(
+            labels(Chooser::open(&KINDS[..1], false)),
+            ["WAV (*.wav, *.wave)", "All files (*.*)"],
+            "one kind is its own every kind"
+        );
+        assert_eq!(
+            labels(Chooser::save(KINDS)),
+            ["WAV (*.wav, *.wave)", "FLAC (*.flac)"]
+        );
+        // a kind holds its files in any case, and names a file as one of it
+        let wav = Chooser::save(KINDS).choice("");
+        assert!(wav.holds("/a/b.WAV") && !wav.holds("/a/b.flac") && !wav.holds("/a/b"));
+        assert_eq!(wav.named("/a/b"), "/a/b.wav");
+        assert_eq!(wav.named("/a/b.Wave"), "/a/b.Wave");
+        assert_eq!(wav.named("/a/b.mp3"), "/a/b.mp3.wav");
+        assert_eq!(
+            wav.named("/a/b.c/d"),
+            "/a/b.c/d.wav",
+            "a folder's dot is not one"
+        );
+        let every = Chooser::open(KINDS, false).choice("All files (*.*)");
+        assert!(every.holds("/a/b") && every.named("/a/b") == "/a/b");
+    }
+
+    /// **A file form has a file-type field under its name**: its kinds,
+    /// the one chosen filtering the chooser, and a save writes a name of
+    /// that kind.
+    #[test]
+    fn a_kind_chosen_filters_the_chooser_and_names_the_file_saved() {
+        let mut d = dialogs();
+        let kinds = d.ids["load:type"];
+        let stack = stack(&FORMS, &d.ids).unwrap();
+        let field = find(&stack, kinds).expect("the file-type field");
+        assert_eq!(field["type"], "choice");
+        assert_eq!(field["options"], json!(["WAV (*.wav)", "All files (*.*)"]));
+        let shown = d.open(Form::Load, BTreeMap::new());
+        assert!(shown.contains(&(
+            kinds,
+            json!({"options": ["WAV (*.wav)", "All files (*.*)"],
+            "index": 0})
+        )));
+        // every file listed, and back to the kind's
+        assert_eq!(
+            d.read("load:type", "1", &[]),
+            Some(Said::Corrected(vec![(
+                d.ids["load:files"],
+                json!({"filter": []})
+            )]))
+        );
+        assert_eq!(d.up().unwrap().value(TYPE), "All files (*.*)");
+        assert_eq!(
+            d.read("load:type", "0", &[]),
+            Some(Said::Corrected(vec![(
+                d.ids["load:files"],
+                json!({"filter": ["wav"]})
+            )]))
+        );
+        // a save's name is given the kind's extension
+        let open = Open {
+            form: Form::Load,
+            values: [
+                ("files".to_string(), "/takes".to_string()),
+                (NAME.to_string(), "mix".to_string()),
+            ]
+            .into(),
+        };
+        assert_eq!(open.path("files").as_deref(), Some("/takes/mix"));
+        assert_eq!(open.kind().map(|k| k.label).as_deref(), Some("WAV (*.wav)"));
     }
 
     #[test]
@@ -1162,7 +1472,7 @@ mod tests {
             vec![("path", ""), (NAME, "Name")]
         }
         fn chooser(self, name: &str) -> Option<Chooser> {
-            (name == "path").then_some(Chooser::save(&["wav"]))
+            (name == "path").then_some(Chooser::save(WAVS))
         }
         fn accept(self) -> &'static str {
             "Save"
@@ -1308,7 +1618,7 @@ mod tests {
             vec![("path", ""), (NAME, "Name")]
         }
         fn chooser(self, name: &str) -> Option<Chooser> {
-            (name == "path").then_some(Chooser::open(&["wav"], false))
+            (name == "path").then_some(Chooser::open(WAVS, false))
         }
     }
 

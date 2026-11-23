@@ -1034,8 +1034,8 @@ fn a_fields_focus_report_is_not_what_it_holds() {
     let (_, saved) = window_save(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
     assert_eq!(
         renders(&saved["steps"])[0]["path"],
-        "/in/focus",
-        "a name typed as the word is the word, in the folder shown"
+        "/in/focus.wav",
+        "a name typed as the word is the word, in the folder shown, saved as WAV"
     );
 }
 
@@ -1120,10 +1120,16 @@ fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
     assert_eq!(drawn["type"], "files");
     assert!(drawn["filter"].as_array().unwrap().contains(&json!("wav")));
 
+    // the open lists every kind it reads at once, as its file-type field
+    // first says
+    let every = crate::forms::Chooser::open(crate::audio::dialogs::AUDIO, true).choices()[0]
+        .extensions
+        .clone();
+    assert!(every.contains(&"flac") && every.contains(&"wav"));
     let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
     assert_eq!(
         corrections_of(&shown, chooser),
-        json!({"path": ".", "focus": 1, "filter": crate::audio::dialogs::AUDIO})
+        json!({"path": ".", "focus": 1, "filter": every})
     );
     event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
     event(
@@ -1140,7 +1146,7 @@ fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
     let again = event(&mut editor, json!([900, 5, 0, "open_file"]));
     assert_eq!(
         corrections_of(&again, chooser),
-        json!({"path": "/takes", "focus": 1, "filter": crate::audio::dialogs::AUDIO}),
+        json!({"path": "/takes", "focus": 1, "filter": every}),
         "where the hand left it"
     );
     let refused = event(&mut editor, json!([ids["open:ok"], 6, 0, "click"]));

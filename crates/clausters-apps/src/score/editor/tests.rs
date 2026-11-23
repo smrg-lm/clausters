@@ -1811,9 +1811,15 @@ fn the_score_plays_as_its_render_on_the_engravers_time() {
 fn an_export_names_its_file_and_its_format_and_edits_nothing() {
     let mut editor = with_dialogs();
     let ids = named();
-    for (entry, title, format) in [
-        ("dialog:export_midi", "Export MIDI", "smf"),
-        ("dialog:export_clip", "Export clip", "clip"),
+    // a name of another kind is given the kind the export writes
+    for (entry, title, format, path) in [
+        ("dialog:export_midi", "Export MIDI", "smf", "/tmp/a.mid"),
+        (
+            "dialog:export_clip",
+            "Export clip",
+            "clip",
+            "/tmp/a.mid.midi2",
+        ),
     ] {
         let out = editor.event(&pick(entry, None), 1);
         assert!(
@@ -1823,10 +1829,7 @@ fn an_export_names_its_file_and_its_format_and_edits_nothing() {
         );
         editor.event(&said("file:name", "/tmp/a.mid"), 1);
         let out = editor.event(&said("file:ok", "click"), 1);
-        assert_eq!(
-            out.export,
-            Some(json!({"path": "/tmp/a.mid", "format": format}))
-        );
+        assert_eq!(out.export, Some(json!({"path": path, "format": format})));
         assert!(
             !out.changed && out.save.is_none(),
             "the score and its file are as they were"

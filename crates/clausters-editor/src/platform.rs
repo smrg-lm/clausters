@@ -24,6 +24,9 @@ pub struct Language {
     pub code: &'static str,
     /// A new file's extension, without the dot.
     pub extension: &'static str,
+    /// **The kinds of file its sources are**, as the file dialog offers
+    /// them: the first the one a save writes.
+    pub types: &'static [clausters_apps::forms::FileType],
     /// What the session is when no environment is chosen.
     pub system: &'static str,
 }
@@ -33,6 +36,10 @@ pub const PYTHON: Language = Language {
     name: "Python",
     code: "python",
     extension: "py",
+    types: &[clausters_apps::forms::FileType::new(
+        "Python",
+        &["py", "pyw"],
+    )],
     system: "System Python",
 };
 
@@ -41,6 +48,10 @@ pub const JAVASCRIPT: Language = Language {
     name: "JavaScript",
     code: "javascript",
     extension: "mjs",
+    types: &[clausters_apps::forms::FileType::new(
+        "JavaScript",
+        &["mjs", "js"],
+    )],
     system: "The page's worker",
 };
 

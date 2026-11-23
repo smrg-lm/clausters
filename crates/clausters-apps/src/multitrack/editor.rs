@@ -749,7 +749,7 @@ impl MultitrackEditor {
                 self.open_chosen(&paths, out)
             }
             Said::Accept => {
-                let Some(path) = open.path("path") else {
+                let Some(path) = open.save_path("path") else {
                     return (Some("a session is saved under a path".into()), Vec::new());
                 };
                 out.save_as = Some(path);

@@ -1100,7 +1100,7 @@ impl App {
         if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
             return;
         }
-        self.file_dialog = Some(FileDialog::new(purpose, start.as_deref()));
+        self.file_dialog = Some(FileDialog::new(purpose, start.as_deref(), self.lang.types));
         self.show_file_dialog();
     }
 

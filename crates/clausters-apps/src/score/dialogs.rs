@@ -231,9 +231,20 @@ const FORMS: [Form; 6] = [
     Form::File(File::Open),
 ];
 
-/// **The extensions of the files a score editor opens**: what it reads as
-/// text -- MEI, MusicXML and ABC.
-pub const SCORES: &[&str] = &["mei", "musicxml", "xml", "abc"];
+/// **The kinds of file a score editor opens**: what it reads as text --
+/// MEI, MusicXML and ABC.
+pub const SCORES: &[forms::FileType] = &[MEI, MUSICXML, ABC];
+
+/// An MEI file: what a score is saved as.
+pub const MEI: forms::FileType = forms::FileType::new("MEI", &["mei"]);
+/// A MusicXML file, read.
+pub const MUSICXML: forms::FileType = forms::FileType::new("MusicXML", &["musicxml", "xml"]);
+/// An ABC file, read.
+pub const ABC: forms::FileType = forms::FileType::new("ABC", &["abc"]);
+/// A Standard MIDI File: what a score is exported as for MIDI 1.0.
+pub const SMF: forms::FileType = forms::FileType::new("MIDI file", &["mid", "midi", "smf"]);
+/// A MIDI 2.0 Clip File: what a score is exported as for MIDI 2.0.
+pub const CLIP: forms::FileType = forms::FileType::new("MIDI 2.0 clip", &["midi2"]);
 
 /// What the close form asks.
 pub const UNSAVED: &str = "The score has changes that are not saved.";
@@ -339,9 +350,9 @@ impl Spec for Form {
         };
         (name == "path").then(|| match file {
             File::Open => forms::Chooser::open(SCORES, false),
-            File::SaveAs => forms::Chooser::save(&["mei"]),
-            File::ExportMidi => forms::Chooser::save(&["mid", "midi", "smf"]),
-            File::ExportClip => forms::Chooser::save(&["midi2"]),
+            File::SaveAs => forms::Chooser::save(&[MEI]),
+            File::ExportMidi => forms::Chooser::save(&[SMF]),
+            File::ExportClip => forms::Chooser::save(&[CLIP]),
         })
     }
 
@@ -532,8 +543,9 @@ mod tests {
                 assert_eq!(parts.len(), 2);
                 let fields = parts[0]["children"].as_array().unwrap();
                 // a file form's chooser has the storage's tools under it,
-                // and the line they speak in after its fields
-                let tools = if matches!(form, Form::File(_)) { 2 } else { 0 };
+                // and its file-type field and the line the tools speak in
+                // after its fields
+                let tools = if matches!(form, Form::File(_)) { 3 } else { 0 };
                 assert_eq!(fields.len(), form.fields().len() + tools);
             }
         }

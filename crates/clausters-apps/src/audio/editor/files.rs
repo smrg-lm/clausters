@@ -668,7 +668,7 @@ impl AudioEditor {
                 // answered above
                 Form::Close => None,
                 Form::SaveAs => {
-                    if let Some(path) = open.path("path") {
+                    if let Some(path) = open.save_path("path") {
                         match self.save_target(Some(path), "float") {
                             Ok(target) => {
                                 // the operation the request becomes writes here

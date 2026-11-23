@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use clausters_document::EventSequence;
 use clausters_document::events::reading::Transcription;
-use clausters_document::events::{Polyphony, Writing};
+use clausters_document::events::{Format, Polyphony, Writing};
 
 use crate::forms::{self, Spec};
 
@@ -28,8 +28,9 @@ pub enum Form {
     Notation,
     /// The file to open in this window, chosen in the host's chooser.
     Open,
-    /// The path the sequence is written to, from now on.
-    SaveAs,
+    /// The path the sequence is written to, from now on, as the file of its
+    /// format: the one kind the form saves.
+    SaveAs(Format),
     /// **Whether to save before closing**: the sequence has changes its file
     /// does not hold. `OK` is Save, and a third button closes without.
     Close,
@@ -68,7 +69,7 @@ impl Spec for Form {
         match self {
             Form::Notation => "notation",
             Form::Open => "open",
-            Form::SaveAs => "file",
+            Form::SaveAs(_) => "file",
             Form::Close => "close",
         }
     }
@@ -77,7 +78,7 @@ impl Spec for Form {
         match self {
             Form::Notation => 1,
             Form::Open => 2,
-            Form::SaveAs => 3,
+            Form::SaveAs(_) => 3,
             Form::Close => 4,
         }
     }
@@ -86,7 +87,7 @@ impl Spec for Form {
         match self {
             Form::Notation => "Write as notation",
             Form::Open => "Open",
-            Form::SaveAs => "Save as",
+            Form::SaveAs(_) => "Save as",
             Form::Close => "Close",
         }
     }
@@ -99,7 +100,7 @@ impl Spec for Form {
                 ("writing", "Polyphony"),
             ],
             Form::Open => vec![("path", ""), (forms::NAME, "Name")],
-            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
+            Form::SaveAs(_) => vec![("path", ""), (forms::NAME, "Name")],
             Form::Close => Vec::new(),
         }
     }
@@ -117,11 +118,14 @@ impl Spec for Form {
     }
 
     /// The file to open is chosen in the host's own chooser, one file a roll
-    /// reads, and the file to save as in it too.
+    /// reads, and the file to save as in it too, as the one kind its format
+    /// is written as.
     fn chooser(self, name: &str) -> Option<forms::Chooser> {
         match (self, name) {
             (Form::Open, "path") => Some(forms::Chooser::open(super::file::OPENS, false)),
-            (Form::SaveAs, "path") => Some(forms::Chooser::save(super::file::OPENS)),
+            (Form::SaveAs(format), "path") => {
+                Some(forms::Chooser::save(super::file::written(format)))
+            }
             _ => None,
         }
     }
@@ -129,14 +133,21 @@ impl Spec for Form {
     fn accept(self) -> &'static str {
         match self {
             Form::Open => "Open",
-            Form::SaveAs => "Save",
+            Form::SaveAs(_) => "Save",
             Form::Notation | Form::Close => "OK",
         }
     }
 }
 
 /// The forms the window holds, in the order of their pages.
-const FORMS: [Form; 4] = [Form::Notation, Form::Open, Form::SaveAs, Form::Close];
+/// The Save as form stands for every format's: its page is one, and the
+/// form up says which format it writes.
+const FORMS: [Form; 4] = [
+    Form::Notation,
+    Form::Open,
+    Form::SaveAs(Format::Events),
+    Form::Close,
+];
 
 /// **Every widget of the dialog, by name**, for a caller to number.
 #[must_use]

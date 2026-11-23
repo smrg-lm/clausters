@@ -669,7 +669,13 @@ code that keeps it lives.
   application reads, Save As shows the folder with the file's name in a
   field under it, which a file selected fills, and a pick (a double click or
   Enter) accepts either; Open has the same field, and a path typed there
-  opens as one chosen. **The dialog manages the storage it shows**: under
+  opens as one chosen. **Under the name is the file type**, as file dialogs
+  have had it for decades (`forms::FileType`): a save offers the kinds it
+  writes, and a name typed with none of the chosen kind's extensions, or
+  with another's, is saved with the kind's added; an open offers every kind
+  it reads at once, each of them, and All files (`*.*`), so a file saved
+  with no extension can be chosen, and opening one the application does not
+  read says so. The kind chosen is the chooser's filter. **The dialog manages the storage it shows**: under
   the chooser are New folder, Rename and Delete (asked first), and in a page
   Upload... and Download, with a line they speak in, and in a page the
   chooser says how much of the storage is used (`forms::storage`; the host's

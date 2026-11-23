@@ -2,7 +2,7 @@
 //! and the session to open -- two forms of the shared mechanism
 //! ([`crate::forms`]), the audio editor's Save as and Open for a session.
 
-use crate::forms::{self, Chooser, Spec};
+use crate::forms::{self, Chooser, FileType, Spec};
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,9 +61,9 @@ impl Spec for Form {
     }
 }
 
-/// **The extensions of the files a multitrack opens**: a session is
-/// written as JSON.
-pub const SESSIONS: &[&str] = &["json"];
+/// **The kind of file a multitrack opens and saves**: a session, written
+/// as JSON.
+pub const SESSIONS: &[FileType] = &[FileType::new("Multitrack session", &["json"])];
 
 /// The forms the window holds, in the order of their pages.
 const FORMS: [Form; 2] = [Form::SaveAs, Form::Open];

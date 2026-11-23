@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::forms::{self, Chooser, Spec};
+use crate::forms::{self, Chooser, FileType, Spec};
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl Spec for Form {
     fn chooser(self, name: &str) -> Option<Chooser> {
         match (self, name) {
             (Form::Open, "path") => Some(Chooser::open(AUDIO, true)),
-            (Form::SaveAs, "path") => Some(Chooser::save(AUDIO)),
+            (Form::SaveAs, "path") => Some(Chooser::save(WRITES)),
             _ => None,
         }
     }
@@ -95,12 +95,23 @@ impl Spec for Form {
     }
 }
 
-/// **The extensions of the files an audio editor opens**: what a
-/// `SoundFile` reads -- WAV, FLAC, Ogg Vorbis, MP3, MP4/AAC, ALAC, AIFF
-/// and CAF.
-pub const AUDIO: &[&str] = &[
-    "wav", "wave", "flac", "ogg", "oga", "mp3", "mp4", "m4a", "aac", "aif", "aiff", "aifc", "caf",
+/// **The kinds of file an audio editor opens**: what a `SoundFile` reads
+/// -- WAV, FLAC, Ogg Vorbis, MP3, MP4/AAC (and ALAC in it), AIFF and CAF.
+pub const AUDIO: &[FileType] = &[
+    WAV,
+    FileType::new("FLAC", &["flac"]),
+    FileType::new("Ogg Vorbis", &["ogg", "oga"]),
+    FileType::new("MP3", &["mp3"]),
+    FileType::new("MP4 audio", &["m4a", "mp4", "aac"]),
+    FileType::new("AIFF", &["aif", "aiff", "aifc"]),
+    FileType::new("CAF", &["caf"]),
 ];
+
+/// A WAV file: what a take is written as.
+pub const WAV: FileType = FileType::new("WAV", &["wav", "wave"]);
+
+/// **The kinds of file an audio editor writes**: a take is saved as WAV.
+pub const WRITES: &[FileType] = &[WAV];
 
 /// **The sample formats a file is written in**: what the format field
 /// shows, and the format a save writes. A take is held in 32-bit float, so
