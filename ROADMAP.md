@@ -102,10 +102,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The host's window and drawing libraries are updated before the next
-  release** *(`crates/clausters-gui/PLAN.md`, Found by use)*. wgpu, naga and
-  winit carry code a future Rust rejects; raised before the release is cut.
-
 - ⬜ **A Faust synth's instance is made and freed outside the libfaust
   lock** *(`crates/clausters-server/PLAN.md`, Found by use)*. The probe's,
   which crashed the Faust suites, is locked now; the network thread's are

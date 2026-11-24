@@ -10405,3 +10405,14 @@ module of its own.
   (`crates/clausters-editor/page/tests/page.e2e.mjs`), which pastes with
   the browser's own Ctrl+V in Chrome and in Firefox: it fails on the
   previous host and passes on this one.
+
+- ✅ **The host's window and drawing libraries are updated before the next
+  release** (2026-11-20, the user, building the editor). Cargo warned that
+  `naga`, `wgpu`, `wgpu-core`, `wgpu-hal` 29.0.4 and `winit` 0.30.13 held
+  code a future Rust would reject (`cargo report
+  future-incompatibilities`). *(Closed 2026-11-24 with no update: on the
+  toolchain the repository pins now, Rust 1.100.0, the same versions
+  rebuilt from scratch report none -- `cargo check -p clausters-gui
+  --future-incompat-report` and the editor's build both say 0 -- so
+  there is nothing for this release to raise. A future lint that flags
+  them again arrives with the pin, through the weekly newest-stable job.)*
