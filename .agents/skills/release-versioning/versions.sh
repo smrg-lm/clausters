@@ -14,7 +14,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-tag=$(git tag --sort=-v:refname | head -1)
+tag=$(git tag --list 'v*' --sort=-v:refname | head -1)   # a release's tag; a bookmark tag is not one
 [ -n "$tag" ] || { echo "no tag to compare against"; exit 1; }
 status=0
 
