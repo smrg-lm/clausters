@@ -3,6 +3,7 @@
 //! application that holds the window, its corrections drawn and the stamp
 //! settled. The same order a client's editor answers one in.
 
+use super::gestures::GestureEffect;
 use super::*;
 
 impl Host {
@@ -182,5 +183,43 @@ impl Host {
             reason,
             ..Default::default()
         });
+    }
+}
+
+impl Host {
+    /// **Hands widget `widget` of window `def` the end of the change
+    /// `ticket`**: what went wrong, or nothing. The element reports it to
+    /// its owner (`"changed"`, with the reason or an empty one) and lists
+    /// its directory again; the answer is what the front carries out, none
+    /// for an element that is gone or asked another since.
+    pub fn deliver_changed(
+        &mut self,
+        def: i32,
+        widget: i32,
+        ask: &files::ChangeAsk,
+        done: Result<(), String>,
+    ) -> Vec<GestureEffect> {
+        let taken = self
+            .window_def_mut(def)
+            .and_then(|tree| tree.find_mut(widget))
+            .and_then(|w| w.kind.as_element_mut())
+            .is_some_and(|el| el.changed(ask.ticket, ask.change.relists()));
+        if !taken {
+            return Vec::new();
+        }
+        let why = done.err().unwrap_or_default();
+        let seq = self.outbox.borrow_mut().stamp(def, widget);
+        vec![
+            GestureEffect::Emit {
+                def_id: def,
+                widget_id: widget,
+                seq,
+                args: vec![
+                    clausters_core::osc::OscType::String("changed".into()),
+                    clausters_core::osc::OscType::String(why),
+                ],
+            },
+            GestureEffect::Redraw(def),
+        ]
     }
 }

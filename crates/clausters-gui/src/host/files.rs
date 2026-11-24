@@ -47,7 +47,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::Value;
 
 use super::Host;
-use super::gestures::GestureEffect;
 
 /// One entry of a directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -510,42 +509,6 @@ impl Host {
             });
         }
         out
-    }
-
-    /// **Hands widget `widget` of window `def` the end of the change
-    /// `ticket`**: what went wrong, or nothing. The element reports it to
-    /// its owner (`"changed"`, with the reason or an empty one) and lists
-    /// its directory again; the answer is what the front carries out, none
-    /// for an element that is gone or asked another since.
-    pub fn deliver_changed(
-        &mut self,
-        def: i32,
-        widget: i32,
-        ask: &ChangeAsk,
-        done: Result<(), String>,
-    ) -> Vec<GestureEffect> {
-        let taken = self
-            .window_def_mut(def)
-            .and_then(|tree| tree.find_mut(widget))
-            .and_then(|w| w.kind.as_element_mut())
-            .is_some_and(|el| el.changed(ask.ticket, ask.change.relists()));
-        if !taken {
-            return Vec::new();
-        }
-        let why = done.err().unwrap_or_default();
-        let seq = self.outbox.borrow_mut().stamp(def, widget);
-        vec![
-            GestureEffect::Emit {
-                def_id: def,
-                widget_id: widget,
-                seq,
-                args: vec![
-                    clausters_core::osc::OscType::String("changed".into()),
-                    clausters_core::osc::OscType::String(why),
-                ],
-            },
-            GestureEffect::Redraw(def),
-        ]
     }
 
     /// Hands widget `widget` of window `def` the answer to the ask `ticket`,
