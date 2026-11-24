@@ -5,7 +5,7 @@
 
 The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: three cdylibs — `libclausters_ffi` (the numeric/timing core), `libclausters` (built with `embed,realtime` for the in-process server and offline render) and `libclausters_midi` (built with `live`, the MIDI file writers and the virtual MIDI ports) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
-The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~47 MB packed, the largest part of it LLVM, since the Faust compiler *is* an LLVM JIT). It bundles **libverovio** the same way, so the `score` widget engraves with nothing installed. Nothing to enable and nothing to install: this is the default install.
+The wheel also bundles **Faust** — `libfaust`, with the LLVM it JIT-compiles with linked into it — so a `FaustDef` compiles on a machine without it installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (some 70 MB packed, the largest part of it LLVM, since the Faust compiler *is* an LLVM JIT). It bundles **libverovio** the same way, so the `score` widget engraves with nothing installed. Nothing to enable and nothing to install: this is the default install.
 
 The simplest setup, in a fresh virtualenv, run from the repository so the build hook can find the cargo workspace:
 
@@ -81,7 +81,7 @@ That is the whole install: the tarball carries the emitted modules, their type d
 
 Through a bundler the imports are written `from "clausters"`, and a layer is `from "clausters/defs"` (likewise `seq`, `gui`, `data`). A page served straight off the file system with no build step imports the same modules by path — `./dist/index.js`, `./dist/defs/index.js` — and nothing else in it changes.
 
-The package also carries what [clausters-editor](https://github.com/smrg-lm/clausters/tree/main/clausters-editor), the editor with an interactive session (Python on the desktop, JavaScript as a page), reads from it: this book and the server's, as Markdown, which its documentation viewer shows offline (the API reference included, so its search and its help on a name, `Ctrl+D`, reach them), and the hook its interrupt key calls, `Ctrl+.`, which panics every session not closed yet, as the Python client's does. Neither needs the editor, and neither loads unless the editor asks.
+The package also carries what [clausters-editor](https://github.com/smrg-lm/clausters/tree/main/crates/clausters-editor), the editor with an interactive session (Python on the desktop, JavaScript as a page), reads from it: this book and the server's, as Markdown, which its documentation viewer shows offline (the API reference included, so its search and its help on a name, `Ctrl+D`, reach them), and the hook its interrupt key calls, `Ctrl+.`, which panics every session not closed yet, as the Python client's does. Neither needs the editor, and neither loads unless the editor asks.
 
 ### From a checkout instead
 

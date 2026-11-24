@@ -11,7 +11,7 @@ protocol, the wire formats, the engine) ·
 [web client book](https://clausters-web.readthedocs.io/) (the same model in the
 browser)
 
-High-level Python client for the [Clausters](../../README.md) audio server,
+High-level Python client for the [Clausters](https://github.com/smrg-lm/clausters) audio server,
 ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)). It covers both of the server's
 definition formats as peers: **UGen-graph `SynthDef`s** and **`FaustDef`s** —
@@ -86,7 +86,7 @@ session.close()      # stops everything the session started (server, GUI)
 
 The same code runs **offline** or **in-process** by changing one call —
 `Session.nrt()` renders it to a WAV, `Session.embed()` runs the server inside
-this interpreter. See the [Getting started](docs/src/getting-started.md) chapter.
+this interpreter. See the book's [Getting started](https://clausters-python.readthedocs.io/en/latest/getting-started.html).
 
 ## What is in the package
 
@@ -131,6 +131,10 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   **MIDI 2.0 clip**, or play it **live** out a virtual OS MIDI port.
 - `clausters.gui` — client-side `GuiDef` building for the Clausters GUI host
   (windows, control widgets, meters/scopes, node-tree views, canvas).
+- `clausters.document` and `clausters.gui.editing` — the document the
+  applications edit (sources, regions, take lanes, tracks, event sequences)
+  and the applications over it, each driven from a script as from its
+  window: the audio, multitrack, notes and score editors.
 - `clausters.Session` — ergonomic defaults **without global state**: bundles a
   `Server` and a clock; `Session.nrt()` / `Session.live()` / `Session.embed()`
   factories, `.play(pattern)` / `.render()` / `.run(s)`. Several sessions
@@ -158,14 +162,15 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   `clausters stop|panic|status` does the same from a terminal. Both binaries are
   bundled in the wheel.
 
-The TypeScript client sits on the same core and the same OSC contract, in the
-browser (see [`../web/PLAN.md`](../web/PLAN.md)); the design both share is in
-[`PLAN.md`](PLAN.md).
+The [web client](https://github.com/smrg-lm/clausters/tree/main/clients/web) is the same client in
+TypeScript, on the same core and the same OSC contract, in the browser.
 
 The full documentation (this client's guide and the generated API reference) is
-the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in
-[`examples/`](examples/) (the server's own are in
-[`crates/clausters-server/examples/`](../../crates/clausters-server/examples/)).
+the mdBook in [`docs/`](https://github.com/smrg-lm/clausters/tree/main/clients/python/docs). Runnable examples
+are in the repository's
+[`clients/python/examples/`](https://github.com/smrg-lm/clausters/tree/main/clients/python/examples) (the
+server's own are in
+[`crates/clausters-server/examples/`](https://github.com/smrg-lm/clausters/tree/main/crates/clausters-server/examples)).
 
 ## Installing (pip / wheels)
 
@@ -180,7 +185,7 @@ no `target/` directory, no separate build step at import time.
 Self-contained includes **Faust**: both def families are on by default in the
 server, so the wheel also carries `libfaust` (in `clausters/_libs/`, found
 through the artifacts' `$ORIGIN` rpath). A `FaustDef` therefore compiles on a
-machine without it installed. That is what makes the wheel heavy — ~47 MB
+machine without it installed. That is what makes the wheel heavy — some 70 MB
 packed, the largest part of it LLVM, which is linked into libfaust because the
 Faust compiler *is* an LLVM JIT. It carries **libverovio** the same way, with
 its SMuFL glyph data, so the `score` widget engraves with nothing installed.
@@ -201,7 +206,7 @@ pip install ./clients/python
 
 `pip install` triggers `setup.py`, which runs `cargo build` for the three cdylibs and
 stages them in `clausters/_libs/` before packaging them into the wheel (the
-system build dependencies are listed in [`BUILD.md`](../../BUILD.md)). On Linux
+system build dependencies are listed in [`BUILD.md`](https://github.com/smrg-lm/clausters/blob/main/BUILD.md)). On Linux
 that staging also needs **patchelf** — it rewrites each vendored library's run
 path so the bundle resolves itself — from your package manager or as a
 self-contained wheel (`pip install patchelf`). Building a redistributable wheel
@@ -239,10 +244,11 @@ sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev \
 sudo apt install cmake make g++ llvm-18-dev zlib1g-dev
 ```
 
-Plus Rust ([rustup](https://rustup.rs), the stable toolchain).
-[`BUILD.md`](../../BUILD.md) has the optional features' dependencies; the
+Plus Rust through [rustup](https://rustup.rs), which installs the toolchain
+the repository pins (`rust-toolchain.toml`) the first time it builds.
+[`BUILD.md`](https://github.com/smrg-lm/clausters/blob/main/BUILD.md) has the optional features' dependencies; the
 editor is a crate of the workspace and needs nothing more
-([README](../../crates/clausters-editor/README.md)).
+([README](https://github.com/smrg-lm/clausters/blob/main/crates/clausters-editor/README.md)).
 
 **2. libfaust, libverovio and pydoc-markdown** (once). The two libraries are
 built from a pinned source into `~/.local`, where the build finds them
@@ -435,5 +441,5 @@ floats/ints in, `array('f')`/bytes out.
 
 ## License
 
-**GPL-3.0-or-later** — see [COPYING](COPYING), shipped inside the wheel. The
+**GPL-3.0-or-later** — see [COPYING](https://github.com/smrg-lm/clausters/blob/main/clients/python/COPYING), shipped inside the wheel. The
 bundled cdylibs embed the Clausters server, whose optional libfaust is GPLv2+.
