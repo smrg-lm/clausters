@@ -163,6 +163,14 @@ code that keeps it lives.
   window whose loss nothing could undo (an editor's post window) says it may
   not be closed (`closable`), rather than offering a close mark it would have
   to refuse.
+- **A panel of settings in parts is one panel.** The column beside an
+  application's work holds folding panels, as the score editor's palettes
+  are; one that gathers several parts -- the audio editor's FFT settings
+  (Analysis, Display), the roll's inspector (Selection, Events) and its
+  display settings -- is one section that folds whole, its parts headed
+  inside it and parted by a line, as a menu's groups are
+  (`clausters_apps::panels::parted`). Two titled sections folding apart
+  would read as two panels.
 - **The pointer says what a press will do, before the press.** Over text
   a press puts a caret in or selects, the I-beam (a field, the code, the
   post window's lines, a documentation page's text, a sweep over samples);

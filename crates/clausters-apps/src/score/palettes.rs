@@ -950,7 +950,7 @@ pub fn column(ids: &Ids, outlines: &Outlines) -> Option<Value> {
         .collect();
     // **The column scrolls**: how tall it is depends on which sections are
     // open, which is the host's to know (`crate::panels`).
-    crate::panels::column(sections, WIDTH, crate::panels::Spacing::Spaced)
+    crate::panels::column(sections, WIDTH)
 }
 
 /// **The editor's verb the entry `name` asks for when it reports `tag`** --

@@ -23,6 +23,9 @@ use serde_json::{Value, json};
 /// How wide the panel's column is.
 pub const WIDTH: f64 = 260.0;
 
+/// What the panel is called, as the View menu names it.
+pub const TITLE: &str = "Display settings";
+
 /// The prefix the panel's widgets are named under.
 pub const PREFIX: &str = "display";
 
@@ -196,18 +199,7 @@ impl Display {
     /// them. `notation` enables what a page's marks are.
     #[must_use]
     pub fn panel(&self, ids: &Ids, lanes: &[(String, String)], notation: bool) -> Option<Value> {
-        let sections: Vec<Value> = self
-            .widgets(ids, lanes, notation)
-            .into_iter()
-            .filter_map(|(title, widgets)| {
-                (!widgets.is_empty()).then(|| {
-                    let mut section = crate::panels::section(title, false, widgets);
-                    section.insert("flow".into(), json!("col"));
-                    Value::Object(section)
-                })
-            })
-            .collect();
-        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Joined)
+        crate::panels::parted(TITLE, self.widgets(ids, lanes, notation), WIDTH)
     }
 
     /// **What the panel's widgets are corrected with**: each one's value and
@@ -371,21 +363,19 @@ mod tests {
     fn the_panel_shows_the_settings_and_a_report_is_read_as_a_request() {
         let d = Display::default();
         let panel = d.panel(&ids(), &lanes(), false).expect("a panel");
-        let sections = panel["children"].as_array().unwrap();
-        let titles: Vec<&Value> = sections.iter().map(|s| &s["title"]).collect();
+        assert_eq!(panel["children"][0]["title"], "Display settings");
+        let parts = crate::panels::parts_of(&panel);
+        let headings: Vec<&str> = parts.iter().map(|(h, _)| h.as_str()).collect();
         assert_eq!(
-            titles,
+            headings,
             ["Slurs", "Articulations", "Lines and curves", "Lanes"]
         );
-        assert_eq!(sections[0]["children"][0]["index"], 1, "an arc");
-        assert_eq!(
-            sections[0]["children"][0]["enabled"], 0,
-            "a page's, in MIDI mode"
-        );
-        assert_eq!(sections[3]["children"].as_array().unwrap().len(), 2);
-        assert_eq!(sections[3]["children"][1]["label"], "CC 1");
+        assert_eq!(parts[0].1[0]["index"], 1, "an arc");
+        assert_eq!(parts[0].1[0]["enabled"], 0, "a page's, in MIDI mode");
+        assert_eq!(parts[3].1.len(), 2);
+        assert_eq!(parts[3].1[1]["label"], "CC 1");
         let notation = d.panel(&ids(), &lanes(), true).unwrap();
-        assert_eq!(notation["children"][0]["children"][0]["enabled"], 1);
+        assert_eq!(crate::panels::parts_of(&notation)[0].1[0]["enabled"], 1);
         assert_eq!(
             Display::read("display:slurs", &json!(3), &lanes()),
             Some(json!({"slurs": "bracket"}))

@@ -28,6 +28,10 @@ use clausters_editing::notes::{self as roll, Axis, Editing, Mode, YDomain};
 /// How wide the panel's column is.
 pub const WIDTH: f64 = 360.0;
 
+/// What the panel is called: the selected notes inspected, and the events
+/// of the sequence listed.
+pub const TITLE: &str = "Inspector";
+
 /// The prefix the inspector's fields are named under.
 pub const INSPECT: &str = "inspect";
 
@@ -289,16 +293,7 @@ pub fn panel(
             None => {}
         }
     }
-    let sections: Vec<Value> = [("Selection", fields), ("Events", list)]
-        .into_iter()
-        .filter(|(_, widgets)| !widgets.is_empty())
-        .map(|(title, widgets)| {
-            let mut section = crate::panels::section(title, false, widgets);
-            section.insert("flow".into(), json!("col"));
-            Value::Object(section)
-        })
-        .collect();
-    crate::panels::column(sections, WIDTH, crate::panels::Spacing::Joined)
+    crate::panels::parted(TITLE, vec![("Selection", fields), ("Events", list)], WIDTH)
 }
 
 /// **What the panel's widgets are corrected with**, for the sequence as it

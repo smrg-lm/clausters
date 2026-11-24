@@ -22,6 +22,10 @@ use serde_json::{Value, json};
 /// How wide the panel's column is.
 pub const WIDTH: f64 = 220.0;
 
+/// What the panel is called: the settings of the analysis that draws the
+/// spectrogram and of how it is drawn.
+pub const TITLE: &str = "FFT settings";
+
 /// The prefix the panel's widgets are named under.
 pub const PREFIX: &str = "settings";
 
@@ -352,20 +356,12 @@ impl Settings {
             toggle("interpolate", "Interpolate", self.interpolate),
             toggle("normalize", "Normalize bands", self.normalize),
         ];
-        // two sections, what is measured and how it is drawn, each folded
-        // and unfolded whole
-        let sections: Vec<Value> = [("Analysis", analysis), ("Display", display)]
+        // one panel of two parts, what is measured and how it is drawn
+        let parts = [("Analysis", analysis), ("Display", display)]
             .into_iter()
-            .filter_map(|(title, widgets)| {
-                let widgets: Vec<Value> = widgets.into_iter().flatten().collect();
-                (!widgets.is_empty()).then(|| {
-                    let mut section = crate::panels::section(title, false, widgets);
-                    section.insert("flow".into(), json!("col"));
-                    Value::Object(section)
-                })
-            })
+            .map(|(title, widgets)| (title, widgets.into_iter().flatten().collect()))
             .collect();
-        crate::panels::column(sections, WIDTH, crate::panels::Spacing::Joined)
+        crate::panels::parted(TITLE, parts, WIDTH)
     }
 }
 
@@ -443,21 +439,20 @@ mod tests {
         assert_eq!(s, before);
     }
 
-    /// **The settings are one panel of two sections**: Analysis and
-    /// Display, joined -- no frame of their own and no room between them --
-    /// so the column reads as one panel, not two.
+    /// **The settings are one panel of two parts**: one section, FFT
+    /// settings, that folds whole, holding Analysis and Display, each headed
+    /// and parted by a line -- not two panels folded apart.
     #[test]
-    fn the_settings_are_one_panel_of_two_sections() {
+    fn the_settings_are_one_panel_of_two_parts() {
         let panel = Settings::default().panel(&ids()).expect("a panel");
-        assert_eq!(panel["margin"], 0);
-        assert_eq!(panel["gap"], 0);
         let sections = panel["children"].as_array().unwrap();
-        let titles: Vec<&str> = sections
-            .iter()
-            .filter_map(|s| s["title"].as_str())
+        assert_eq!(sections.len(), 1, "{panel}");
+        assert_eq!(sections[0]["title"], "FFT settings");
+        let headings: Vec<String> = crate::panels::parts_of(&panel)
+            .into_iter()
+            .map(|(h, _)| h)
             .collect();
-        assert_eq!(titles, ["Analysis", "Display"]);
-        assert!(sections.iter().all(|s| s["frame"] == false), "{panel}");
+        assert_eq!(headings, ["Analysis", "Display"]);
     }
 
     /// **The panel shows the settings, and a widget's report is the request
@@ -467,13 +462,10 @@ mod tests {
         let mut s = Settings::default();
         let panel = s.panel(&ids()).expect("a panel");
         assert_eq!(panel["type"], "plane");
-        let sections = panel["children"].as_array().unwrap();
-        let titles: Vec<&Value> = sections.iter().map(|s| &s["title"]).collect();
-        assert_eq!(titles, ["Analysis", "Display"]);
-        let analysis = &sections[0]["children"];
-        let display = &sections[1]["children"];
-        assert_eq!(analysis.as_array().unwrap().len(), 3);
-        assert_eq!(display.as_array().unwrap().len(), 7);
+        let parts = crate::panels::parts_of(&panel);
+        let (analysis, display) = (&parts[0].1, &parts[1].1);
+        assert_eq!(analysis.len(), 3);
+        assert_eq!(display.len(), 7);
         assert_eq!(analysis[0]["index"], 2, "1024 frames");
         assert_eq!(analysis[2]["index"], 1, "half");
         assert_eq!(display[0]["index"], 0, "a linear scale");
