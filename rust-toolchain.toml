@@ -18,6 +18,6 @@
 # the wasm gates of the GUI host, the engine and the shared core), listed here
 # so no workflow has to ask for them.
 [toolchain]
-channel = "1.99.0"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]

@@ -413,11 +413,11 @@ impl Median {
         let n = self.size;
         let last = (n - 1) as u8;
         let mut pos = 0;
-        for i in 0..n {
-            if self.ages[i] == last {
+        for (i, age) in self.ages[..n].iter_mut().enumerate() {
+            if *age == last {
                 pos = i;
             } else {
-                self.ages[i] += 1;
+                *age += 1;
             }
         }
         while pos != 0 && x < self.values[pos - 1] {

@@ -146,11 +146,11 @@ impl Pitch {
         let size = self.median_size;
         let last = size - 1;
         let mut pos = 0;
-        for i in 0..size {
-            if self.ages[i] == last {
+        for (i, age) in self.ages[..size].iter_mut().enumerate() {
+            if *age == last {
                 pos = i;
             } else {
-                self.ages[i] += 1;
+                *age += 1;
             }
         }
         while pos != 0 && value < self.values[pos - 1] {

@@ -1036,15 +1036,15 @@ impl UGen for PvMagFreeze {
             let freeze = self.stored && at(inputs[1], 0) > 0.0;
             self.stored = true;
             let half = chain.winsize / 2;
-            for b in 0..=half {
+            for (b, stored) in self.mags[..=half].iter_mut().enumerate() {
                 let mag = bin_mag(&chain.frame, b, half);
                 if freeze {
                     if mag > 0.0 {
-                        scale_bin(&mut chain.frame, b, half, self.mags[b] / mag);
+                        scale_bin(&mut chain.frame, b, half, *stored / mag);
                     }
                     // A silent bin stays silent: there is no phase to rescale.
                 } else {
-                    self.mags[b] = mag;
+                    *stored = mag;
                 }
             }
         }
@@ -1200,12 +1200,12 @@ impl UGen for PvBinShift {
             }
             if self.mags_only {
                 // Remapped magnitude envelope over the original phases.
-                for b in 0..=half {
+                for (b, &target) in self.scratch[..=half].iter().enumerate() {
                     let mag = bin_mag(&chain.frame, b, half);
                     if mag > 0.0 {
-                        scale_bin(&mut chain.frame, b, half, self.scratch[b] / mag);
+                        scale_bin(&mut chain.frame, b, half, target / mag);
                     } else {
-                        set_bin(&mut chain.frame, b, half, self.scratch[b], 0.0);
+                        set_bin(&mut chain.frame, b, half, target, 0.0);
                     }
                 }
             } else {

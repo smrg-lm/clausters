@@ -369,8 +369,8 @@ impl PvOnset {
             OnsetKind::HainsworthFoote => {
                 let (low, high) = self.band;
                 let (mut rise, mut norm, mut dot) = (0.0f32, 0.0f32, 0.0f32);
-                for k in 1..half {
-                    let (m, q) = (mag(k), self.prev[k]);
+                for (k, &q) in self.prev[..half].iter().enumerate().skip(1) {
+                    let m = mag(k);
                     if k >= low && k < high {
                         let d = (m / q.max(0.0001)).log2();
                         if d > 0.0 {
@@ -415,8 +415,8 @@ impl PvOnset {
                 sum
             }
         };
-        for k in 1..half {
-            self.prev[k] = mag(k);
+        for (k, prev) in self.prev[..half].iter_mut().enumerate().skip(1) {
+            *prev = mag(k);
         }
         sum
     }

@@ -1513,8 +1513,8 @@ mod tests {
     #[test]
     fn a_glissando_out_of_a_tied_chain_starts_at_its_last_note() {
         let mut sheet = quarters(4);
-        for k in 0..2 {
-            if let Item::Note { tie, .. } = &mut sheet.staves[0].voices[0].items[k] {
+        for item in &mut sheet.staves[0].voices[0].items[..2] {
+            if let Item::Note { tie, .. } = item {
                 *tie = true;
             }
         }

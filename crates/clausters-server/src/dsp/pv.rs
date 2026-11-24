@@ -600,8 +600,8 @@ impl UGen for PvLocalMax {
         if chain.ready {
             let thresh = inputs.get(1).map_or(0.0, |i| at(i, 0));
             let half = chain.winsize / 2;
-            for b in 0..=half {
-                self.mags[b] = bin_mag(&chain.frame, b, half);
+            for (b, mag) in self.mags[..=half].iter_mut().enumerate() {
+                *mag = bin_mag(&chain.frame, b, half);
             }
             for b in 0..=half {
                 let m = self.mags[b];
