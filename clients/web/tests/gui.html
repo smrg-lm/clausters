@@ -272,9 +272,15 @@
         // into the field that has the keys -- the road Ctrl+V takes in a page.
         const pasted = new DataTransfer();
         pasted.setData("text/plain", " there");
-        form.canvas.dispatchEvent(new ClipboardEvent("paste", {
+        const paste = new ClipboardEvent("paste", {
           clipboardData: pasted, bubbles: true, cancelable: true,
-        }));
+        });
+        // Firefox makes a synthetic paste's clipboardData its own, empty,
+        // whatever the constructor was given; the text is written into it.
+        if (paste.clipboardData && paste.clipboardData.getData("text/plain") !== " there") {
+          paste.clipboardData.setData("text/plain", " there");
+        }
+        form.canvas.dispatchEvent(paste);
         for (let i = 0; i < 40 && entered() !== "he there"; i++) await sleep(50);
         if (entered() !== "he there") {
           throw new Error("the browser's paste never reached the field: " + JSON.stringify(typed));
