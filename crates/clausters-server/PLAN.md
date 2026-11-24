@@ -1678,12 +1678,18 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **`faust_compiler` failed once in a parallel workspace run** *(found
-  2026-10-22, accepting the audio editor)*. `cargo test --workspace` stopped
-  on `-p clausters --test faust_compiler`; the suite passed alone five times
-  in a row and the whole workspace passed on the next run. The failing output
-  was not kept, so neither the case nor the cause is known. What is open is
-  the next failure's output: the case, and whether it is load, a libfaust
-  call outside `faust::ffi_lock()`, or the compiler cache shared between
-  suites.
+- ⬜ **A Faust synth's instance is made and freed outside the libfaust
+  lock** *(found 2026-10-22, accepting the audio editor; the cause
+  2026-11-23, in CI)*. The Faust suites crashed now and then (`faust_compiler`
+  once in a workspace run; `faust_synth` with a SIGSEGV in
+  `llvm_dsp::~llvm_dsp` in CI). On two cores with CI's Faust target it
+  reproduced in 24 runs of 150: the def's probe instance was made and freed
+  with no lock while another thread compiled, and holding
+  `faust::compiler::ffi_lock()` around the probe took it to 0 of 150. The
+  same calls remain unlocked in `FaustSynth::new` and its `Drop`, on the
+  network thread, which a compile on the compiler thread can overlap in a
+  running server. Taking the lock there would hold every OSC command behind
+  a compile, which can take seconds; what is open is the shape that keeps
+  both -- instances made off the network thread, or a lock libfaust's own
+  instance calls do not need, once a stress case shows which call races.
 

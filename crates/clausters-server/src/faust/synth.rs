@@ -56,6 +56,10 @@ impl FaustDef {
     /// Allocates and must run off the audio thread (the compiler thread does,
     /// right after creating the factory).
     pub fn probe(factory: FaustFactory) -> Result<Self, String> {
+        // The probe's instance is libfaust's too, and its teardown raced a
+        // compile on another thread (a SIGSEGV in `llvm_dsp::~llvm_dsp`), so
+        // it is made and freed under the lock every compile holds.
+        let guard = crate::faust::compiler::ffi_lock();
         let dsp = unsafe { ffi::createCDSPInstance(factory.as_ptr()) };
         let Some(dsp) = NonNull::new(dsp) else {
             return Err("probe instance creation failed".into());
@@ -70,6 +74,7 @@ impl FaustDef {
         let num_inputs = unsafe { ffi::getNumInputsCDSPInstance(dsp.as_ptr()) } as usize;
         let num_outputs = unsafe { ffi::getNumOutputsCDSPInstance(dsp.as_ptr()) } as usize;
         unsafe { ffi::deleteCDSPInstance(dsp.as_ptr()) };
+        drop(guard);
         if num_inputs > NUM_AUDIO_BUSES || num_outputs > NUM_AUDIO_BUSES {
             return Err(format!(
                 "def has {num_inputs} inputs / {num_outputs} outputs, more than the {NUM_AUDIO_BUSES} audio buses"

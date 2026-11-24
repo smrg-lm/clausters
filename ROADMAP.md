@@ -106,6 +106,11 @@ already carry it.
   release** *(`crates/clausters-gui/PLAN.md`, Found by use)*. wgpu, naga and
   winit carry code a future Rust rejects; raised before the release is cut.
 
+- ⬜ **A Faust synth's instance is made and freed outside the libfaust
+  lock** *(`crates/clausters-server/PLAN.md`, Found by use)*. The probe's,
+  which crashed the Faust suites, is locked now; the network thread's are
+  not, and locking them would hold OSC behind a compile.
+
 - ⬜ **The `worklet` smoke timed out once in CI** *(`clients/web/PLAN.md`,
   Found by use)*. Intermittent, passes locally and on a rerun. The case now
   reports the step it stopped at and the page's console; what is open is the
@@ -126,9 +131,6 @@ already carry it.
 - ⬜ **A playback test of the application's engine hung in CI**
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
-
-- ⬜ **`faust_compiler` failed once in a parallel workspace run** *(`crates/clausters-server/PLAN.md`, Found by use)*. Not reproduced; waits for the next failure's
-  output.
 
 ## 2. Tests and reviews pending
 
