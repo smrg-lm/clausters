@@ -165,9 +165,9 @@ code that keeps it lives.
   to refuse.
 - **A panel of settings in parts is one panel.** The column beside an
   application's work holds folding panels, as the score editor's palettes
-  are; one that gathers several parts -- the audio editor's FFT settings
-  (Analysis, Display), the roll's inspector (Selection, Events) and its
-  display settings -- is one section that folds whole, its parts headed
+  are; one that gathers several parts -- the audio editor's Spectrogram
+  settings (Analysis, Display), the roll's inspector (Selection, Events) and
+  its display settings -- is one section that folds whole, its parts headed
   inside it and parted by a line, as a menu's groups are
   (`clausters_apps::panels::parted`). Two titled sections folding apart
   would read as two panels.

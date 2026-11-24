@@ -142,7 +142,7 @@ mod tests {
     fn a_panel_of_parts_is_one_section() {
         let widget = || json!({"type": "toggle"});
         let panel = parted(
-            "FFT settings",
+            "Spectrogram settings",
             vec![
                 ("Analysis", vec![widget(), widget()]),
                 ("Empty", Vec::new()),
@@ -155,7 +155,7 @@ mod tests {
         let sections = panel["children"].as_array().unwrap();
         assert_eq!(sections.len(), 1, "one panel");
         let section = &sections[0];
-        assert_eq!(section["title"], "FFT settings");
+        assert_eq!(section["title"], "Spectrogram settings");
         assert_eq!(section["frame"], true);
         assert_eq!(section["collapsed"], false);
         let kinds: Vec<(&str, &str)> = section["children"]

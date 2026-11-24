@@ -22,9 +22,8 @@ use serde_json::{Value, json};
 /// How wide the panel's column is.
 pub const WIDTH: f64 = 220.0;
 
-/// What the panel is called: the settings of the analysis that draws the
-/// spectrogram and of how it is drawn.
-pub const TITLE: &str = "FFT settings";
+/// What the panel is called, as the View menu names it.
+pub const TITLE: &str = "Spectrogram settings";
 
 /// The prefix the panel's widgets are named under.
 pub const PREFIX: &str = "settings";
@@ -439,15 +438,15 @@ mod tests {
         assert_eq!(s, before);
     }
 
-    /// **The settings are one panel of two parts**: one section, FFT
-    /// settings, that folds whole, holding Analysis and Display, each headed
+    /// **The settings are one panel of two parts**: one section,
+    /// Spectrogram settings, that folds whole, holding Analysis and Display, each headed
     /// and parted by a line -- not two panels folded apart.
     #[test]
     fn the_settings_are_one_panel_of_two_parts() {
         let panel = Settings::default().panel(&ids()).expect("a panel");
         let sections = panel["children"].as_array().unwrap();
         assert_eq!(sections.len(), 1, "{panel}");
-        assert_eq!(sections[0]["title"], "FFT settings");
+        assert_eq!(sections[0]["title"], "Spectrogram settings");
         let headings: Vec<String> = crate::panels::parts_of(&panel)
             .into_iter()
             .map(|(h, _)| h)
