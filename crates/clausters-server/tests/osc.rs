@@ -4043,9 +4043,24 @@ fn u_query_reports_variadic_arity_and_bus_roles() {
 /// guards, checked here across the wire).
 #[test]
 fn u_query_lists_the_whole_catalog() {
-    let server = TestServer::spawn();
-    server.send("/ugen_query", vec![]);
-    let infos = server.recv_batch("/ugen_query.reply", "/ugen_query");
+    // Over TCP: the whole catalog is hundreds of replies sent at once, one
+    // datagram each over UDP, and a loaded machine drops some of a burst
+    // that size from the socket's buffer -- CI did, and the test waited out
+    // its timeout on a reply that was never coming. A stream has flow
+    // control, so every reply arrives; what is checked is the catalog.
+    let (tcp_addr, _join, _engine) = spawn_tcp_server();
+    let mut client = TcpClient::connect(tcp_addr);
+    client.send("/ugen_query", vec![]);
+    let mut infos = Vec::new();
+    loop {
+        let msg = client.recv();
+        if msg.addr == "/done" && msg.args.first() == Some(&OscType::String("/ugen_query".into())) {
+            break;
+        }
+        if msg.addr == "/ugen_query.reply" {
+            infos.push(msg);
+        }
+    }
     assert!(infos.len() > 40, "got {} entries", infos.len());
     for m in &infos {
         let OscType::Int(num_inputs) = m.args[9] else {
@@ -4062,7 +4077,6 @@ fn u_query_lists_the_whole_catalog() {
     let names: Vec<&OscType> = infos.iter().map(|m| &m.args[0]).collect();
     assert!(names.contains(&&OscType::String("PlayBuf".into())));
     assert!(names.contains(&&OscType::String("FFT".into())));
-    server.quit();
 }
 
 #[test]
