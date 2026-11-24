@@ -140,6 +140,9 @@ Importing that module is the whole integration — **no client library is
 loaded at run time**:
 
 ```html
+<script type="importmap">
+  { "imports": { "clausters/runtime": "./node_modules/clausters/dist/runtime.js" } }
+</script>
 <script type="module">
   import "./fm-voice/index.js";   // registers <fm-voice>
 </script>
@@ -151,7 +154,9 @@ loaded at run time**:
 <fm-voice freq="110" preset="bright"></fm-voice>
 ```
 
-Each element owns its canvas, and **the document places it**. Two instances
+The generated module imports the run time as `clausters/runtime`: a bundler
+resolves it, and a page with none maps it once, as above. Each element owns
+its canvas, and **the document places it**. Two instances
 of one bundle hold their own node ids and buses, and the def they share is
 sent once. Declared parameters are attributes, resolved attribute → preset →
 default. The first gesture anywhere on the page starts the audio for all of

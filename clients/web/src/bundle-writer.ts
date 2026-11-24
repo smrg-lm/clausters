@@ -61,8 +61,14 @@ import type { GuiNode } from "./gui/guidef.ts";
 // script imports as well, since it registers no element where there is no
 // page.
 
-/** Where a page serves the component run time from -- the page's business. */
-export const DEFAULT_RUNTIME = "/dist/runtime.js";
+/**
+ * What the generated module imports the component run time as -- the page's
+ * business, not the bundle's. By default the package's own entry point,
+ * `clausters/runtime`, as a project that installed it names it: a bundler
+ * resolves it, and a page with none maps it to the file it serves
+ * (`<script type="importmap">`).
+ */
+export const DEFAULT_RUNTIME = "clausters/runtime";
 
 /**
  * A hole in the template: the `"@symbol"` or `"$param"` string a mount fills.
@@ -102,7 +108,7 @@ export interface WritableDef {
 
 /** What `files` and `write` accept: where the run time is, and the tag. */
 export interface WriteOptions {
-    /** The URL the generated module imports the run time from. */
+    /** What the generated module imports the run time as ({@link DEFAULT_RUNTIME}). */
     runtime?: string;
     /** The custom element's name; defaults to the bundle's own. */
     tag?: string;

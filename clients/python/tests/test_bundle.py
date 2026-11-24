@@ -135,7 +135,7 @@ def test_a_preset_may_only_set_declared_parameters():
 
 def test_write_emits_the_directory_and_its_module(tmp_path):
     out = tmp_path / "fm-voice"
-    a_bundle().write(str(out), runtime="/dist/runtime.js")
+    a_bundle().write(str(out))
 
     manifest = json.loads((out / "bundle.json").read_text())
     assert manifest["gui"] == "fm-voice"
@@ -146,7 +146,10 @@ def test_write_emits_the_directory_and_its_module(tmp_path):
     assert json.loads((out / "presets" / "bright.json").read_text()) == {"freq": 660.0}
 
     module = (out / "index.js").read_text()
-    assert 'import { defineComponent } from "/dist/runtime.js";' in module
+    # the web package's entry point, as an installed project names it
+    assert 'import { defineComponent } from "clausters/runtime";' in module
+    elsewhere = a_bundle().files(runtime="/dist/runtime.js")["index.js"]
+    assert 'from "/dist/runtime.js";' in elsewhere
     assert 'defineComponent("fm-voice", new URL(".", import.meta.url));' in module
 
 

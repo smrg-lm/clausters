@@ -9,6 +9,9 @@ Running one is the browser's equivalent of `clausters-gui --standalone`: the GUI
 A **bundle** is an instrument written to a directory — the defs, one GuiDef, presets, samples, a manifest — plus a generated ES module that registers its tag. Importing that module is the whole integration:
 
 ```html
+<script type="importmap">
+  { "imports": { "clausters/runtime": "./node_modules/clausters/dist/runtime.js" } }
+</script>
 <script type="module">
   import "./fm-voice/index.js";   // registers <fm-voice>
 </script>
@@ -19,6 +22,8 @@ A **bundle** is an instrument written to a directory — the defs, one GuiDef, p
 <fm-voice></fm-voice>
 <fm-voice freq="110" preset="bright"></fm-voice>
 ```
+
+The generated module imports the run time by the package's name, `clausters/runtime`: a bundler resolves it, and a page served with none maps it to the file, as the import map above does for a project that installed the package (a page served from somewhere else maps it there, or the bundle is written with `runtime` naming the URL). The map is the page's, once, before its first module, however many bundles it mounts.
 
 `<clausters-bundle src="./fm-voice">` mounts a bundle that has no generated module, and `<clausters-power>` is the standard autoplay-policy affordance — a button that starts the page's audio.
 
@@ -54,10 +59,10 @@ The other direction closes too. A window the *host* closes rather than the page 
 
 Two entry points target the same elements:
 
-- **`dist/runtime.js`** — the engine, the GUI host, the OSC codec and the mount. This is what a page that only mounts components loads.
-- **`dist/index.js`** — the above plus the whole TypeScript client (the def builders, the GuiDef builders, the sequencing layer), for a page that sequences, responds or edits live.
+- **`clausters/runtime`** (`dist/runtime.js`) — the engine, the GUI host, the OSC codec and the mount. This is what a page that only mounts components loads, and what a generated module imports.
+- **`clausters`** (`dist/index.js`) — the above plus the whole TypeScript client (the def builders, the GuiDef builders, the sequencing layer), for a page that sequences, responds or edits live.
 
-The split is enforced by a test over the module graph, so the builders cannot creep into the runtime entry by an accidental import.
+The split is enforced by a test over the module graph, so the builders cannot creep into the runtime entry by an accidental import. And the npm user's path is tested whole: the suite packs the package, installs the tarball into a project of its own, writes a bundle there by the package's names, and mounts it with the run time out of `node_modules`.
 
 ## Authoring a bundle
 

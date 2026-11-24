@@ -446,7 +446,7 @@ if (PAGE) {
  * import:
  *
  * ```js
- * import { defineComponent } from "/dist/runtime.js";
+ * import { defineComponent } from "clausters/runtime";
  * defineComponent("fm-voice", new URL(".", import.meta.url));
  * ```
  *

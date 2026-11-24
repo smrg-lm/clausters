@@ -344,7 +344,30 @@ run_pages() {
     # reaches `/def_send faust` and the compiler stays on the shelf.
     not_fetched 'vendor/faust/libfaust' "Faust compiler"
     run_page lifecycle.html   # and the unmount: a hundred of them come and go
+    # The npm user's path: a bundle written by the installed package's names,
+    # mounted with the run time out of node_modules (install_package, below).
+    run_page out/installed/index.html
 }
+
+# **The package as an npm user gets it.** Everything above runs against the
+# checkout's dist/; this packs it as `npm publish` would, installs the tarball
+# into a project of its own (tests/out/installed/, with a package.json of its
+# own so npm does not take this package for the project), and runs the
+# authoring script there (tests/installed/author.mjs), which imports by the
+# package's names and writes with the writer's defaults. The page that mounts
+# the result is the last of run_pages. Once for every browser: what it builds
+# is data.
+install_package() {
+    local dir=tests/out/installed
+    rm -rf tests/out/installed
+    mkdir -p "$dir"
+    cp tests/installed/author.mjs tests/installed/index.html "$dir/"
+    printf '{ "name": "installed-probe", "private": true }\n' > "$dir/package.json"
+    npm pack --silent --pack-destination "$dir" >/dev/null
+    (cd "$dir" && npm install --silent --no-audit --no-fund ./clausters-*.tgz \
+        && node author.mjs)
+}
+install_package
 
 for BROWSER in ${BROWSERS//,/ }; do
     if [ "$BROWSER" = chrome ] && [ -z "$CHROME" ]; then

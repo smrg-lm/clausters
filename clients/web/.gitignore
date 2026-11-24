@@ -29,6 +29,10 @@ node_modules/
 # place to look in and one to delete.
 /examples/out/
 
+# The project test.sh installs the packed package into (tests/installed/,
+# copied, with the tarball and its node_modules beside it).
+/tests/out/
+
 # Fixtures the parity/bulk harnesses generate next to the test pages.
 /tests/score.bin
 /tests/native.f32

@@ -88,9 +88,12 @@ from . import _native
 
 __all__ = ["Bundle", "DEFAULT_RUNTIME"]
 
-#: Where a page serves the component run time from. Not the bundle's business
-#: -- an argument of `Bundle.write`, defaulting to the package's own layout.
-DEFAULT_RUNTIME = "/dist/runtime.js"
+#: What the generated module imports the component run time as. Not the
+#: bundle's business -- an argument of `Bundle.write` -- and by default the
+#: web package's own entry point, `clausters/runtime`, as a project that
+#: installed it names it: a bundler resolves it, and a page with none maps it
+#: to the file it serves (`<script type="importmap">`).
+DEFAULT_RUNTIME = "clausters/runtime"
 
 _TYPE_NAMES = {float: "float", int: "int", str: "string", bool: "bool"}
 
@@ -349,8 +352,10 @@ class Bundle:
         HTML requires a hyphen in it (that is how a custom element is told from
         a built-in one), so a one-word bundle name -- perfectly good on the
         desktop, where the name is a GuiDef's -- needs an explicit ``tag``.
-        ``runtime`` is where the page serves the component run time from: the
-        page's business, not the bundle's.
+        ``runtime`` is what the generated module imports the component run
+        time as: the page's business, not the bundle's. The default,
+        ``clausters/runtime``, is the web package's entry point, which a
+        bundler resolves and a page with none maps in an import map.
         """
         for path, text in self.files(runtime=runtime, tag=tag).items():
             full = os.path.join(directory, *path.split("/"))

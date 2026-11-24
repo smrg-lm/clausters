@@ -68,6 +68,9 @@
       dist/runtime.js, and this page adds only the asserts. The verdict is
       beaconed as a fetch -- the standard web-smoke posture (docs/decisions.md).
     -->
+    <!-- A generated bundle module imports the run time as the package names
+         it, `clausters/runtime`; served from the checkout, that is /dist. -->
+    <script type="importmap">{ "imports": { "clausters/runtime": "/dist/runtime.js" } }</script>
     <script type="module">
       import "/examples/out/graph-controls/index.js";  // <fm-trem>
       import "/examples/out/piano/index.js";           // <piano-keys>

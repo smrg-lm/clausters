@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>installed package</title>
+  </head>
+  <body>
+    <main>
+      <p>A bundle written by a project that installed the package, mounted
+      with the run time out of its node_modules:</p>
+      <npm-voice id="a" freq="330"></npm-voice>
+      <pre id="verdict">running...</pre>
+    </main>
+
+    <!--
+      The npm user's path, end to end. test.sh packs the package, installs the
+      tarball into a project of its own (tests/out/installed/), and runs
+      author.mjs there, which writes this bundle by the package's names. This
+      page then mounts it as such a project's page does:
+
+        - the generated module imports `clausters/runtime`, which the import
+          map below resolves into node_modules -- nothing of the checkout's
+          dist/ is loaded;
+        - the element draws, its attribute resolves, and on the page's
+          gesture the instrument sounds: its LFO bus streams.
+
+      The verdict is beaconed as a fetch -- the standard web-smoke posture
+      (docs/decisions.md).
+    -->
+    <script type="importmap">
+      { "imports": { "clausters/runtime": "./node_modules/clausters/dist/runtime.js" } }
+    </script>
+    <script type="module">
+      import "./npm-voice/index.js";   // registers <npm-voice>
+      import { startPage, server, ANY_PEER } from "clausters/runtime";
+      import { loadCore } from "./node_modules/clausters/dist/base/core.js";
+      import { decodePacket } from "./node_modules/clausters/dist/base/osc.js";
+
+      const verdict = (text) => {
+        document.getElementById("verdict").textContent = text;
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      const errors = [];
+      addEventListener("clausters-error", (e) => errors.push(`${e.target.id}: ${e.detail.error}`));
+      let ready = false;
+      addEventListener("clausters-ready", () => { ready = true; });
+
+      async function until(cond, what, ms = 20000) {
+        const t0 = performance.now();
+        for (;;) {
+          if (cond()) return;
+          if (performance.now() - t0 > ms) {
+            throw new Error(typeof what === "function" ? what() : what);
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
+      async function accept() {
+        const el = document.getElementById("a");
+        await until(() => ready || errors.length > 0, "the component never became ready");
+        if (errors.length > 0) throw new Error(errors.join("; "));
+        const canvas = el.shadowRoot.querySelector("canvas");
+        if (!(canvas.width > 100 && canvas.height > 100)) {
+          throw new Error(`the canvas never got a size: ${canvas.width}x${canvas.height}`);
+        }
+        if (el.params.freq !== 330) throw new Error(`the attribute did not resolve: ${el.params.freq}`);
+
+        // The page's gesture: the engine half goes out, and the LFO streams.
+        await startPage();
+        await loadCore();
+        const engine = await server();
+        const seen = new Set();
+        let failed = null;
+        engine.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr === "/fail") failed = JSON.stringify(args);
+            if (addr !== "/bus_stream.reply") continue;
+            for (let i = 0; i + 1 < args.length; i += 2) {
+              if (args[i] === el.symbols.lfo) seen.add(args[i + 1]);
+            }
+          }
+        }, ANY_PEER);
+        await until(() => seen.size >= 3, () => `the meter never moved (${seen.size} values, ${failed})`);
+        if (failed) throw new Error(`/fail: ${failed}`);
+
+        // Everything came from the installed package: nothing of the
+        // checkout's own dist/ was loaded.
+        const checkout = performance.getEntriesByType("resource")
+          .map((r) => new URL(r.name).pathname)
+          .filter((path) => path.startsWith("/dist/"));
+        if (checkout.length > 0) throw new Error(`the page loaded the checkout's ${checkout}`);
+
+        verdict(`PASS: a bundle written by an installed package's names mounted from node_modules ` +
+          `(node ${el.symbols.tone}, bus ${el.symbols.lfo}), freq="330" resolved, ` +
+          `its meter moved over ${seen.size} values, and nothing came from the checkout`);
+      }
+
+      accept().catch((error) => verdict(`FAIL: ${error}`));
+    </script>
+  </body>
+</html>

@@ -327,7 +327,8 @@ def, which unmounts and emits `clausters-closed`.
 **What is not loaded.** Running a component is the browser equivalent of
 `clausters-gui --standalone`: the host is the server's client and there is no
 scripting client in between. The builders ran in the authoring script; what the
-page fetches is data. So the generated module imports `dist/runtime.js` — the
+page fetches is data. So the generated module imports `clausters/runtime`
+(`dist/runtime.js`, which a page with no bundler maps in an import map) — the
 engine, the host, the OSC codec and the mount — and not the def builders, the
 GuiDef builders or the sequencing layer (`clients/web/tests/runtime-graph.test.ts`
 asserts the exclusion). A page that *does* want the TypeScript client imports
