@@ -84,7 +84,7 @@ usage:
                            (`-` for the output keeps none of it)
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
-      --format <fmt>       int16 | int24 | float (default float)
+      --format <fmt>       int8 | int16 | int24 | int32 | float | double (default float)
       --seed <n>           starting seed for noise UGens (default: a fresh one
                            each run; the seed used is reported, pass it back
                            here to replay that exact take)

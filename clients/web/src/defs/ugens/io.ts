@@ -8,6 +8,7 @@
 
 import { ChannelList, SynthLeaf, Ugen, channelBinop, isList } from "./graph.ts";
 import type { Channel } from "./graph.ts";
+import type { SoundFileFormat } from "../../soundfile.ts";
 export * from "./_generated/io.ts";
 
 /**
@@ -251,7 +252,7 @@ export const vdiskIn = (
 
 /**
  * Streams `signal` to a mono sound file at `path` (`format` is `"int16"`,
- * `"int24"` or `"float"`) and passes `signal` through as its output: a WAV,
+ * `"int8"`, `"int24"`, `"int32"`, `"float"` or `"double"`) and passes `signal` through as its output: a WAV,
  * closed as an RF64 if the take outgrew 4 GB, or a W64 or an RF64 when the
  * path ends in `.w64` or `.rf64`. Record stereo with two
  * `diskOut`s.
@@ -265,7 +266,7 @@ export interface DiskOutOptions {
     /** The file to write, on the server's filesystem. A **static** field. */
     path: string;
     /** The sample format written. A **static** field. */
-    format?: "int16" | "int24" | "float";
+    format?: SoundFileFormat;
 }
 
 export const diskOut = (signal: Channel, { path, format = "int16" }: DiskOutOptions): Ugen =>

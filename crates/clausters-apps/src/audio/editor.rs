@@ -1412,9 +1412,11 @@ impl AudioEditor {
     /// checked: a known format, and a path.
     pub(super) fn save_target(&self, to: Option<String>, format: &str) -> Result<String, String> {
         let to = to.unwrap_or_else(|| self.file.target.clone());
-        if !matches!(format, "float" | "int24" | "int16") {
+        if !super::dialogs::writes(format) {
+            let names: Vec<&str> = super::dialogs::FORMATS.iter().map(|(_, f)| *f).collect();
             return Err(format!(
-                "'{format}' is not a sample format (float, int24, int16)"
+                "'{format}' is not a sample format ({})",
+                names.join(", ")
             ));
         }
         if to.is_empty() {

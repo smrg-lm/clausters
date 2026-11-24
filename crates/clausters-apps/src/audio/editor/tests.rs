@@ -1718,14 +1718,30 @@ fn a_file_is_saved_in_the_bit_depth_it_was_made_or_opened_in() {
     .unwrap();
     assert_eq!(made16.file.save_format(), "int16");
     assert_eq!(made16.file.file()["format"], "int16");
-    // a file of a depth no file is written in is saved in float
+    // opened in 8 bits, it stays 8 bits: integers are kept integers
     let opened8 = new_json(
         &json!({"path": "/in/take8.wav", "workspace": "/work", "frames": 100,
                 "channels": 1, "rate": 48000, "codec": "wav", "sample_format": "int8"})
         .to_string(),
     )
     .unwrap();
-    assert_eq!(opened8.file.save_format(), "float");
+    assert_eq!(opened8.file.save_format(), "int8");
+    // a 20-bit FLAC goes to the narrowest depth that holds it, and a lossy
+    // file, which states none, to float
+    let flac20 = new_json(
+        &json!({"path": "/in/take.flac", "workspace": "/work", "frames": 100,
+                "channels": 1, "rate": 48000, "codec": "flac", "sample_format": "int20"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(flac20.file.save_format(), "int24");
+    let mp3 = new_json(
+        &json!({"path": "/in/take.mp3", "workspace": "/work", "frames": 100,
+                "channels": 1, "rate": 48000, "codec": "mp3"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(mp3.file.save_format(), "float");
 
     // New opens on the window's file's depth, and Save as on it too, where
     // another is chosen
@@ -1734,15 +1750,15 @@ fn a_file_is_saved_in_the_bit_depth_it_was_made_or_opened_in() {
     let shown = event(&mut editor, json!([900, 1, 0, "new_file"]));
     assert_eq!(
         corrections_of(&shown, ids["new:format"]),
-        json!({"index": 1})
+        json!({"index": 3})
     );
     event(&mut editor, json!([ids["new:cancel"], 2, 0, "click"]));
     let shown = event(&mut editor, json!([900, 3, 0, "save_as"]));
     assert_eq!(
         corrections_of(&shown, ids["file:format"]),
-        json!({"index": 1})
+        json!({"index": 3})
     );
-    event(&mut editor, json!([ids["file:format"], 4, 0, "2"]));
+    event(&mut editor, json!([ids["file:format"], 4, 0, "4"]));
     event(
         &mut editor,
         json!([ids["file:name"], 5, 0, "/takes/sixteen"]),

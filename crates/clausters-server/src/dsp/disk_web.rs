@@ -61,7 +61,8 @@ pub struct StreamRequest {
     /// `DiskIn`: the frame of the file the first read is from; a loop goes
     /// back to the top.
     pub start: u64,
-    /// `DiskOut`: the WAV sample format (`int16` | `int24` | `float`).
+    /// `DiskOut`: the WAV sample format, a name of the writing family
+    /// (`dsp::pcm::Encoding::named`).
     pub format: String,
     /// `DiskIn`: room in the ring, in samples -- how much the host may push.
     /// `DiskOut`: samples waiting to be pulled.

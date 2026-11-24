@@ -650,11 +650,15 @@ code that keeps it lives.
   in one (`verbs` tests), and the audio editor's forms are the verbs that do.
 - **A new file has no samples, and is saved in the bit depth it was made
   in.** The audio editor's New... asks the sample rate, the channels and
-  the bit depth (32-bit float, 24-bit or 16-bit), never a length: the file
+  the bit depth (64 or 32-bit float, 32, 24, 16 or 8-bit), never a length:
+  the rate is any whole number of hertz, and the file
   starts empty, written nowhere, and an edit (a paste, a drawn stroke) puts
   samples in it. A take is processed in 32-bit float whatever its file is,
   and a save writes the depth the file was made in, or opened in, until a
-  Save as, which has the same field, chooses another. A
+  Save as, which has the same field, chooses another: an opened file of a
+  depth no file is written in (a 20-bit FLAC) is saved in the narrowest
+  integers that hold it, and one that states none (a lossy file) in 32-bit
+  float. A
   file is finite, so a ruler never shows a duration it does not have: over
   a take of no samples the time ruler shows its start, `0`, and nothing
   else.

@@ -640,7 +640,8 @@ class Session(Environment):
                 draws a fresh one, so a score with noise in it is a new take
                 every time; ``stats.seed`` reports the one used, and passing
                 it back replays that take.
-            sample_format: ``"float"``, ``"int24"`` or ``"int16"`` -- only
+            sample_format: ``"float"``, ``"double"``, ``"int32"``,
+                ``"int24"``, ``"int16"`` or ``"int8"`` -- only
                 meaningful with ``path``, since only the file has a format.
             tail: seconds the take goes on **after its last event**, so what
                 that event set going is heard to its end -- the last note's

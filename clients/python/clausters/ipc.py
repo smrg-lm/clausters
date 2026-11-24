@@ -564,8 +564,9 @@ def read_soundfile(path, start: int = 0, frames: int = -1,
 def soundfile_info(path, lib_path: str | None = None) -> tuple[int, int, float, str, str | None]:
     """Read an audio file's header through the server's decoder: ``(frames,
     channels, sample_rate, codec, sample_format)``, decoding no samples.
-    ``sample_format`` is a WAV's (``"int16"``, ``"int24"``, ``"int32"``,
-    ``"float"``) and ``None`` for any other format."""
+    ``sample_format`` is the one the file stores (``"int8"``, ``"int16"``,
+    ``"int24"``, ``"int32"``, ``"float"``, ``"double"``, or another integer
+    width a lossless format has) and ``None`` for a lossy format."""
     lib = _load(lib_path)
     n = ctypes.c_uint64(0)
     chans = ctypes.c_uint32(0)
@@ -585,7 +586,8 @@ def write_soundfile(path, samples, channels: int, sample_rate: float,
                     sample_format: str = "int16", lib_path: str | None = None) -> None:
     """Write interleaved float32 `samples` to a WAV file at `path`, with the
     header and the encoder the web client writes its files with.
-    ``sample_format`` is ``"int16"``, ``"int24"`` or ``"float"``."""
+    ``sample_format`` is ``"int8"``, ``"int16"``, ``"int24"``, ``"int32"``,
+    ``"float"`` or ``"double"``."""
     lib = _load(lib_path)
     data = samples if isinstance(samples, array) and samples.typecode == "f" else array("f", samples)
     pointer = ctypes.cast((ctypes.c_float * len(data)).from_buffer(data), ctypes.POINTER(ctypes.c_float)) \

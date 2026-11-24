@@ -55,13 +55,31 @@ pub enum Encoding {
 
 impl Encoding {
     /// The encoding a writer is asked for by name -- the writing family's
-    /// names, `int16`, `int24` and `float`.
+    /// names, `int8`, `int16`, `int24`, `int32`, `float` and `double`. Every
+    /// encoding a file is read in is one a file is written in: an 8-bit WAV
+    /// is unsigned, as the format has it.
     pub fn named(name: &str) -> Result<Self, String> {
         match name {
+            "int8" => Ok(Encoding::U8),
             "int16" => Ok(Encoding::I16),
             "int24" => Ok(Encoding::I24),
+            "int32" => Ok(Encoding::I32),
             "float" | "float32" => Ok(Encoding::F32),
+            "double" | "float64" => Ok(Encoding::F64),
             other => Err(format!("unsupported sample format {other:?}")),
+        }
+    }
+
+    /// **Its name in the writing family**, the one [`Encoding::named`]
+    /// reads back.
+    pub fn name(self) -> &'static str {
+        match self {
+            Encoding::U8 => "int8",
+            Encoding::I16 => "int16",
+            Encoding::I24 => "int24",
+            Encoding::I32 => "int32",
+            Encoding::F32 => "float",
+            Encoding::F64 => "double",
         }
     }
 
@@ -496,7 +514,7 @@ pub struct Writer {
 
 impl Writer {
     /// Creates the file at `path` for `channels` channels at `sample_rate`,
-    /// in the encoding named `sample_format` (`int16`, `int24`, `float`).
+    /// in the encoding named `sample_format` ([`Encoding::named`]).
     pub fn create(
         path: &str,
         channels: usize,
@@ -710,7 +728,14 @@ mod tests {
             ("t.w64", Container::W64),
             ("t.rf64", Container::Rf64),
         ] {
-            for (format, step) in [("float", 0.0), ("int24", 2e-7), ("int16", 6e-5)] {
+            for (format, step) in [
+                ("double", 0.0),
+                ("float", 0.0),
+                ("int32", 1e-7),
+                ("int24", 2e-7),
+                ("int16", 6e-5),
+                ("int8", 1.6e-2),
+            ] {
                 let path = dir.join(format!("{format}-{name}"));
                 let path = path.to_str().unwrap();
                 let mut w = Writer::create(path, 2, 44_100.0, format).unwrap();
@@ -720,6 +745,7 @@ mod tests {
                 w.finalize().unwrap();
                 let layout = Layout::open(path).unwrap();
                 assert_eq!(layout.container, container, "{path}");
+                assert_eq!(layout.encoding.name(), format, "{path}");
                 assert_eq!((layout.channels, layout.frames), (2, 2_001), "{path}");
                 assert_eq!(layout.sample_rate, 44_100.0);
                 let mut reader = Reader::open(&layout).unwrap();

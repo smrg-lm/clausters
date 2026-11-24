@@ -115,7 +115,8 @@ pub struct UGenConfig {
     /// `DiskIn`: the frame of the file reading starts at -- where a take placed
     /// partway into its file begins. A loop goes back to the file's top.
     pub start: u64,
-    /// `DiskOut` WAV sample format (`int16` | `int24` | `float`).
+    /// `DiskOut` WAV sample format, a name of the writing family
+    /// (`dsp::pcm::Encoding::named`).
     pub format: Option<String>,
     /// Special-index operator for `BinaryOpUGen`/`UnaryOpUGen`/`RangeMapUGen`
     /// -- a `clausters_core::builtins` (or `warp::MapOp`) opcode discriminant,

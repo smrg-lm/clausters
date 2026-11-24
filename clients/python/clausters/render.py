@@ -253,7 +253,8 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             offline renderer writes it, and the stats come back without the
             samples.
         sample_format: the file's sample format beside a ``path``:
-            ``"float"``, ``"int24"`` or ``"int16"``.
+            ``"float"``, ``"double"``, ``"int32"``, ``"int24"``, ``"int16"``
+            or ``"int8"``.
         seed: starting seed for the render's stochastic UGens. ``None`` draws
             a fresh one, so anything with noise in it renders a new take every
             call; ``stats.seed`` reports the one used, and handing it back

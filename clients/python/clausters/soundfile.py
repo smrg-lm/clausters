@@ -39,8 +39,10 @@ class SoundFile:
     #: The container's short name (`"wav"`, `"flac"`, `"mp3"`, ...);
     #: `None` for a file not written yet.
     codec: "str | None" = None
-    #: A WAV's sample format (`"int16"`, `"int24"`, `"int32"`,
-    #: `"float"`); `None` for other formats and for a file not written yet.
+    #: The sample format the file stores (`"int8"`, `"int16"`, `"int24"`,
+    #: `"int32"`, `"float"`, `"double"`; a lossless format's integers of
+    #: another width read `"int20"`, say); `None` for a lossy format and for
+    #: a file not written yet.
     sample_format: "str | None" = None
 
     @classmethod
@@ -93,8 +95,8 @@ class SoundFile:
             channels: Number of channels. Each frame must contain this many
                 samples.
             sample_rate: Sample rate in Hz.
-            sample_format: WAV encoding: `"int16"` (default), `"int24"` or
-                `"float"`.
+            sample_format: WAV encoding: `"int16"` (default), `"int8"`,
+                `"int24"`, `"int32"`, `"float"` or `"double"`.
 
         Raises:
             clausters.ipc.RenderError: The samples, format or metadata are invalid,

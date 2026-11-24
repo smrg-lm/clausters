@@ -900,7 +900,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport, ServerMidi):
         ``clausters --nrt`` renderer, which streams straight to disk. That is
         why nothing has to cross into Python -- a long bounce never
         builds millions of floats just to be written out -- and why
-        ``sample_format`` (``"float"``, ``"int24"``, ``"int16"``) is
+        ``sample_format`` (``"float"``, ``"double"``, ``"int32"``,
+        ``"int24"``, ``"int16"``, ``"int8"``) is
         available at all. It also means the binary must be findable, the same
         way `clausters.launch` finds it.
 

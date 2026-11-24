@@ -38,7 +38,7 @@
 // whether there is one, as in the reference client. The file is where every
 // path this client takes is: the disk under node, the page's own storage
 // (`opfs`) in a tab, which is also what `Buffer.read` and the server's
-// `/buffer_allocRead` read there. The framing and the int16/int24 conversion
+// `/buffer_allocRead` read there. The framing and the sample conversion
 // are the server crate's (`engine/codec.ts`), so the file is the one a native
 // render writes. What a page cannot do is stream while rendering: its
 // renderer is the wasm engine in this tab, so the samples exist in full before
@@ -74,6 +74,7 @@ import type { PlayDestination } from "./seq/timeline.ts";
 import { channelStats } from "./data/analysis.ts";
 import { consoleRenderLog, entropySeed, renderScoreBytes } from "./engine/render.ts";
 import { renderFile } from "./engine/file-render.ts";
+import type { SoundFileFormat } from "./soundfile.ts";
 
 /**
  * How many events -- or values -- a render takes before it decides its source
@@ -106,8 +107,8 @@ export interface RenderOptions {
      * page's own storage (`opfs`) in a tab -- and `stats.samples` is `null`.
      */
     path?: string;
-    /** The file's sample format beside a `path`: `"float"` (the default), `"int24"` or `"int16"`. */
-    sampleFormat?: "int16" | "int24" | "float";
+    /** The file's sample format beside a `path`: `"float"` (the default), `"double"`, `"int32"`, `"int24"`, `"int16"` or `"int8"`. */
+    sampleFormat?: SoundFileFormat;
 }
 
 /** What a render did -- the one thing every render resolves with. */

@@ -114,20 +114,64 @@ pub const WAV: FileType = FileType::new("WAV", &["wav", "wave"]);
 pub const WRITES: &[FileType] = &[WAV];
 
 /// **The bit depths a file is written in**: what the bit-depth field
-/// shows, and the sample format a save writes. A take is processed in
-/// 32-bit float whatever its file is; a file is saved in the depth it was
-/// made in, or opened in, until a Save as chooses another.
-pub const FORMATS: [(&str, &str); 3] = [
+/// shows, and the sample format a save writes -- every depth a file is
+/// read in. A take is processed in 32-bit float whatever its file is; a
+/// file is saved in the depth it was made in, or opened in, until a Save
+/// as chooses another.
+pub const FORMATS: [(&str, &str); 6] = [
+    ("64-bit float", "double"),
     ("32-bit float", FLOAT),
+    ("32-bit", "int32"),
     ("24-bit", "int24"),
     ("16-bit", "int16"),
+    ("8-bit", "int8"),
 ];
 
 /// The 32-bit float sample format, as a save names it.
 pub const FLOAT: &str = "float";
 
+/// What the bit-depth field shows for [`FLOAT`].
+const FLOAT_NAME: &str = FORMATS[1].0;
+
 /// What the bit-depth field shows, in the order of [`FORMATS`].
-const FORMAT_NAMES: [&str; 3] = [FORMATS[0].0, FORMATS[1].0, FORMATS[2].0];
+const FORMAT_NAMES: [&str; 6] = [
+    FORMATS[0].0,
+    FORMATS[1].0,
+    FORMATS[2].0,
+    FORMATS[3].0,
+    FORMATS[4].0,
+    FORMATS[5].0,
+];
+
+/// **Whether a file is written in `format`**, a save's name of it.
+#[must_use]
+pub fn writes(format: &str) -> bool {
+    FORMATS.iter().any(|(_, f)| *f == format)
+}
+
+/// **The depth a file stored in `format` is saved in**: its own where a
+/// file is written in it; for integers of another width (a 20-bit FLAC),
+/// the narrowest integers that hold them; 32-bit float for a file that
+/// states none (a lossy one).
+#[must_use]
+pub fn saved_format(format: Option<&str>) -> &'static str {
+    let Some(format) = format else {
+        return FLOAT;
+    };
+    if let Some((_, f)) = FORMATS.iter().find(|(_, f)| *f == format) {
+        return f;
+    }
+    let width = |f: &str| f.strip_prefix("int").and_then(|b| b.parse::<u32>().ok());
+    match width(format) {
+        Some(bits) => FORMATS
+            .iter()
+            .rev()
+            .map(|(_, f)| *f)
+            .find(|f| width(f).is_some_and(|w| w >= bits))
+            .unwrap_or(FLOAT),
+        None => FLOAT,
+    }
+}
 
 /// **The words the bit-depth field shows for `format`**, a save's name of
 /// it -- 32-bit float for one it does not write.
@@ -136,7 +180,7 @@ pub fn format_name(format: &str) -> &'static str {
     FORMATS
         .iter()
         .find(|(_, f)| *f == format)
-        .map_or(FORMATS[0].0, |(name, _)| name)
+        .map_or(FLOAT_NAME, |(name, _)| name)
 }
 
 /// **The sample format the bit-depth field of `open` chose**, as a save
@@ -151,7 +195,8 @@ pub fn chosen_format(open: &Open) -> Result<&'static str, String> {
         .map(|(_, format)| *format)
         .ok_or_else(|| {
             format!(
-                "a file is written in 32-bit float, 24-bit or 16-bit, not {:?}",
+                "a file is written in {}, not {:?}",
+                FORMAT_NAMES.join(", "),
                 open.value("format")
             )
         })
@@ -198,8 +243,7 @@ pub fn new_of(channels: u32, rate: f64, format: &str) -> BTreeMap<String, String
 /// puts them there.
 ///
 /// # Errors
-/// When the channels are not a whole number from 1, the rate is not a
-/// positive number, or the depth is none a file is written in.
+/// When the channels or the rate are not a whole number from 1, or the depth is none a file is written in.
 pub fn new_shape(open: &Open) -> Result<(u32, f64, &'static str), String> {
     let number = |name: &str| open.value(name).trim().replace(',', ".");
     let channels = number("channels")
@@ -212,13 +256,15 @@ pub fn new_shape(open: &Open) -> Result<(u32, f64, &'static str), String> {
                 number("channels")
             )
         })?;
+    // a file states its rate in whole hertz, any of them
     let rate = number("rate")
-        .parse::<f64>()
+        .parse::<u32>()
         .ok()
-        .filter(|r| r.is_finite() && *r > 0.0)
+        .filter(|r| *r >= 1)
+        .map(f64::from)
         .ok_or_else(|| {
             format!(
-                "a rate is a positive number of hertz, not {:?}",
+                "a rate is a whole number of hertz from 1, not {:?}",
                 number("rate")
             )
         })?;
@@ -306,7 +352,16 @@ mod tests {
             ["rate", "channels", "format"]
         );
         // the bit depth is chosen, as it is for a Save as
-        let depths = Some(&["32-bit float", "24-bit", "16-bit"][..]);
+        let depths = Some(
+            &[
+                "64-bit float",
+                "32-bit float",
+                "32-bit",
+                "24-bit",
+                "16-bit",
+                "8-bit",
+            ][..],
+        );
         assert_eq!(Form::New.options("format"), depths);
         assert_eq!(Form::SaveAs.options("format"), depths);
         let mut open = Open {
@@ -314,10 +369,16 @@ mod tests {
             values: new_of(2, 44_100.0, "int24"),
         };
         assert_eq!(new_shape(&open), Ok((2, 44_100.0, "int24")));
-        open.values.insert("rate".into(), "22050,5".into());
+        // any whole rate, and only a whole one: a file states it in hertz
+        open.values.insert("rate".into(), "551".into());
         open.values.insert("format".into(), "16-bit".into());
-        assert_eq!(new_shape(&open), Ok((2, 22_050.5, "int16")));
+        assert_eq!(new_shape(&open), Ok((2, 551.0, "int16")));
         open.values.insert("format".into(), "8-bit".into());
+        assert_eq!(new_shape(&open), Ok((2, 551.0, "int8")));
+        open.values.insert("rate".into(), "22050,5".into());
+        assert!(new_shape(&open).is_err());
+        open.values.insert("rate".into(), "551".into());
+        open.values.insert("format".into(), "12-bit".into());
         assert!(new_shape(&open).is_err());
         open.values.insert("format".into(), "32-bit float".into());
         open.values.insert("channels".into(), "0".into());
@@ -325,5 +386,23 @@ mod tests {
         open.values.insert("channels".into(), "1".into());
         open.values.insert("rate".into(), "fast".into());
         assert!(new_shape(&open).is_err());
+    }
+
+    /// **A file is saved in the depth it stores**, every depth a file is
+    /// read in being one it is written in: integers of a width no file is
+    /// written in go to the narrowest that hold them, and a file that
+    /// states no depth (a lossy one) to 32-bit float.
+    #[test]
+    fn a_file_is_saved_in_the_depth_it_stores() {
+        for (_, format) in FORMATS {
+            assert_eq!(saved_format(Some(format)), format);
+            assert!(writes(format));
+        }
+        assert_eq!(saved_format(Some("int20")), "int24");
+        assert_eq!(saved_format(Some("int12")), "int16");
+        assert_eq!(saved_format(Some("int4")), "int8");
+        assert_eq!(saved_format(Some("int48")), FLOAT);
+        assert_eq!(saved_format(None), FLOAT);
+        assert_eq!(format_name("ulaw"), "32-bit float");
     }
 }

@@ -858,16 +858,13 @@ impl AudioFileState {
         self.target.is_empty()
     }
     /// **The sample format a save writes**: the one the file was last
-    /// written in, else the one it was made or opened in where a file is
-    /// written in it, else 32-bit float -- a file keeps its bit depth
-    /// whatever the take is processed in.
+    /// written in, else the one it was made or opened in
+    /// ([`dialogs::saved_format`]) -- a file keeps its bit depth whatever
+    /// the take is processed in.
     pub(super) fn save_format(&self) -> String {
-        let written = |f: &&String| dialogs::FORMATS.iter().any(|(_, w)| *w == f.as_str());
         self.written_format
-            .as_ref()
-            .or(self.sample_format.as_ref().filter(written))
-            .cloned()
-            .unwrap_or_else(|| dialogs::FLOAT.into())
+            .clone()
+            .unwrap_or_else(|| dialogs::saved_format(self.sample_format.as_deref()).into())
     }
     fn held_take(&self, rate: f64) -> crate::takes::HeldTake {
         let rate = if rate > 0.0 { rate } else { self.rate };

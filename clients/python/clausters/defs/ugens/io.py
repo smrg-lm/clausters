@@ -148,7 +148,8 @@ def vdisk_in(chan=0.0, rate=1.0, *, path, loop=False, start=0) -> Ugen:
 
 def disk_out(signal, *, path, format="int16") -> Ugen:
     """Streams ``signal`` to a mono sound file at ``path`` (``format`` is
-    ``"int16"``, ``"int24"`` or ``"float"``) and passes ``signal`` through as
+    ``"int16"``, ``"int8"``, ``"int24"``, ``"int32"``, ``"float"`` or
+    ``"double"``) and passes ``signal`` through as
     its output: a WAV, closed as an RF64 if the take outgrew 4 GB, or a W64
     or an RF64 when the path ends in ``.w64`` or ``.rf64``. Record stereo with
     two `disk_out`\\ s.

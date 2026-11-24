@@ -123,7 +123,8 @@ pub struct UGenSpec {
     /// `DiskIn`: the frame of the file reading starts at, `0` for its top.
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub start: u64,
-    /// `DiskOut`: WAV sample format (`int16` | `int24` | `float`).
+    /// `DiskOut`: WAV sample format, a name of the writing family
+    /// (`dsp::pcm::Encoding::named`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// `BinaryOpUGen`/`UnaryOpUGen`: the operator, by **name** (`"mul"`,

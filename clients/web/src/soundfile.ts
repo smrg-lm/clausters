@@ -22,7 +22,7 @@ import { decodeSoundfile, encodeWav, probeSoundfile } from "./engine/codec.ts";
 import { Source } from "./document.ts";
 
 /** A WAV sample format {@link SoundFile.write} can write. */
-export type SoundFileFormat = "int16" | "int24" | "float";
+export type SoundFileFormat = "int8" | "int16" | "int24" | "int32" | "float" | "double";
 
 /**
  * An audio file path and its metadata.
@@ -48,8 +48,10 @@ export class SoundFile {
      */
     readonly codec: string | null;
     /**
-     * A WAV's sample format (`"int16"`, `"int24"`, `"int32"`, `"float"`);
-     * `null` for other formats and for a file not written yet.
+     * The sample format the file stores (`"int8"`, `"int16"`, `"int24"`,
+     * `"int32"`, `"float"`, `"double"`; a lossless format's integers of
+     * another width read `"int20"`, say); `null` for a lossy format and for
+     * a file not written yet.
      */
     readonly sampleFormat: string | null;
 
@@ -115,7 +117,7 @@ export class SoundFile {
      * `samples` contains floating-point samples in frame-major order (for stereo:
      * left, right, left, right, ...). Each frame must contain `channels` samples.
      * `sampleRate` is in Hz. `sampleFormat` selects the WAV encoding: `"int16"`
-     * (default), `"int24"` or `"float"`.
+     * (default), `"int8"`, `"int24"`, `"int32"`, `"float"` or `"double"`.
      *
      * Rejects if the samples, format or metadata are invalid, or the file cannot
      * be written.

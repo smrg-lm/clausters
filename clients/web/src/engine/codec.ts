@@ -81,7 +81,7 @@ function codec(): Promise<Codec> {
 
 /**
  * A whole WAV file of interleaved `samples`, in `sampleFormat` (`"int16"`,
- * `"int24"` or `"float"`): the server's own framing and the server's own
+ * `"int8"`, `"int24"`, `"int32"`, `"float"` or `"double"`): the server's own framing and the server's own
  * conversion, so the file is the one a native render writes.
  */
 export async function encodeWav(

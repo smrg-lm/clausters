@@ -328,7 +328,8 @@ class Buffer:
     def write(self, path, *, sample_format: str = "int16", num_frames: int = -1,
               buf_start: int = 0, wait: bool = True, timeout: "float | None" = None):
         """Write this buffer to a WAV file (``/buffer_write``); ``sample_format`` is
-        ``"int16"``, ``"int24"`` or ``"float"``. NRT scores at time 0; RT
+        ``"int16"``, ``"int8"``, ``"int24"``, ``"int32"``, ``"float"`` or
+        ``"double"``. NRT scores at time 0; RT
         ``wait=True`` blocks on ``/done``.
 
         Answers the `clausters.SoundFile` written, its shape the buffer's span,

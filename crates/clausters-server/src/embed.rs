@@ -957,8 +957,9 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
 ///
 /// Writes the frame count, channel count and sample rate into the three out
 /// pointers, the container's short name (`wav`, `flac`, ...) into (`codec`,
-/// `codec_cap`) and a WAV's sample format (`int16`, `int24`, `int32`, `float`;
-/// empty for other formats) into (`sample_format`, `format_cap`), both
+/// `codec_cap`) and the sample format the file stores (`int8`, `int16`,
+/// `int24`, `int32`, `float`, `double`, or another integer width a lossless
+/// format has; empty for a lossy format) into (`sample_format`, `format_cap`), both
 /// NUL-terminated. Returns 0, or -1 with a message in (`err`, `err_cap`).
 ///
 /// # Safety
@@ -1013,7 +1014,8 @@ pub unsafe extern "C" fn clausters_soundfile_info(
 
 /// Writes `samples` interleaved `f32` samples of `channels` channels at
 /// `sample_rate` to a WAV file at `path`, with the header and the encoder a
-/// page writes its files with. `sample_format` is `int16`, `int24` or `float`. Returns 0, or -1
+/// page writes its files with. `sample_format` is a name of the writing family
+/// (`dsp::pcm::Encoding::named`). Returns 0, or -1
 /// with a message in (`err`, `err_cap`).
 ///
 /// # Safety

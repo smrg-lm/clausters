@@ -24,6 +24,7 @@ import type { BufferInfo } from "./info.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 import { SoundFile } from "../soundfile.ts";
+import type { SoundFileFormat } from "../soundfile.ts";
 
 export const NUM_BUFFERS = 4096;
 
@@ -417,7 +418,8 @@ export class Buffer {
 
     /**
      * Writes this buffer to a WAV file on the **server's** filesystem
-     * (`/buffer_write`); `sampleFormat` is `"int16"`, `"int24"` or `"float"`.
+     * (`/buffer_write`); `sampleFormat` is `"int16"`, `"int8"`,
+     * `"int24"`, `"int32"`, `"float"` or `"double"`.
      *
      * Server-side, so it reaches a native server over the WebSocket carrier.
      * A page saving what it has read itself downloads a blob instead -- the
@@ -432,7 +434,7 @@ export class Buffer {
             wait = true,
             timeout,
         }: {
-            sampleFormat?: "int16" | "int24" | "float";
+            sampleFormat?: SoundFileFormat;
             numFrames?: number;
             bufStart?: number;
             wait?: boolean;

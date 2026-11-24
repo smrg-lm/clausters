@@ -340,11 +340,12 @@ Two things follow. First, a long bounce never lands in the client: a
 sixty-second stereo render is 5.7 million floats, and not carrying them across
 is most of the reason the file path is several times faster than the in-memory
 one. Second, the file's format is the server's to choose — `sample_format` is
-`"float"` (the default), `"int24"` or `"int16"`.
+`"float"` (the default), `"double"`, `"int32"`, `"int24"`, `"int16"` or
+`"int8"`.
 <!-- /python -->
 <!-- web -->
 The file's format is the server crate's: `sampleFormat` is `"float"` (the
-default), `"int24"` or `"int16"`, and the framing and the conversion are the
+default), `"double"`, `"int32"`, `"int24"`, `"int16"` or `"int8"`, and the framing and the conversion are the
 ones a native render writes. What a page cannot do is stream while rendering:
 its renderer is the wasm engine in the tab, so the samples exist in full before
 the file is written.
@@ -412,7 +413,7 @@ These local file operations use the Clausters native library{{alt  || , compiled
 require a running server. Reading supports WAV, FLAC, OGG/Vorbis, MP3,
 MP4/AAC, ALAC and AIFF. Integer audio is scaled to `[-1, 1]`; floating-point
 audio can exceed that range. Reading preserves the file's sample rate.
-Writing produces WAV with {{alt `sample_format="int16"` || `sampleFormat: "int16"`}}, `"int24"` or `"float"`.<!-- web --> Paths name the page's storage in a tab and the disk under node.<!-- /web -->
+Writing produces WAV with {{alt `sample_format="int16"` || `sampleFormat: "int16"`}}, `"int8"`, `"int24"`, `"int32"`, `"float"` or `"double"`.<!-- web --> Paths name the page's storage in a tab and the disk under node.<!-- /web -->
 
 `{{api to_buffer}}()` loads the file into a new `Buffer` on the selected server.
 The server must be able to read the path; for a remote server, a path on the

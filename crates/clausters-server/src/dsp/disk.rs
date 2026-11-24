@@ -310,7 +310,8 @@ fn reader_thread(
 
 /// Streams its input signal to a mono WAV file. Input 0: the signal (passed
 /// through to the output, so a `DiskOut` can sit mid-chain). The file's sample
-/// rate is the server's; `format` is `int16` (default), `int24` or `float`.
+/// rate is the server's; `format` is a name of the writing family (`dsp::pcm::Encoding::named`),
+/// `int16` by default.
 pub struct DiskOut {
     active: Option<DiskOutActive>,
 }

@@ -130,7 +130,7 @@ frame.
 | --- | --- | --- | --- |
 | `--rate` | Hz | `48000` | Sample rate. |
 | `--channels` | count | `2` | Output channels. |
-| `--format` | `int16`, `int24`, `float` | `float` | Output sample format. |
+| `--format` | `int8`, `int16`, `int24`, `int32`, `float`, `double` | `float` | Output sample format. |
 | `--seed` | integer | a fresh one each run | Starting seed for the noise UGens. The seed used is reported, so passing it back replays that exact take. |
 | `--stats` | — | — | Print the render's statistics as one JSON line instead of the human summary — for a client driving `--nrt`. |
 | `--workers` | count | `0` | DSP threads for parallel groups. Bit-identical output, only faster. |

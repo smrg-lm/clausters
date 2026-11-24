@@ -57,7 +57,8 @@ pub enum NrtJob {
         channels: Vec<usize>,
     },
     /// `/buffer_write`: a sound file out, in `container` (a WAV, closed as an
-    /// RF64 past 4 GB, or a W64 or an RF64); `sample_format` is `int16`, `int24` or `float`.
+    /// RF64 past 4 GB, or a W64 or an RF64); `sample_format` is the writing family's name
+    /// (`dsp::pcm::Encoding::named`).
     /// `num_frames <= 0` writes from `buf_start` to the end.
     Write {
         path: String,
@@ -504,7 +505,7 @@ pub enum DelegatedKind {
         path: String,
         /// The header around the samples: a WAV, a W64 or an RF64.
         container: crate::dsp::pcm::Container,
-        /// `int16`, `int24` or `float`, as the command spelled it.
+        /// the writing family's name of it, as the command spelled it.
         sample_format: String,
         channels: usize,
         sample_rate: f64,
@@ -1033,7 +1034,7 @@ fn pcm_info<R: std::io::Read + std::io::Seek>(
     source: &mut R,
     label: &str,
 ) -> Result<SoundInfo, String> {
-    use crate::dsp::pcm::{Container, Encoding};
+    use crate::dsp::pcm::Container;
     let layout = crate::dsp::pcm::Layout::parse(source, label)?;
     Ok(SoundInfo {
         frames: layout.frames,
@@ -1045,16 +1046,7 @@ fn pcm_info<R: std::io::Read + std::io::Seek>(
             Container::Rf64 => "rf64",
         }
         .into(),
-        sample_format: Some(
-            match layout.encoding {
-                Encoding::U8 => "int8",
-                Encoding::I16 => "int16",
-                Encoding::I24 => "int24",
-                Encoding::I32 => "int32",
-                Encoding::F32 | Encoding::F64 => "float",
-            }
-            .into(),
-        ),
+        sample_format: Some(layout.encoding.name().into()),
     })
 }
 
@@ -1111,9 +1103,11 @@ pub fn read_audio_bytes(
 /// `frames` is what [`read_audio`] would return: a WAV's own count, and for
 /// every other format the playable frames the container states -- decoded and
 /// counted only when the container states none. `codec` is the container's
-/// short name (`"wav"`, `"flac"`, `"mp3"`, ...); `sample_format` is a WAV's
-/// sample type in the writing family's names (`"int16"`, `"int24"`, `"int32"`,
-/// `"float"`), and `None` for any other format, whose decoder chooses.
+/// short name (`"wav"`, `"flac"`, `"mp3"`, ...); `sample_format` is the
+/// sample type the file stores, in the writing family's names (`"int8"`,
+/// `"int16"`, `"int24"`, `"int32"`, `"float"`, `"double"`; a lossless
+/// format's integers of another width are `"int20"`, say), and `None` for a
+/// lossy format, which stores no samples of a depth.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundInfo {
     pub frames: u64,
@@ -1188,6 +1182,7 @@ fn wav_reader(
 fn wav_info<R: std::io::Read>(reader: &hound::WavReader<R>) -> SoundInfo {
     let spec = reader.spec();
     let sample_format = match (spec.sample_format, spec.bits_per_sample) {
+        (hound::SampleFormat::Float, 64) => "double".to_string(),
         (hound::SampleFormat::Float, _) => "float".to_string(),
         (hound::SampleFormat::Int, bits) => format!("int{bits}"),
     };
@@ -1235,13 +1230,14 @@ fn probe_symphonia(
     };
     let channels = params.channels.as_ref().map_or(0, |c| c.count());
     let sample_rate = params.sample_rate.unwrap_or(0);
+    let sample_format = stored_format(params);
     if let (Some(frames), true, true) = (track.num_frames, channels > 0, sample_rate > 0) {
         return Ok(SoundInfo {
             frames,
             channels,
             sample_rate: f64::from(sample_rate),
             codec,
-            sample_format: None,
+            sample_format,
         });
     }
     let buffer = decode()?;
@@ -1250,8 +1246,40 @@ fn probe_symphonia(
         channels: buffer.channels(),
         sample_rate: buffer.sample_rate(),
         codec,
-        sample_format: None,
+        sample_format,
     })
+}
+
+/// **The sample type a non-WAV file stores**, in the writing family's
+/// names: a float format's, else the integers' width a lossless format
+/// states (a FLAC, an AIFF, an ALAC), and none for a lossy one, which
+/// states no depth.
+fn stored_format(params: &symphonia::core::codecs::audio::AudioCodecParameters) -> Option<String> {
+    use symphonia::core::audio::sample::SampleFormat;
+    use symphonia::core::codecs::audio::well_known::*;
+    let codec = params.codec;
+    let float = [
+        CODEC_ID_PCM_F32LE,
+        CODEC_ID_PCM_F32LE_PLANAR,
+        CODEC_ID_PCM_F32BE,
+        CODEC_ID_PCM_F32BE_PLANAR,
+    ];
+    let double = [
+        CODEC_ID_PCM_F64LE,
+        CODEC_ID_PCM_F64LE_PLANAR,
+        CODEC_ID_PCM_F64BE,
+        CODEC_ID_PCM_F64BE_PLANAR,
+    ];
+    if float.contains(&codec) || matches!(params.sample_format, Some(SampleFormat::F32)) {
+        return Some("float".into());
+    }
+    if double.contains(&codec) || matches!(params.sample_format, Some(SampleFormat::F64)) {
+        return Some("double".into());
+    }
+    params
+        .bits_per_sample
+        .filter(|bits| *bits > 0)
+        .map(|bits| format!("int{bits}"))
 }
 
 /// Decodes a compressed/other-format file fully into an interleaved f32 buffer,
@@ -1425,8 +1453,8 @@ fn read_wav_reader<R: std::io::Read + std::io::Seek>(
 /// Paired with [`encode_wav_frames`] this is a WAV file in two pieces, which is
 /// what a *streaming* writer needs: the header cannot be written correctly
 /// until the length is known, so it is written twice -- once as a placeholder,
-/// once at the end. `sample_format` is the scsynth name (`int16` | `int24` |
-/// `float`). [`sound_header`] is the same for a file in any container.
+/// once at the end. `sample_format` is the writing family's name
+/// (`dsp::pcm::Encoding::named`). [`sound_header`] is the same for a file in any container.
 pub fn wav_header(
     channels: u16,
     sample_rate: u32,
@@ -1524,8 +1552,8 @@ fn write_span(buffer: &Buffer, buf_start: usize, num_frames: i64) -> (usize, usi
 /// Writes interleaved `samples` to a WAV file at `path`: [`wav_header`] and
 /// [`encode_wav_frames`], the two pieces a page writes into its own storage,
 /// so a client saving samples writes the same bytes from a window and from a
-/// tab. `sample_format` is the writing family's name (`int16` | `int24` |
-/// `float`).
+/// tab. `sample_format` is the writing family's name
+/// (`dsp::pcm::Encoding::named`).
 pub fn write_audio(
     path: &str,
     samples: Vec<f32>,

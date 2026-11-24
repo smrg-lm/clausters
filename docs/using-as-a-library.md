@@ -32,7 +32,7 @@ use clausters::server::render::{render_to_wav, render_to_vec, RenderConfig, OscS
 let score = OscScore::load("score.osc")?;       // or OscScore::from_bytes / OscScore::new
 let cfg = RenderConfig { sample_rate: 48_000.0, channels: 2, workers: 0 };
 
-// Straight to a WAV file ("int16" | "int24" | "float"):
+// Straight to a WAV file ("int8" | "int16" | "int24" | "int32" | "float" | "double"):
 let stats = render_to_wav(&score, &cfg, "out.wav", "float")?;
 
 // …or to an interleaved Vec<f32> for further processing / tests:

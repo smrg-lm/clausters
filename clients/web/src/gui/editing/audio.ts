@@ -386,7 +386,8 @@ export class AudioEditor extends HostedEditor {
      * **Write the take as the edits have left it**: over the file it was
      * opened from, or, given a `path`, there, which a later `save` then writes
      * over. Ctrl+S in the window is the same save. `sampleFormat` is
-     * `"float"`, `"int24"` or `"int16"`. Resolves to the path written, once
+     * `"float"`, `"double"`, `"int32"`, `"int24"`, `"int16"` or `"int8"`.
+     * Resolves to the path written, once
      * the file is whole; rejects with a `RangeError` for another format.
      */
     async save({ path, sampleFormat = "float" }: { path?: string; sampleFormat?: string } = {}): Promise<string> {

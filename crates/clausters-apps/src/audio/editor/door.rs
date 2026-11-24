@@ -216,10 +216,10 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     }
     if decoded {
         // what the take is now is the decoded copy, not written anywhere the
-        // user named: no codec of its own, and the opened file's name
+        // user named: no codec of its own, and the opened file's name; its
+        // depth stays the opened file's, which a save keeps
         editor.file.decoded_from = path.clone();
         editor.file.codec = None;
-        editor.file.sample_format = Some("float".into());
         editor.file.name = path
             .as_deref()
             .and_then(|p| std::path::Path::new(p).file_name())

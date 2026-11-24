@@ -580,8 +580,8 @@ pub fn render_to_vec(
 
 /// Renders a score straight to a sound file: a WAV, closed as an RF64 if
 /// the render outgrew 4 GB, or a W64 or an RF64 by the path's extension
-/// (`dsp::pcm`). `sample_format` is `int16`, `int24` or `float`, like
-/// `/buffer_write`.
+/// (`dsp::pcm`). `sample_format` is a name of the writing family
+/// (`dsp::pcm::Encoding::named`), like `/buffer_write`.
 pub fn render_to_wav(
     score: &OscScore,
     cfg: &RenderConfig,

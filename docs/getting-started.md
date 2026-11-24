@@ -76,7 +76,7 @@ python3 crates/clausters-server/examples/json_client.py score    # writes /tmp/c
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 
-A score is the scsynth binary format: length-prefixed OSC bundles whose timetags count seconds from the start of the render. Options: `--rate`, `--channels`, `--format int16|int24|float`, `--seed`, `--workers` (all in the [command-line reference](cli.md)). See the *NRT mode* section of [Defs, UGens & the OSC protocol](schemas.md) for what a score is.
+A score is the scsynth binary format: length-prefixed OSC bundles whose timetags count seconds from the start of the render. Options: `--rate`, `--channels`, `--format int8|int16|int24|int32|float|double`, `--seed`, `--workers` (all in the [command-line reference](cli.md)). See the *NRT mode* section of [Defs, UGens & the OSC protocol](schemas.md) for what a score is.
 
 ## Where to go next
 
