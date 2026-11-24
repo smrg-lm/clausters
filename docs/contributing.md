@@ -309,12 +309,13 @@ that same commit:
   vendored Faust compiler and engraver, runs `clients/web/build.sh` to compile
   and stage the three wasm bundles, passes `npm run check-package` (which
   refuses a `dist/` missing a bundle, or a version disagreeing with the
-  crate's) and packs the tarball; `publish-npm` publishes that tarball, with
-  provenance, and builds nothing. Auth is
-  an automation token in the `NPM_TOKEN` secret of an `npm` environment, not
-  OIDC: npm's trusted publishing is configured per package, on a package the
-  registry already has. The procedure and the local rehearsal are in
-  `clients/web/BUILD.md`, "Publishing".
+  crate's) and packs the tarball; `publish-npm` stages that tarball and
+  builds nothing, and `npm-approved` waits until a maintainer approves it
+  (npmjs.com's Staged Packages, or `npm stage approve`, under two-factor
+  authentication) before PyPI and the release page go out. Auth is npm's
+  trusted publishing (OIDC) from the `npm` environment, allowed to stage
+  only, so no token is stored; provenance comes with it. The procedure and
+  the local rehearsal are in `clients/web/BUILD.md`, "Publishing".
 - **Read the Docs** hosts the three books as three projects pointing at the same
   repository, each selecting its config under *Settings → Advanced → Path to
   configuration file*: the server/workspace book uses the repo-root

@@ -270,12 +270,15 @@ Docs. Steps:
      `CLAUSTERS_REQUIRE_COMPLETE=1` — refuse every `CLAUSTERS_SKIP_*`, so no
      release can publish a wheel missing a piece that raises on the user's
      machine.
-   - **publish-npm** — builds the web package (the wasm bundles with the
-     lockfile-pinned `wasm-bindgen` CLI, then the emit), passes its checker and
-     publishes `clausters` to npm with provenance, authenticated by the
-     `NPM_TOKEN` of the `npm` environment.
+   - **publish-npm** — stages the tarball `build-web` made (the wasm bundles
+     with the lockfile-pinned `wasm-bindgen` CLI, then the emit, then its
+     checker) on npm through Trusted Publishing (OIDC, the `npm` environment,
+     no stored token, provenance included). A staged version goes live when
+     a maintainer approves it on npmjs.com or with `npm stage approve`, under
+     two-factor authentication; **npm-approved** waits for that.
    - **publish-pypi** — publishes the wheel to PyPI via Trusted Publishing (OIDC,
-     the `pypi` environment, no stored token). It **waits for the npm job**:
+     the `pypi` environment, no stored token). It **waits for the npm version
+     to be approved**:
      publishing is one-way, so the release goes out whole or not at all, and
      the npm leg carries the long build that can still fail.
    - **github-release** — creates the GitHub release with generated notes and

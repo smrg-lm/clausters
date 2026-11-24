@@ -229,18 +229,22 @@ gate the workflow passes through.
    ./build.sh && ./test.sh          # the wasm bundles + the emit, then green
    npm run check-package            # dist/ complete, version aligned
    npm pack --dry-run               # read the file list once, by eye
-   npm publish --dry-run            # what the tag will do
+   npm stage publish --dry-run      # what the tag will do
    ```
 
 3. **Tag.** `git tag vX.Y.Z && git push --tags` runs `release.yml`, whose
    `build-web` job compiles the three wasm bundles with the lockfile-pinned
    `wasm-bindgen` CLI, emits `dist/`, runs the checker and packs the tarball,
-   and whose `publish-npm` job publishes that tarball with provenance. The
-   release's dry run (`gh workflow run release.yml`) runs `build-web` too, so
-   the runner's path is proved before a tag depends on it. Auth is the `NPM_TOKEN` secret of the repository's `npm`
-   environment — an automation token with publish rights. (npm's OIDC trusted
-   publishing is configured per package on a package that already exists, so
-   the token is what can create one; it can be swapped in later.)
+   and whose `publish-npm` job stages that tarball. The version is not
+   installable until it is approved — on npmjs.com, the package's Staged
+   Packages tab, or `npm stage approve <id>`, either under two-factor
+   authentication — and the `npm-approved` job waits for that before PyPI and
+   the release page go out (re-run that job alone if the approval came after
+   its three hours). The release's dry run (`gh workflow run release.yml`)
+   runs `build-web` too, so the runner's path is proved before a tag depends on
+   it. Auth is npm's trusted publishing (OIDC): the package lists
+   `release.yml` and the repository's `npm` environment, allowed to stage
+   only, so no token is stored or expires, and the publish carries provenance.
 4. **The wasm bundles ship inside the tarball**, rather than being fetched at
    run time: an installed package has to work offline and with no CDN. They are
    the larger half of it — the engine, the GUI host and the core come to ~9 MB

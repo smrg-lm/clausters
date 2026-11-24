@@ -137,7 +137,12 @@ its own commit first, then release.
 4. **Tag and push.** `git tag vX.Y.Z && git push origin vX.Y.Z`. From here it is
    one-way: `publish-npm` and `publish-pypi` cannot be taken back, and a version
    is never re-published. If something is wrong after the tag, the fix is the
-   next version, not a retag.
+   next version, not a retag. **npm waits for you**: `publish-npm` only
+   stages the version, and `npm-approved` holds PyPI and the release page
+   until it is approved on npmjs.com (the package's Staged Packages) or with
+   `npm stage approve <id>`, under two-factor authentication. Approve it
+   while the run waits; one approved after its three hours is picked up by
+   re-running `npm-approved` alone.
 5. **Watch the run to the end.** The GitHub release page is the last job, so a
    run that stops earlier means one registry has the version and the other does
    not — say which, in the report, rather than calling the release done.

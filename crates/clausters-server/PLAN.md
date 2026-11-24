@@ -1221,8 +1221,8 @@ near.
   How to close the rest safely, when it is worth the time:
 
   - **On a fork or a scratch repository.** The `npm` and `pypi` environments,
-    the `NPM_TOKEN` secret and PyPI's trusted-publisher binding (which names
-    this repository *and* this workflow) exist only here, so on a fork a
+    and npm's and PyPI's trusted-publisher bindings (which name this
+    repository *and* this workflow) exist only here, so on a fork a
     publish leg cannot succeed even if it is reached. Push a `v*` tag there on
     a deliberately broken tree — a warning under one def family alone is the
     honest break, since that is the class CI cannot see — and watch `verify`
