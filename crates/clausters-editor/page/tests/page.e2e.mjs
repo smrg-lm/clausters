@@ -9,8 +9,8 @@
 //   ./build.sh && npm test -- [chrome|firefox]
 //
 // Chrome is driven over the DevTools protocol, Firefox over WebDriver BiDi.
-// Needs a built clausters web package (clients/web, ./build.sh; or
-// CLAUSTERS_WEB) and the browser (CHROME or FIREFOX, else on the PATH).
+// Needs a built clausters web package (clients/web, which ./build.sh builds;
+// or CLAUSTERS_WEB) and the browser (CHROME or FIREFOX, else on the PATH).
 
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

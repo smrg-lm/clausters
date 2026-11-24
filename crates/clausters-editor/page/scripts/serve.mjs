@@ -5,7 +5,8 @@
 //   node scripts/serve.mjs [port]
 //
 // CLAUSTERS_WEB names the package's folder (its package.json and dist/); in a
-// checkout it is the repository's clients/web, built with its ./build.sh.
+// checkout it is the repository's clients/web, which the page's ./build.sh
+// builds.
 
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";

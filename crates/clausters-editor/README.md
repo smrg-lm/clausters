@@ -36,12 +36,15 @@ python3 -m unittest discover -s crates/clausters-editor/python -p 'test_*.py'
 `page/` is the editor in a browser tab: the GUI host's dock across the tab,
 the application built for wasm32 (`src/page.rs`), a JavaScript session in a
 worker on the clausters web client's engine and the TypeScript service in
-another. With the web client built (`./build.sh` in `clients/web`):
+another. Its build builds the web client too (`clients/web`, whose GUI host
+draws the applications), so the page never serves applications older than
+the editor; with `CLAUSTERS_WEB` naming a package of its own, that one is
+served as it is:
 
 ```sh
 cd crates/clausters-editor/page
 npm ci
-./build.sh        # the application for wasm32, then the page, into dist/
+./build.sh        # the web client, the application for wasm32, the page
 npm run serve     # serves it, with the clausters web package at /clausters/
 npm test          # drives it in headless Chrome (-- firefox: in Firefox)
 ```
