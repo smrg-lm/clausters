@@ -376,7 +376,7 @@ struct GParams {
 ///
 /// Where scsynth's departs from the network it is: its first line's length,
 /// the prime nearest the room, is -1 unless the room is already prime
-/// ([`nearest_prime`]), and a change of room moves the other three lines
+/// (`nearest_prime`), and a change of room moves the other three lines
 /// but never the first; its tap line is 44000 samples whatever the room,
 /// and a room grown past the one it started at reads its lines outside
 /// them. Its levels start at 0 and rise across the first block. Here every

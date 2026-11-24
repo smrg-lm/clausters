@@ -203,7 +203,7 @@ fn source(name: &str, px: u32, (x, y): (u16, u16)) -> Option<winit::window::Cust
 impl Cursors {
     /// Makes the pictured shapes at `px` pixels square, the ones not made
     /// yet: natively a raster drawn at the window's density, in a page an
-    /// SVG the browser strokes at the screen's ([`picture_url`]).
+    /// SVG the browser strokes at the screen's (`picture_url`).
     pub fn make(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, px: u32) {
         for &(p, name, (hx, hy)) in PICTURED {
             if self.made.contains_key(&(p, px)) {

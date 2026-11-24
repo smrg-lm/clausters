@@ -1436,7 +1436,7 @@ pub enum ReplyKind {
     /// `CheckBadValues` -- a console line saying what kind of number a
     /// signal carried: the id is the check's own, the values the class, and
     /// the previous class and how long it lasted when the check counts runs.
-    /// [`bad_value_line`] writes it.
+    /// `bad_value_line` writes it.
     BadValue,
     /// A UGen refusing what it was given -- a configuration it cannot honour
     /// exactly, so it plays silence instead of a wrong result. The name is

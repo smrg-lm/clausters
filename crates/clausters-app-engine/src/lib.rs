@@ -735,7 +735,7 @@ const RING_REST: std::time::Duration = std::time::Duration::from_millis(32);
 /// client of the engine is served while the application does nothing. The
 /// segment has no signal a writer can wake a reader with, so it looks: at
 /// once again after a turn that served a packet, and at a rest that doubles
-/// up to [`RING_REST`] while nothing arrives. It ends when the engine goes.
+/// up to `RING_REST` while nothing arrives. It ends when the engine goes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn serve_ring(
     engine: &Arc<Mutex<AppEngine>>,

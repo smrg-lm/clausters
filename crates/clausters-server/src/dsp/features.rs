@@ -372,7 +372,7 @@ const LOUDNESS_CALIBRATION: f32 = 76_032.94;
 /// points), and its calibration holds for that frame under its sine window.
 /// Here the bands are at their frequencies whatever the transform and the
 /// rate, and the power is scaled to that calibration by the window's sum
-/// ([`PowerScale`]), so a tone reads the same loudness through any chain;
+/// (`PowerScale`), so a tone reads the same loudness through any chain;
 /// at 44.1 kHz, 1024 points and the sine window it is scsynth's. scsynth
 /// adds a band below hearing (0 phons) to the sum as a power of 1 (its
 /// `10^(0.1 * 0) - 0.001`, which undoes an offset of the dB scale on the

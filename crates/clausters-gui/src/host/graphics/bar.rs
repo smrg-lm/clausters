@@ -489,6 +489,7 @@ mod tests {
     /// is cut. Compared exactly, "Score" lost a millionth of a pixel and was
     /// drawn as "Sco...".
     #[test]
+    #[cfg(feature = "font-atlas")]
     fn a_tab_measured_to_fit_draws_its_name_whole() {
         font::atlas::set_embedded();
         for scale in [1.0, 1.25, 1.5, 2.0] {

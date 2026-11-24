@@ -37,7 +37,7 @@ pub fn class_name(class: u8) -> &'static str {
 }
 
 /// `CheckBadValues(signal, id, post)`: outputs the class of every sample of
-/// `signal` (see [`class`]) and, by `post`, says so on the server's console:
+/// `signal` (see `class`) and, by `post`, says so on the server's console:
 /// `0` never, `1` at every bad sample, `2` (the default) whenever the class
 /// changes, with how many samples the previous class lasted. `id` tells one
 /// check from another in what it posts.

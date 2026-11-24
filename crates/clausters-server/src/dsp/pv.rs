@@ -185,7 +185,7 @@ pub enum MaskShape {
 /// Departures from scsynth's code: a comb's starting phase is wrapped into
 /// a period (scsynth wraps one step at a time, so a phase of 1.5 starts a
 /// tooth late); the random order is a uniform permutation (see
-/// [`shuffle`]); and a random wipe of every bin takes DC and Nyquist from B
+/// `shuffle`); and a random wipe of every bin takes DC and Nyquist from B
 /// too, as the random comb already zeroes them, so a full `PV_RandWipe` is
 /// chain B.
 pub struct PvMask {
@@ -346,7 +346,7 @@ impl UGen for PvMask {
 /// Nyquist stay.
 ///
 /// Departures from scsynth's code: the places are a uniform permutation
-/// (see [`shuffle`]), and a source is drawn over its whole range: scsynth's
+/// (see `shuffle`), and a source is drawn over its whole range: scsynth's
 /// draw never reaches the range's upper end.
 pub struct PvBinScramble {
     /// Destination places, a permutation of the `half - 1` inner bins.
