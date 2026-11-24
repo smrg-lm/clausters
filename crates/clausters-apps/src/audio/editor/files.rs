@@ -439,8 +439,18 @@ impl AudioEditor {
             return (Some("this window has no dialogs".into()), Vec::new());
         }
         let values = match form {
-            Form::New => dialogs::new_of(self.file.channels, self.file.rate),
-            Form::SaveAs => [("path".to_string(), self.file.target.clone())].into(),
+            Form::New => {
+                dialogs::new_of(self.file.channels, self.file.rate, &self.file.save_format())
+            }
+            // the depth it is saved in, which the form may change
+            Form::SaveAs => [
+                ("path".to_string(), self.file.target.clone()),
+                (
+                    "format".to_string(),
+                    dialogs::format_name(&self.file.save_format()).to_string(),
+                ),
+            ]
+            .into(),
             Form::Open | Form::Close => BTreeMap::new(),
         };
         (
@@ -480,7 +490,7 @@ impl AudioEditor {
         if self.untitled() && self.has_dialogs() {
             return self.open_form(Form::SaveAs);
         }
-        match self.save_target(None, "float") {
+        match self.save_target(None, &self.file.save_format()) {
             Ok(_) => {
                 out.save_requested = true;
                 (None, Vec::new())
@@ -667,21 +677,23 @@ impl AudioEditor {
                 }
                 // answered above
                 Form::Close => None,
-                Form::SaveAs => {
-                    if let Some(path) = open.save_path("path") {
-                        match self.save_target(Some(path), "float") {
+                Form::SaveAs => match (open.save_path("path"), dialogs::chosen_format(&open)) {
+                    (_, Err(why)) => Some(why),
+                    (Some(path), Ok(format)) => {
+                        match self.save_target(Some(path), format) {
                             Ok(target) => {
-                                // the operation the request becomes writes here
+                                // the operation the request becomes writes
+                                // here, in the depth chosen
                                 self.file.target = target;
+                                self.file.written_format = Some(format.into());
                                 out.save_requested = true;
                                 None
                             }
                             Err(why) => Some(why),
                         }
-                    } else {
-                        Some("a file is saved under a path".into())
                     }
-                }
+                    (None, Ok(_)) => Some("a file is saved under a path".into()),
+                },
             },
         };
         // a refused form stays up, holding what was typed and chosen
@@ -844,6 +856,18 @@ impl AudioFileState {
     }
     pub fn untitled(&self) -> bool {
         self.target.is_empty()
+    }
+    /// **The sample format a save writes**: the one the file was last
+    /// written in, else the one it was made or opened in where a file is
+    /// written in it, else 32-bit float -- a file keeps its bit depth
+    /// whatever the take is processed in.
+    pub(super) fn save_format(&self) -> String {
+        let written = |f: &&String| dialogs::FORMATS.iter().any(|(_, w)| *w == f.as_str());
+        self.written_format
+            .as_ref()
+            .or(self.sample_format.as_ref().filter(written))
+            .cloned()
+            .unwrap_or_else(|| dialogs::FLOAT.into())
     }
     fn held_take(&self, rate: f64) -> crate::takes::HeldTake {
         let rate = if rate > 0.0 { rate } else { self.rate };

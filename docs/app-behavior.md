@@ -648,11 +648,13 @@ code that keeps it lives.
   view chosen, a sheet to read. It is the convention of the platforms' menu
   guidelines, the same in every application; a switch or a choice never ends
   in one (`verbs` tests), and the audio editor's forms are the verbs that do.
-- **A new file has no samples, and is saved in the format it was made in.**
-  The audio editor's New... asks the channels, the rate and the sample
-  format, never a length: the file starts empty, written nowhere, and an
-  edit (a paste, a drawn stroke) puts samples in it. Its format is 32-bit
-  float, the one a take is held in, and its saves write that format. A
+- **A new file has no samples, and is saved in the bit depth it was made
+  in.** The audio editor's New... asks the sample rate, the channels and
+  the bit depth (32-bit float, 24-bit or 16-bit), never a length: the file
+  starts empty, written nowhere, and an edit (a paste, a drawn stroke) puts
+  samples in it. A take is processed in 32-bit float whatever its file is,
+  and a save writes the depth the file was made in, or opened in, until a
+  Save as, which has the same field, chooses another. A
   file is finite, so a ruler never shows a duration it does not have: over
   a take of no samples the time ruler shows its start, `0`, and nothing
   else.

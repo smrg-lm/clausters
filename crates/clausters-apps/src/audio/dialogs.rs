@@ -9,11 +9,11 @@ use crate::forms::{self, Chooser, FileType, Spec};
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
-    /// A file not written yet: how many channels, at what rate, in which
-    /// sample format -- the one it is saved in. It has no samples: what it
+    /// A file not written yet: at what rate, how many channels, in which
+    /// bit depth -- the one it is saved in. It has no samples: what it
     /// holds, the edits put there.
     New,
-    /// The path the take is written to, from now on.
+    /// The path the take is written to, from now on, and its bit depth.
     SaveAs,
     /// Files to open in this editor, chosen in the host's chooser.
     Open,
@@ -56,11 +56,11 @@ impl Spec for Form {
     fn fields(self) -> Vec<(&'static str, &'static str)> {
         match self {
             Form::New => vec![
-                ("channels", "Channels"),
                 ("rate", "Sample rate (Hz)"),
-                ("format", "Format"),
+                ("channels", "Channels"),
+                ("format", "Bit depth"),
             ],
-            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
+            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name"), ("format", "Bit depth")],
             Form::Open => vec![("path", ""), (forms::NAME, "Name")],
             Form::Close => Vec::new(),
         }
@@ -70,10 +70,10 @@ impl Spec for Form {
         (self == Form::Close).then_some(UNSAVED)
     }
 
-    /// A new file's sample format is chosen among those a file is written
-    /// in.
+    /// A file's bit depth is chosen among those a file is written in, as
+    /// it is made and as it is saved as another.
     fn options(self, name: &str) -> Option<&'static [&'static str]> {
-        (self == Form::New && name == "format").then_some(&FORMAT_NAMES)
+        (matches!(self, Form::New | Form::SaveAs) && name == "format").then_some(&FORMAT_NAMES)
     }
 
     /// The files to open are chosen in the host's own chooser, where Ctrl
@@ -113,16 +113,49 @@ pub const WAV: FileType = FileType::new("WAV", &["wav", "wave"]);
 /// **The kinds of file an audio editor writes**: a take is saved as WAV.
 pub const WRITES: &[FileType] = &[WAV];
 
-/// **The sample formats a file is written in**: what the format field
-/// shows, and the format a save writes. A take is held in 32-bit float, so
-/// that is the one there is; a file is saved in the format it was made in.
-pub const FORMATS: [(&str, &str); 1] = [("32-bit float", FLOAT)];
+/// **The bit depths a file is written in**: what the bit-depth field
+/// shows, and the sample format a save writes. A take is processed in
+/// 32-bit float whatever its file is; a file is saved in the depth it was
+/// made in, or opened in, until a Save as chooses another.
+pub const FORMATS: [(&str, &str); 3] = [
+    ("32-bit float", FLOAT),
+    ("24-bit", "int24"),
+    ("16-bit", "int16"),
+];
 
 /// The 32-bit float sample format, as a save names it.
 pub const FLOAT: &str = "float";
 
-/// What the format field shows, in the order of [`FORMATS`].
-const FORMAT_NAMES: [&str; 1] = [FORMATS[0].0];
+/// What the bit-depth field shows, in the order of [`FORMATS`].
+const FORMAT_NAMES: [&str; 3] = [FORMATS[0].0, FORMATS[1].0, FORMATS[2].0];
+
+/// **The words the bit-depth field shows for `format`**, a save's name of
+/// it -- 32-bit float for one it does not write.
+#[must_use]
+pub fn format_name(format: &str) -> &'static str {
+    FORMATS
+        .iter()
+        .find(|(_, f)| *f == format)
+        .map_or(FORMATS[0].0, |(name, _)| name)
+}
+
+/// **The sample format the bit-depth field of `open` chose**, as a save
+/// names it -- or why it holds none a file is written in.
+///
+/// # Errors
+/// When the field holds no depth of [`FORMATS`].
+pub fn chosen_format(open: &Open) -> Result<&'static str, String> {
+    FORMATS
+        .iter()
+        .find(|(name, _)| *name == open.value("format").trim())
+        .map(|(_, format)| *format)
+        .ok_or_else(|| {
+            format!(
+                "a file is written in 32-bit float, 24-bit or 16-bit, not {:?}",
+                open.value("format")
+            )
+        })
+}
 
 /// The forms the window holds, in the order of their pages.
 const FORMS: [Form; 4] = [Form::New, Form::SaveAs, Form::Open, Form::Close];
@@ -146,13 +179,13 @@ pub type Dialogs = forms::Dialogs<Form>;
 pub type Open = forms::Open<Form>;
 
 /// **The new-file form, opening on the shape of the file in the window**:
-/// its channels and its rate, in 32-bit float.
+/// its rate, its channels and its bit depth (`format`, as a save names it).
 #[must_use]
-pub fn new_of(channels: u32, rate: f64) -> BTreeMap<String, String> {
+pub fn new_of(channels: u32, rate: f64, format: &str) -> BTreeMap<String, String> {
     [
-        ("channels", channels.to_string()),
         ("rate", format!("{}", rate.round() as i64)),
-        ("format", FORMATS[0].0.to_string()),
+        ("channels", channels.to_string()),
+        ("format", format_name(format).to_string()),
     ]
     .into_iter()
     .map(|(name, value)| (name.to_string(), value))
@@ -160,13 +193,13 @@ pub fn new_of(channels: u32, rate: f64) -> BTreeMap<String, String> {
 }
 
 /// **The shape a new file is**, read from what the form holds: channels,
-/// rate and the sample format it is saved in -- or why a field is not what
-/// it can be. It has no frames: a new file holds no samples until an edit
+/// rate and the bit depth it is saved in -- or why a field is not what it
+/// can be. It has no frames: a new file holds no samples until an edit
 /// puts them there.
 ///
 /// # Errors
 /// When the channels are not a whole number from 1, the rate is not a
-/// positive number, or the format is none a file is written in.
+/// positive number, or the depth is none a file is written in.
 pub fn new_shape(open: &Open) -> Result<(u32, f64, &'static str), String> {
     let number = |name: &str| open.value(name).trim().replace(',', ".");
     let channels = number("channels")
@@ -189,16 +222,7 @@ pub fn new_shape(open: &Open) -> Result<(u32, f64, &'static str), String> {
                 number("rate")
             )
         })?;
-    let format = FORMATS
-        .iter()
-        .find(|(name, _)| *name == open.value("format").trim())
-        .map(|(_, format)| *format)
-        .ok_or_else(|| {
-            format!(
-                "a file is written in 32-bit float, not {:?}",
-                open.value("format")
-            )
-        })?;
+    let format = chosen_format(open)?;
     Ok((channels, rate, format))
 }
 
@@ -272,24 +296,28 @@ mod tests {
         );
     }
 
-    /// **A new file is read from its two fields**, and has no length to
-    /// ask: it holds no samples until an edit puts them there.
+    /// **A new file is read from its three fields** -- its rate, its
+    /// channels and its bit depth -- and has no length to ask: it holds no
+    /// samples until an edit puts them there.
     #[test]
-    fn a_new_file_is_read_from_its_two_fields() {
+    fn a_new_file_is_read_from_its_three_fields() {
         assert_eq!(
             Form::New.fields().iter().map(|f| f.0).collect::<Vec<_>>(),
-            ["channels", "rate", "format"]
+            ["rate", "channels", "format"]
         );
-        // the format is chosen, and 32-bit float is the one there is
-        assert_eq!(Form::New.options("format"), Some(&["32-bit float"][..]));
+        // the bit depth is chosen, as it is for a Save as
+        let depths = Some(&["32-bit float", "24-bit", "16-bit"][..]);
+        assert_eq!(Form::New.options("format"), depths);
+        assert_eq!(Form::SaveAs.options("format"), depths);
         let mut open = Open {
             form: Form::New,
-            values: new_of(2, 44_100.0),
+            values: new_of(2, 44_100.0, "int24"),
         };
-        assert_eq!(new_shape(&open), Ok((2, 44_100.0, "float")));
+        assert_eq!(new_shape(&open), Ok((2, 44_100.0, "int24")));
         open.values.insert("rate".into(), "22050,5".into());
-        assert_eq!(new_shape(&open), Ok((2, 22_050.5, "float")));
         open.values.insert("format".into(), "16-bit".into());
+        assert_eq!(new_shape(&open), Ok((2, 22_050.5, "int16")));
+        open.values.insert("format".into(), "8-bit".into());
         assert!(new_shape(&open).is_err());
         open.values.insert("format".into(), "32-bit float".into());
         open.values.insert("channels".into(), "0".into());

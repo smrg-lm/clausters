@@ -231,11 +231,7 @@ impl Application for AudioEditor {
                 Request {
                     command: Command::Save {
                         target: Some(draft.file.target.clone()),
-                        format: draft
-                            .file
-                            .written_format
-                            .clone()
-                            .unwrap_or_else(|| "float".into()),
+                        format: draft.file.save_format(),
                     },
                     ..request
                 },

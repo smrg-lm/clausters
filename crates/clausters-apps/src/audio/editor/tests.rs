@@ -1695,3 +1695,59 @@ fn only_a_window_with_no_client_holds_its_close_mark() {
         false
     );
 }
+
+/// **A file is saved in its bit depth**: the one it was made in, or opened
+/// in, whatever the take is processed in, until a Save as chooses another
+/// -- and New opens on the window's file's depth.
+#[test]
+fn a_file_is_saved_in_the_bit_depth_it_was_made_or_opened_in() {
+    // opened in 24 bits, it is saved in 24 bits
+    let opened24 = new_json(
+        &json!({"path": "/in/take24.wav", "workspace": "/work", "frames": 100,
+                "channels": 1, "rate": 48000, "codec": "wav", "sample_format": "int24"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(opened24.file.save_format(), "int24");
+    // made in 16 bits, the same
+    let made16 = new_json(
+        &json!({"workspace": "/work", "frames": 0, "channels": 2, "rate": 48000,
+                "untitled": true, "sample_format": "int16"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(made16.file.save_format(), "int16");
+    assert_eq!(made16.file.file()["format"], "int16");
+    // a file of a depth no file is written in is saved in float
+    let opened8 = new_json(
+        &json!({"path": "/in/take8.wav", "workspace": "/work", "frames": 100,
+                "channels": 1, "rate": 48000, "codec": "wav", "sample_format": "int8"})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(opened8.file.save_format(), "float");
+
+    // New opens on the window's file's depth, and Save as on it too, where
+    // another is chosen
+    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
+    editor.file.sample_format = Some("int24".into());
+    let shown = event(&mut editor, json!([900, 1, 0, "new_file"]));
+    assert_eq!(
+        corrections_of(&shown, ids["new:format"]),
+        json!({"index": 1})
+    );
+    event(&mut editor, json!([ids["new:cancel"], 2, 0, "click"]));
+    let shown = event(&mut editor, json!([900, 3, 0, "save_as"]));
+    assert_eq!(
+        corrections_of(&shown, ids["file:format"]),
+        json!({"index": 1})
+    );
+    event(&mut editor, json!([ids["file:format"], 4, 0, "2"]));
+    event(
+        &mut editor,
+        json!([ids["file:name"], 5, 0, "/takes/sixteen"]),
+    );
+    event(&mut editor, json!([ids["file:ok"], 6, 0, "click"]));
+    assert_eq!(editor.file.save_format(), "int16");
+    assert_eq!(editor.target(), "/takes/sixteen.wav");
+}

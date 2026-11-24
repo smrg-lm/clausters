@@ -155,8 +155,13 @@ impl AudioAction {
                     channels: action["shape"]["channels"].as_u64().unwrap_or(1) as u32,
                     frames: action["shape"]["frames"].as_u64().unwrap_or(0),
                     rate: action["shape"]["rate"].as_f64().unwrap_or(0.0),
-                    // what a take is held in, and so what it is saved in
-                    format: crate::audio::dialogs::FLOAT,
+                    // the bit depth it is saved in: the one asked, where a
+                    // file is written in it, else 32-bit float
+                    format: crate::audio::dialogs::FORMATS
+                        .iter()
+                        .map(|(_, f)| *f)
+                        .find(|f| action["shape"]["format"] == *f)
+                        .unwrap_or(crate::audio::dialogs::FLOAT),
                 },
             },
             "sound" => AudioAction::Sound,
