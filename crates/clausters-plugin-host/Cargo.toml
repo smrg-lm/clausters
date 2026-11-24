@@ -8,7 +8,7 @@ description = "Isolated native plugin discovery and per-instance processing host
 [features]
 default = ["clap"]
 clap = ["dep:clack-host", "dep:clack-extensions", "dep:clack-common", "dep:x11-dl"]
-vst3 = ["dep:vst3", "dep:libloading", "dep:x11-dl"]
+vst3 = ["dep:vst3", "dep:libloading", "dep:x11-dl", "dep:rtrb"]
 # Real-time scheduling for the helper's processing thread, through RTKit over
 # DBus, as the server's own `rtprio` does for its callback (build-dep
 # `libdbus-1-dev`). Without it the thread that has to meet the server's
@@ -20,7 +20,8 @@ clausters-core = { path = "../clausters-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 libc = { workspace = true }
-rtrb = { workspace = true }
+# The VST3 adapter's queue of edits from the plugin's own window.
+rtrb = { workspace = true, optional = true }
 tracing = { workspace = true }
 vst3 = { version = "0.3", optional = true }
 libloading = { version = "0.8", optional = true }

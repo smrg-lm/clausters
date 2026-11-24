@@ -53,7 +53,7 @@ midi-jack = ["midi", "midir/jack"]
 # by build.rs through FAUST_PREFIX, falling back to ~/.local, then /usr/local.
 # Drop it (`--no-default-features` plus the others) for a SynthDef-only server
 # that builds with no libfaust on the system.
-faust = []
+faust = ["dep:sha2"]
 # The C ABI for embedding the server in-process (clausters_* exports).
 embed = []
 # Isolated native hosting infrastructure; the def family is added separately.
@@ -137,8 +137,8 @@ rosc = "0.11"
 rtrb = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# Content checksum for the on-disk def cache (pure Rust, no C deps).
-sha2 = "0.10"
+# Content checksum for the on-disk Faust def cache (pure Rust, no C deps).
+sha2 = { version = "0.10", optional = true }
 # Leveled, target-filtered logging. The audio thread never logs (it reports via
 # FIFOs to the network thread); the subscriber is installed only by the binary,
 # so library/embed users keep their own. `env-filter` gives RUST_LOG + the

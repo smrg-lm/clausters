@@ -11,28 +11,7 @@ description = "The shared core's JS door: a thin wasm-bindgen shell over clauste
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# `notation` is on here: the score model, the SVG walk and the MEI encoder are
-# what a page engraves with, and they are the same ones the native binding
-# drives. The engraver itself is not in this build -- it is a JS object the page
-# hands in (see `Engraver` in the notation door below).
 clausters-core = { path = "../clausters-core" }
-clausters-notation = { path = "../clausters-notation" }
-# The document: one implementation of what an edit means, bound here as it is
-# bound over the C ABI, so the web client re-derives none of it.
-clausters-document = { path = "../clausters-document", features = ["notation"] }
-# The projections, bound here as they are bound over the C ABI: a page draws a
-# structure with the props the crate hands it, never with props of its own.
-clausters-editing = { path = "../clausters-editing", features = ["notation"] }
-# The applications, bound here as they are bound over the C ABI: a page opens
-# the same editor window a script opens and a standalone host opens.
-clausters-apps = { path = "../clausters-apps", features = ["notation"] }
-# The MIDI file writers. Default features only -- `live` pulls midir in for a
-# virtual OS port, which is precisely what a page cannot have; what a page does
-# need is `write_smf`/`write_clip`, which are pure Rust over midly and compile
-# to wasm unchanged. Same reasoning as the native side's: one writer, so a `.mid`
-# saved from a tab and one saved from a script are the same bytes. Without its
-# C ABI (`cabi`), whose symbols a page never calls and a cdylib would export.
-clausters-midi = { path = "../clausters-midi", default-features = false }
 
 # The JS binding surface only exists on the wasm target.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -45,3 +24,26 @@ console_error_panic_hook = "0.1"
 serde_json = { workspace = true }
 # The document's request objects are deserialized at the JS boundary.
 serde = { workspace = true }
+# Every door below is the page's binding, so its crates are the wasm target's:
+# a native build is the core's shell alone, for its tests.
+# `notation` is on here: the score model, the SVG walk and the MEI encoder are
+# what a page engraves with, and they are the same ones the native binding
+# drives. The engraver itself is not in this build -- it is a JS object the page
+# hands in (see `Engraver` in the notation door below).
+clausters-notation = { path = "../clausters-notation" }
+# The document: one implementation of what an edit means, bound here as it is
+# bound over the C ABI, so the web client re-derives none of it.
+clausters-document = { path = "../clausters-document", features = ["notation"] }
+# The projections, bound here as they are bound over the C ABI: a page draws a
+# structure with the props the crate hands it, never with props of its own.
+clausters-editing = { path = "../clausters-editing", features = ["notation"] }
+# The MIDI file writers. Default features only -- `live` pulls midir in for a
+# virtual OS port, which is precisely what a page cannot have; what a page does
+# need is `write_smf`/`write_clip`, which are pure Rust over midly and compile
+# to wasm unchanged. Same reasoning as the native side's: one writer, so a `.mid`
+# saved from a tab and one saved from a script are the same bytes. Without its
+# C ABI (`cabi`), whose symbols a page never calls and a cdylib would export.
+clausters-midi = { path = "../clausters-midi", default-features = false }
+# The applications, bound here as they are bound over the C ABI: a page opens
+# the same editor window a script opens and a standalone host opens.
+clausters-apps = { path = "../clausters-apps", features = ["notation"] }
