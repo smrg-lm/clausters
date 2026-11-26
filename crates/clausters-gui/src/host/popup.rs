@@ -578,6 +578,35 @@ impl NotePlace {
         )
     }
 
+    /// **The code block of the documentation at `(x, y)` that scrolls
+    /// across**, with the documentation scrolled by `scroll`: its index and
+    /// how far it scrolls at most.
+    pub fn pan_at(&self, scroll: f32, x: f32, y: f32) -> Option<(usize, f32)> {
+        let laid = self.laid.as_ref()?;
+        let (left, top) = (self.doc.x, self.doc.y - scroll);
+        laid.pans.iter().enumerate().find_map(|(i, b)| {
+            let r = Rect::new(left + b.rect.x, top + b.rect.y, b.rect.w, b.rect.h);
+            (b.most() > 0.0 && r.contains(f64::from(x), f64::from(y))).then(|| (i, b.most()))
+        })
+    }
+
+    /// How far line `i` is scrolled across: its code block's, when it is in
+    /// one that scrolls ([`Card::pans`]).
+    pub fn line_pan(&self, i: usize, pans: &[f32]) -> f32 {
+        let (Some(laid), Some((l, false))) = (self.laid.as_ref(), self.line(i)) else {
+            return 0.0;
+        };
+        laid.pans
+            .iter()
+            .position(|b| l.y >= b.rect.y && l.y < b.rect.y + b.rect.h)
+            .map_or(0.0, |b| {
+                pans.get(b)
+                    .copied()
+                    .unwrap_or(0.0)
+                    .clamp(0.0, laid.pans[b].most())
+            })
+    }
+
     /// Every line a selection walks: the head's, then the documentation's.
     pub fn count(&self) -> usize {
         self.heads.len() + self.lines.len()
@@ -691,6 +720,17 @@ pub struct Card {
     pub owner: i32,
     pub scroll: f32,
     pub select: Option<(NotePos, NotePos)>,
+    /// **How far each code block of its documentation wider than the card
+    /// is scrolled across**, by the block's index in the layout's `pans`, as
+    /// the documentation panel scrolls one.
+    pub pans: Vec<f32>,
+}
+
+impl Card {
+    /// How far code block `i` is scrolled across.
+    pub fn pan(&self, i: usize) -> f32 {
+        self.pans.get(i).copied().unwrap_or(0.0)
+    }
 }
 
 /// The widest a note is that is no card, in the documentation's characters.
@@ -698,6 +738,74 @@ const NOTE_CHARS: f32 = 72.0;
 
 /// The share of the work area's width a hover card may take.
 const CARD_SHARE: f32 = 0.9;
+
+/// **A note's head, wrapped to `w`**: its text as one flowing line
+/// ([`Note::head_flow`]) cut where it no longer fits, each line in runs of
+/// the code's face, bold where the head marks it, `line` apart.
+fn head_lines(note: &Note, w: f32, line: f32) -> Vec<NoteLine> {
+    let (text, marks) = note.head_flow();
+    let size = note.code_size;
+    let cut = font::wrap_in(font::Family::Mono, &text, w, size);
+    let n = cut.len();
+    let mut at = 0;
+    let mut out = Vec::with_capacity(n);
+    for (i, piece) in cut.into_iter().enumerate() {
+        // where the line stands in the head's text: the wrap cut it at a
+        // space (taken out) or inside a word too wide for a line
+        let from = text[at..].find(&piece).map_or(at, |o| at + o);
+        let to = from + piece.len();
+        at = to;
+        // the line's runs: plain and marked by turns, at the marks' bounds
+        let mut bounds = vec![0];
+        for &(a, b) in &marks {
+            for edge in [a, b] {
+                if edge > from && edge < to {
+                    bounds.push(edge - from);
+                }
+            }
+        }
+        bounds.sort_unstable();
+        bounds.dedup();
+        let mut runs = Vec::with_capacity(bounds.len());
+        for &start in &bounds {
+            let marked = marks
+                .iter()
+                .any(|&(a, b)| from + start >= a && from + start < b);
+            let family = if marked {
+                font::Family::MonoBold
+            } else {
+                font::Family::Mono
+            };
+            let x = runs.last().map_or(0.0, |r: &NoteRun| {
+                r.x + font::width_in(r.family, &piece[r.from..start], size)
+            });
+            runs.push(NoteRun {
+                from: start,
+                x,
+                family,
+                size,
+            });
+        }
+        out.push(NoteLine {
+            text: piece,
+            ends: i + 1 == n,
+            runs,
+            y: i as f32 * line,
+            h: line,
+        });
+    }
+    if out.is_empty() {
+        out.push(NoteLine::plain(
+            String::new(),
+            true,
+            font::Family::Mono,
+            size,
+            0.0,
+            line,
+        ));
+    }
+    out
+}
 
 /// `text` wrapped to `w` in `family`, each line saying whether the text
 /// ends with it, `line` apart from `y`.
@@ -821,7 +929,6 @@ pub(crate) fn rows_of(laid: &crate::host::graphics::docs::layout::Laid) -> Vec<N
 /// documentation, at most [`Metrics::card_w`] wide. A card's head wraps as
 /// its documentation does; a note's that is no card is one line.
 pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
-    let head = note.head_text();
     let aside_w = if note.aside.is_empty() {
         0.0
     } else {
@@ -837,28 +944,12 @@ pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
     .max(1.0);
     let wrap_w = (most - 2.0 * m.card_x).max(1.0);
     let head_line = font::line_advance(note.code_size);
-    let heads = if note.card {
-        wrapped(
-            font::Family::Mono,
-            &head,
-            (wrap_w - aside_w).max(1.0),
-            note.code_size,
-            0.0,
-            head_line,
-        )
-    } else {
-        vec![NoteLine::plain(
-            head.clone(),
-            true,
-            font::Family::Mono,
-            note.code_size,
-            0.0,
-            head_line,
-        )]
-    };
+    // **the head wraps to the note's width**, a card's and a call's alike,
+    // the word beside it kept on its last line
+    let heads = head_lines(note, (wrap_w - aside_w).max(1.0), head_line);
     let head_w = heads
         .iter()
-        .map(|l| font::width_in(font::Family::Mono, &l.text, note.code_size))
+        .map(|l| l.x_of(l.text.len()))
         .fold(0.0f32, f32::max)
         + aside_w;
     let line_h = font::line_advance(note.text_size);
@@ -955,15 +1046,47 @@ pub fn place_note(note: &Note, work: Rect, m: &Metrics) -> NotePlace {
 }
 
 impl Note {
-    /// The head as one line, the runs joined.
+    /// The head as one line, the runs joined ([`Self::head_flow`]).
     pub fn head_text(&self) -> String {
-        self.head.iter().map(|(t, _)| t.as_str()).collect()
+        self.head_flow().0
+    }
+
+    /// **The head as one flowing line**, and where in it the marked runs
+    /// are: every stretch of white space -- a line break and the indentation
+    /// after it included, as an owner prints a long signature -- is one
+    /// space, none at either end. So the head wraps to the note's width and
+    /// draws no control character, whoever wrote it.
+    pub fn head_flow(&self) -> (String, Vec<(usize, usize)>) {
+        let mut text = String::new();
+        let mut marks = Vec::new();
+        let mut space = false;
+        for (run, marked) in &self.head {
+            let mut first = None;
+            for c in run.chars() {
+                if c.is_whitespace() {
+                    space = !text.is_empty();
+                    continue;
+                }
+                if space {
+                    text.push(' ');
+                    space = false;
+                }
+                first.get_or_insert(text.len());
+                text.push(c);
+            }
+            if *marked && let Some(from) = first {
+                marks.push((from, text.len()));
+            }
+        }
+        (text, marks)
     }
 
     /// **The place in the text at `(x, y)`**, with the documentation scrolled
     /// by `scroll`: above the documentation is the head, past either end of a
     /// line is its end.
-    pub fn pos_at(&self, place: &NotePlace, scroll: f32, x: f32, y: f32) -> NotePos {
+    /// A line in a code block scrolled across (`pans`, [`Card::pans`]) is
+    /// read where it is drawn.
+    pub fn pos_at(&self, place: &NotePlace, scroll: f32, pans: &[f32], x: f32, y: f32) -> NotePos {
         let heads = place.heads.len();
         let line = if y < place.doc.y || place.lines.is_empty() {
             let row = ((y - place.head.y) / place.head_line.max(1.0))
@@ -976,14 +1099,15 @@ impl Note {
             let row = place.lines.iter().rposition(|l| l.y <= at).unwrap_or(0);
             heads + row
         };
-        let dx = x - place.head.x;
+        let dx = x - place.head.x + place.line_pan(line, pans);
         let at = place.line(line).map_or(0, |(l, _)| l.byte_at(dx));
         (line, at)
     }
 
-    /// The x of byte `at` of line `i`, from the text's left.
-    pub fn x_of(&self, place: &NotePlace, i: usize, at: usize) -> f32 {
-        place.line(i).map_or(0.0, |(l, _)| l.x_of(at))
+    /// The x of byte `at` of line `i`, from the text's left, its code block
+    /// scrolled across by `pans`.
+    pub fn x_of(&self, place: &NotePlace, pans: &[f32], i: usize, at: usize) -> f32 {
+        place.line(i).map_or(0.0, |(l, _)| l.x_of(at)) - place.line_pan(i, pans)
     }
 
     /// **The text from `a` to `b`**, in either order: the head and the
@@ -2092,6 +2216,95 @@ mod tests {
         }
     }
 
+    /// **A head printed over several lines is one flowing line, wrapped to
+    /// the note**, a card's and a call's alike: no line break or indentation
+    /// reaches a line drawn, every line fits the note, and the marked
+    /// parameter stays marked where it lands.
+    #[test]
+    fn a_head_over_several_lines_flows_and_wraps_inside_the_note() {
+        let m = Metrics::default();
+        let area = Rect::new(0.0, 0.0, 1000.0, 800.0);
+        let mut note = card("Short.");
+        note.head = vec![
+            ("engine(".into(), false),
+            ("timeout?: number".into(), true),
+            (
+                "): Promise<{\n    shm: string;\n    share: [number, number];\n}>".into(),
+                false,
+            ),
+        ];
+        assert_eq!(
+            note.head_text(),
+            "engine(timeout?: number): Promise<{ shm: string; share: [number, number]; }>"
+        );
+        for call in [true, false] {
+            note.card = call;
+            let p = place_note(&note, area, &m);
+            let inner = p.rect.w - 2.0 * m.card_x;
+            for l in &p.heads {
+                assert!(!l.text.contains(char::is_control), "{:?}", l.text);
+                assert!(l.x_of(l.text.len()) <= inner + 0.5, "{:?} fits", l.text);
+            }
+            let marked: String = p
+                .heads
+                .iter()
+                .flat_map(|l| {
+                    l.runs
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, r)| r.family == font::Family::MonoBold)
+                        .map(|(k, r)| {
+                            l.text[r.from..l.runs.get(k + 1).map_or(l.text.len(), |n| n.from)]
+                                .to_string()
+                        })
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(marked, "timeout?: number");
+        }
+        // a narrow note wraps it onto lines of its own
+        let narrow = Rect::new(0.0, 0.0, 40.0 * font::width("0", 2.0), 800.0);
+        note.card = true;
+        let p = place_note(&note, narrow, &m);
+        assert!(p.heads.len() > 1, "it wraps");
+        assert!(p.rect.w <= narrow.w);
+    }
+
+    /// **A code block wider than the card scrolls across on its own**, as on
+    /// the documentation's page: the card stays its width, the block is
+    /// found under the pointer, and a line in it is read where it is drawn.
+    #[test]
+    fn a_code_block_wider_than_the_card_scrolls_across() {
+        let m = Metrics::default();
+        let area = Rect::new(0.0, 0.0, 1000.0, 800.0);
+        let wide = format!("Before.\n\n```\n{}\n```\n", "x".repeat(400));
+        let note = card(&wide);
+        let p = place_note(&note, area, &m);
+        assert!(p.rect.w <= m.card_w);
+        let laid = p.laid.as_ref().expect("a card lays Markdown out");
+        assert_eq!(laid.pans.len(), 1, "the block scrolls across");
+        let block = laid.pans[0];
+        let (x, y) = (p.doc.x + block.rect.x + 1.0, p.doc.y + block.rect.y + 1.0);
+        let (i, most) = p.pan_at(0.0, x, y).expect("the block under the pointer");
+        assert_eq!(i, 0);
+        assert!(most > 0.0);
+        assert!(
+            p.pan_at(0.0, p.doc.x + 1.0, p.doc.y + 1.0).is_none(),
+            "the paragraph does not"
+        );
+        // a line of the block, scrolled across by ten, is read ten further on
+        let row = (0..p.count())
+            .find(|&r| {
+                p.line(r)
+                    .is_some_and(|(l, head)| !head && l.text.starts_with("xxx"))
+            })
+            .expect("the block's line");
+        let (top, h) = p.line_top(row, 0.0);
+        let at = |pans: &[f32]| note.pos_at(&p, 0.0, pans, x, top + h * 0.5).1;
+        assert!(at(&[10.0 * font::width_in(font::Family::Mono, "x", 2.0)]) > at(&[]));
+        assert_eq!(p.line_pan(row, &[1.0e9]), most, "held to its most");
+    }
+
     /// **A hover card's documentation is all there, and scrolls past its
     /// most**: no line is dropped, the window it shows through stops at
     /// `card_doc_h`, and the card is held inside the work area.
@@ -2147,12 +2360,12 @@ mod tests {
         assert_eq!(back, note.text_between(&p, (0, 6), (last, 5)));
         assert!(back.starts_with("value)\n"));
         // a point finds its place: the head's first character, a line's end
-        let head = note.pos_at(&p, 0.0, p.head.x + 0.1, p.head.y + 1.0);
+        let head = note.pos_at(&p, 0.0, &[], p.head.x + 0.1, p.head.y + 1.0);
         assert_eq!(head, (0, 0));
-        let end = note.pos_at(&p, 0.0, p.rect.x + p.rect.w + 50.0, p.doc.y + 1.0);
+        let end = note.pos_at(&p, 0.0, &[], p.rect.x + p.rect.w + 50.0, p.doc.y + 1.0);
         assert_eq!(end, (1, p.lines[0].text.len()));
         // the scroll moves which line a point is on
-        let scrolled = note.pos_at(&p, p.lines[1].y, p.head.x, p.doc.y + 1.0);
+        let scrolled = note.pos_at(&p, p.lines[1].y, &[], p.head.x, p.doc.y + 1.0);
         assert_eq!(scrolled.0, 2);
     }
 
@@ -2190,7 +2403,7 @@ mod tests {
         assert_eq!(copied, "square root");
         // a point over a run lands in it
         let x = p.head.x + first.x_of(at(2));
-        let pos = note.pos_at(&p, 0.0, x + 0.1, p.doc.y + first.y + 1.0);
+        let pos = note.pos_at(&p, 0.0, &[], x + 0.1, p.doc.y + first.y + 1.0);
         assert_eq!(pos, (1, at(2)));
     }
 }

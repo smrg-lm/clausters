@@ -81,7 +81,7 @@ impl Gestures {
             out.push(GestureEffect::Redraw(ctx.def_id));
             return true;
         }
-        let at = note.pos_at(&place, scroll, x as f32, y as f32);
+        let at = note.pos_at(&place, scroll, &card.pans, x as f32, y as f32);
         card.select = Some((at, at));
         self.drag = Some(Drag::Card { owner, thumb: None });
         out.push(GestureEffect::Redraw(ctx.def_id));
@@ -111,7 +111,7 @@ impl Gestures {
             card.scroll = bar.drag(grip, (x, y));
             return vec![GestureEffect::Redraw(ctx.def_id)];
         }
-        let at = note.pos_at(&place, scroll, x as f32, y as f32);
+        let at = note.pos_at(&place, scroll, &card.pans, x as f32, y as f32);
         match card.select.as_mut() {
             Some((_, end)) if *end != at => *end = at,
             _ => return Vec::new(),
@@ -136,7 +136,9 @@ impl Gestures {
     }
 
     /// **The wheel over the card** scrolls its documentation, a few lines a
-    /// notch; nothing under it scrolls. `None` off every card.
+    /// notch, and with Shift over a code block wider than the card scrolls
+    /// that block across, as on the documentation's page; nothing under it
+    /// scrolls. `None` off every card.
     pub(super) fn card_wheel(
         &mut self,
         host: &mut Host,
@@ -150,6 +152,21 @@ impl Gestures {
             .filter(|(_, _, place)| place.rect.contains(x, y))?;
         let card = host.card_mut(ctx.def_id, owner);
         let from = card.scroll.min(place.max_scroll());
+        if ctx.shift
+            && let Some((i, most)) = place.pan_at(from, x as f32, y as f32)
+        {
+            if card.pans.len() <= i {
+                card.pans.resize(i + 1, 0.0);
+            }
+            let before = card.pans[i].min(most);
+            let after = (before - steps as f32 * LINES_A_NOTCH * place.line_h).clamp(0.0, most);
+            card.pans[i] = after;
+            return Some(if (after - before).abs() <= f32::EPSILON {
+                Vec::new()
+            } else {
+                vec![GestureEffect::Redraw(ctx.def_id)]
+            });
+        }
         let to =
             (from - steps as f32 * LINES_A_NOTCH * place.line_h).clamp(0.0, place.max_scroll());
         if (to - from).abs() <= f32::EPSILON {

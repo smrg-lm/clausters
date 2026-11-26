@@ -1324,6 +1324,7 @@ fn draw_note(
     over.round_rect(rect, m.radius_sm, theme.popup);
     over.round_border(rect, m.divider_w, m.radius_sm, theme.separator);
     let scroll = card.map_or(0.0, |c| c.scroll.min(place.max_scroll()));
+    let pans: &[f32] = card.map_or(&[], |c| &c.pans);
     // the documentation's scroll bar, on a card, where there is more than
     // is seen
     if note.card
@@ -1336,8 +1337,8 @@ fn draw_note(
         let fill = with_alpha(theme.selection, 0.35);
         let flow = popup::Flow::of(place.heads.iter().chain(&place.lines).cloned().collect());
         for (i, from, to, on) in flow.spans(flow.offset(a), flow.offset(b)) {
-            let x0 = note.x_of(&place, i, from);
-            let mut x1 = note.x_of(&place, i, to);
+            let x0 = note.x_of(&place, pans, i, from);
+            let mut x1 = note.x_of(&place, pans, i, to);
             if on {
                 x1 += font::width(" ", note.text_size);
             }
@@ -1350,40 +1351,25 @@ fn draw_note(
     over.set_clip(Some(rect));
     let line = place.head_line;
     let code_glyph = font::height(note.code_size);
-    // one line: its runs, the marked ones bold and underlined; a card's
-    // wrapped signature: its lines
+    // the head's lines, wrapped to the note: their runs, the marked ones
+    // bold and underlined
     let mut x = place.head.x;
-    if place.heads.len() == 1 {
-        let y = place.head.y + (line - code_glyph) * 0.5;
-        for (run, marked) in &note.head {
-            let family = if *marked {
-                font::Family::MonoBold
-            } else {
-                font::Family::Mono
-            };
-            let w = font::width_in(family, run, note.code_size);
-            font::text_in(over, family, run, x, y, note.code_size, theme.text);
-            if *marked {
+    for (i, l) in place.heads.iter().enumerate() {
+        let (top, _) = place.line_top(i, 0.0);
+        let y = top + (line - code_glyph) * 0.5;
+        for (k, r) in l.runs.iter().enumerate() {
+            let to = l.runs.get(k + 1).map_or(l.text.len(), |n| n.from);
+            let piece = &l.text[r.from..to];
+            let at = place.head.x + r.x;
+            font::text_in(over, r.family, piece, at, y, note.code_size, theme.text);
+            if r.family == font::Family::MonoBold {
+                let w = font::width_in(r.family, piece, note.code_size);
                 let under = y + code_glyph + m.divider_w;
-                over.rect(Rect::new(x, under, w, m.divider_w.max(1.0)), theme.text);
+                over.rect(Rect::new(at, under, w, m.divider_w.max(1.0)), theme.text);
             }
-            x += w;
         }
-    } else {
-        for (i, l) in place.heads.iter().enumerate() {
-            let (top, _) = place.line_top(i, 0.0);
-            font::text_in(
-                over,
-                font::Family::Mono,
-                &l.text,
-                place.head.x,
-                top + (line - code_glyph) * 0.5,
-                note.code_size,
-                theme.text,
-            );
-        }
-        if let Some(last) = place.heads.last() {
-            x += font::width_in(font::Family::Mono, &last.text, note.code_size);
+        if i + 1 == place.heads.len() {
+            x += l.x_of(l.text.len());
         }
     }
     if !note.aside.is_empty() {
@@ -1401,14 +1387,47 @@ fn draw_note(
     over.set_clip(Some(place.doc));
     // a card's documentation: its Markdown, as the documentation panel
     // draws a page
+    // a code block wider than the card scrolls across on its own, as on the
+    // documentation's page
     if let Some(laid) = &place.laid {
-        crate::host::graphics::docs::layout::draw_items(
+        let pan = |i: usize| {
+            card.map_or(0.0, |c| c.pan(i))
+                .clamp(0.0, laid.pans.get(i).map_or(0.0, |b| b.most()))
+        };
+        let (left, top) = (place.doc.x, place.doc.y - scroll);
+        crate::host::graphics::docs::layout::draw_items_with(
             over,
             laid,
-            (place.doc.x, place.doc.y - scroll),
+            (left, top),
             place.doc,
             |ink| crate::host::elements::docs::ink_color(theme, ink),
+            &|_| None,
+            &pan,
         );
+        for (i, block) in laid.pans.iter().enumerate() {
+            let ground = Rect::new(
+                left + block.rect.x,
+                top + block.rect.y,
+                block.rect.w,
+                block.rect.h,
+            );
+            let track = Rect::new(
+                ground.x,
+                ground.y + ground.h - m.scrollbar_w,
+                ground.w,
+                m.scrollbar_w,
+            );
+            if let Some(bar) = controls::ScrollBar::new(
+                false,
+                track,
+                block.rect.w,
+                block.most(),
+                pan(i),
+                m.pad * 2.0,
+            ) {
+                controls::scroll_thumb(over, bar.thumb, m, theme);
+            }
+        }
         return rect;
     }
     let glyph = font::height(note.text_size);

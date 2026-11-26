@@ -724,6 +724,16 @@ fn help_and_what_a_name_is() {
     let note = v.own_popups(RECT, 1.0, &m).unwrap().note.unwrap();
     assert_eq!(note.head[0].0, "sqrt(x, /)");
     assert_eq!(note.aside, "function");
+    // a signature printed over several lines is one flowing line in the card
+    v.set(
+        "inspected",
+        &Value::from(r#"{"name": "engine", "signature": "engine(): Promise<{\n    shm: string;\n    share: [number, number];\n}>"}"#),
+    );
+    let note = v.own_popups(RECT, 1.0, &m).unwrap().note.unwrap();
+    assert_eq!(
+        note.head_text(),
+        "engine(): Promise<{ shm: string; share: [number, number]; }>"
+    );
     v.rest(None, &input(&m, 1));
     assert!(v.own_popups(RECT, 1.0, &m).is_none());
 }
