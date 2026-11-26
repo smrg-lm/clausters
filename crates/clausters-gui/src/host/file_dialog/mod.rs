@@ -319,7 +319,8 @@ const SPARE: i32 = 24;
 const CHOOSER_MIN_H: f64 = 120.0;
 /// Between a caption and its field, the fields, and the footer's buttons:
 /// the specification's gaps.
-const CAPTION_GAP: f64 = 8.0;
+const CAPTION_GAP: f64 = 12.0;
+const FIELD_GAP: f64 = 8.0;
 const BODY_GAP: f64 = 16.0;
 const FOOTER_GAP: f64 = 8.0;
 /// Between the buttons of the row over the chooser.
@@ -704,78 +705,95 @@ impl Drawn {
         answer
     }
 
-    /// **The row over the chooser**: back, forward, up, and where the folder
-    /// is (its bar, or the field its path is typed in).
+    /// **The row over the chooser**: back, forward, up, where the folder is
+    /// (its bar, or the field its path is typed in), and the storage's tools
+    /// as icons, each named by its tip.
     fn nav(&self) -> Value {
-        let way = |id: i32, icon: &str, tip: &str, enabled: bool| {
-            json!({"id": self.at(id), "type": "button", "icon": icon, "tip": tip,
+        let icon = |id: i32, icon: &str, tip: &str, enabled: bool| {
+            json!({"id": id, "type": "button", "icon": icon, "tip": tip,
                 "variant": "ghost", "size": "sm", "enabled": enabled})
         };
         let mut field = json!({"type": "text", "id": self.at(PATH), "value": self.typed_dir});
         if self.editing && self.fresh {
             field["select"] = json!([0, self.typed_dir.chars().count()]);
         }
-        json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
-            "gap": NAV_GAP, "children": [
-            way(BACK, "arrow-left", "Back", !self.back.is_empty()),
-            way(FORWARD, "arrow-right", "Forward", !self.forward.is_empty()),
-            way(UP, "chevron-up", "Up", files::parent(&self.dir).is_some()),
-            {"type": "layout", "id": self.at(PLACE), "flow": "stack", "weight": 1, "margin": 0,
-                "index": i32::from(self.editing), "children": [
+        let mut children = vec![
+            icon(self.at(BACK), "arrow-left", "Back", !self.back.is_empty()),
+            icon(
+                self.at(FORWARD),
+                "arrow-right",
+                "Forward",
+                !self.forward.is_empty(),
+            ),
+            icon(
+                self.at(UP),
+                "chevron-up",
+                "Up",
+                files::parent(&self.dir).is_some(),
+            ),
+            json!({"type": "layout", "id": self.at(PLACE), "flow": "stack", "weight": 1,
+                "margin": 0, "index": i32::from(self.editing), "children": [
                 {"type": "path_bar", "id": self.at(BAR), "path": self.dir, "root": root_name(),
                     "chord": TYPE_PATH_CHORD},
                 field,
-            ]},
+            ]}),
+        ];
+        children.extend(
+            Tool::ALL
+                .into_iter()
+                .filter(|tool| tool.shown())
+                .map(|tool| icon(self.tool_id(tool), tool.icon(), tool.label(), true)),
+        );
+        json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
+            "gap": NAV_GAP, "children": children})
+    }
+
+    /// **The fields under the chooser**, each caption beside its field: the
+    /// captions a column as wide as the widest, the fields the rest.
+    fn fields(&self) -> Value {
+        let mut name = json!({"type": "text", "id": self.at(NAME), "value": self.typed});
+        if self.up && self.fresh && self.request.mode == Mode::Save {
+            name["select"] = self.stem()["select"].clone();
+        }
+        let mut captions = vec![match self.request.mode {
+            Mode::Folder => "Folder",
+            Mode::Open | Mode::Save => "Name",
+        }];
+        let mut fields = vec![name];
+        if self.request.mode != Mode::Folder {
+            let labels: Vec<String> = self.request.offers().into_iter().map(|o| o.label).collect();
+            captions.push("File type");
+            fields.push(
+                json!({"type": "choice", "id": self.at(TYPE), "options": labels,
+                "index": self.kind}),
+            );
+        }
+        let captions: Vec<Value> = captions
+            .into_iter()
+            .map(|c| json!({"type": "label", "text": c, "variant": "caption", "weight": 1}))
+            .collect();
+        json!({"type": "layout", "flow": "row", "hug": 1, "margin": 0, "gap": CAPTION_GAP,
+            "children": [
+            {"type": "layout", "flow": "col", "hug": 1, "margin": 0, "gap": FIELD_GAP,
+                "children": captions},
+            {"type": "layout", "flow": "col", "hug": 1, "margin": 0, "gap": FIELD_GAP,
+                "weight": 1, "children": fields},
         ]})
     }
 
     /// **The dialog's widgets**, as it stands now.
     fn dialog(&self) -> Value {
-        let row = |caption: &str, field: Value| {
-            let mut children = Vec::new();
-            if !caption.is_empty() {
-                children.push(json!({"type": "label", "text": caption, "variant": "caption"}));
-            }
-            children.push(field);
-            json!({"type": "layout", "flow": "col", "hug": true, "margin": 0,
-                "gap": CAPTION_GAP, "children": children})
-        };
         let files = json!({"type": "files", "id": self.at(FILES), "path": self.dir,
             "filter": self.filter(), "multiple": self.request.multiple, "weight": 1,
-            "min_h": CHOOSER_MIN_H, "bind": ["widget", self.at(NAME), "value"]});
-        let tools: Vec<Value> = Tool::ALL
-            .into_iter()
-            .filter(|tool| tool.shown())
-            .map(|tool| {
-                json!({"id": self.tool_id(tool), "type": "button", "label": tool.label(),
-                    "variant": "ghost", "size": "sm"})
-            })
-            .collect();
-        let mut name = json!({"type": "text", "id": self.at(NAME), "value": self.typed});
-        if self.up && self.fresh && self.request.mode == Mode::Save {
-            name["select"] = self.stem()["select"].clone();
-        }
-        let caption = match self.request.mode {
-            Mode::Folder => "Folder",
-            Mode::Open | Mode::Save => "Name",
-        };
-        let mut rows = vec![
+            "parent": false, "min_h": CHOOSER_MIN_H,
+            "bind": ["widget", self.at(NAME), "value"]});
+        let rows = vec![
             self.nav(),
             files,
-            json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
-                "gap": 4, "children": tools}),
-            row(caption, name),
-        ];
-        if self.request.mode != Mode::Folder {
-            let labels: Vec<String> = self.request.offers().into_iter().map(|o| o.label).collect();
-            let kinds = json!({"type": "choice", "id": self.at(TYPE), "options": labels,
-                "index": self.kind});
-            rows.push(row("File type", kinds));
-        }
-        rows.push(
+            self.fields(),
             json!({"type": "label", "id": self.at(SAYS), "text": self.storage.says,
             "wrap": 1, "muted": 1, "shown": !self.storage.says.is_empty()}),
-        );
+        ];
         let accept = if self.replacing.is_some() {
             "Replace"
         } else {

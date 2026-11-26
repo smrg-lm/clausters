@@ -773,6 +773,7 @@ def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
     assert (t["multiple"], t["sort"]) == (1, [1, "down"])
     assert guidef.files("/takes", filter=["wav"]) == {
         "type": "files", "path": "/takes", "filter": ["wav"]}
+    assert guidef.files("/takes", parent=False)["parent"] == 0
     # The file dialog is one element, which the host draws and answers.
     assert guidef.file_dialog("/takes/a.wav", mode="save", kinds=[("WAV", ("wav",))],
                               title="Save as", open=True) == {

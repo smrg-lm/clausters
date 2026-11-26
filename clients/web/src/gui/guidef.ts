@@ -2555,7 +2555,8 @@ export function table(
  * follows the selection, and `"select" ...paths` reports the files selected
  * whether or not the value is bound. A double click or Enter on a file reports
  * `"pick" path`, and on a directory goes into it, reported as
- * `"path" directory`; the `..` row goes up.
+ * `"path" directory`; the `..` row goes up (`parent: false` leaves it out,
+ * for an owner with a control of its own that goes up).
  * With `multiple`, Ctrl adds/removes a file and Shift selects a range, and
  * `"pick" ...paths` accepts the files selected; directories are excluded.
  * The value remains the last path.
@@ -2570,14 +2571,20 @@ export function table(
  */
 export function files(
     path = ".",
-    options: WidgetOptions & { filter?: readonly string[]; textSize?: number; multiple?: boolean } = {},
+    options: WidgetOptions & {
+        filter?: readonly string[];
+        textSize?: number;
+        multiple?: boolean;
+        parent?: boolean;
+    } = {},
 ): View {
-    const { filter, textSize, multiple, ...rest } = options;
+    const { filter, textSize, multiple, parent, ...rest } = options;
     return node("files", {
         ...rest,
         ...drop([
             ["path", path],
             ["multiple", flag(multiple)],
+            ["parent", flag(parent)],
             ["filter", filter === undefined ? undefined : [...filter]],
             ["text_size", textSize],
         ]),

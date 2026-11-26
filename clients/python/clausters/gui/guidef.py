@@ -1900,8 +1900,9 @@ def table(*, rows=None, columns=None, selected=None, multiple: bool | None = Non
     return node("table", id=id, **extra, **props)
 
 
-def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: float | None = None,
-          color: str | None = None, id: int | None = None, **props) -> View:
+def files(path: str = ".", *, filter=None, multiple: bool = False, parent: bool | None = None,
+          text_size: float | None = None, color: str | None = None, id: int | None = None,
+          **props) -> View:
     """A **file chooser**: the entries of directory ``path``, drawn by the host.
 
     The host lists the directory itself -- the disk when it is a window, the
@@ -1913,7 +1914,8 @@ def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: fl
     it follows the selection, and ``("select", *paths)`` reports the files
     selected whether or not the value is bound. A double click or Enter on a
     file reports ``("pick", path)``, and on a directory goes into it, reported
-    as ``("path", directory)``; the ``..`` row goes up.
+    as ``("path", directory)``; the ``..`` row goes up (``parent=False``
+    leaves it out, for an owner with a control of its own that goes up).
 
     With ``multiple=True``, Ctrl adds/removes a file and Shift selects a range,
     and ``("pick", *paths)`` accepts the files selected; directories are
@@ -1928,7 +1930,9 @@ def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: fl
     well, and lists its folder again. In a page it also says how much of the
     page's storage is used."""
     extra = _drop_none(path=path, filter=None if filter is None else list(filter),
-                       multiple=1 if multiple else None, text_size=text_size, color=color)
+                       multiple=1 if multiple else None,
+                       parent=None if parent is None else int(parent),
+                       text_size=text_size, color=color)
     return node("files", id=id, **extra, **props)
 
 

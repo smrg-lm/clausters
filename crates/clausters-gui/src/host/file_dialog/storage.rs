@@ -44,6 +44,18 @@ impl Tool {
         }
     }
 
+    /// The icon its button is drawn with; its label is its tip.
+    #[must_use]
+    pub fn icon(self) -> &'static str {
+        match self {
+            Tool::Upload => "upload",
+            Tool::Download => "download",
+            Tool::NewFolder => "folder-plus",
+            Tool::Rename => "pencil",
+            Tool::Delete => "trash",
+        }
+    }
+
     /// **Whether it is shown**: a copy to or from the disk only where the
     /// storage is not the disk, which is a page's.
     #[must_use]

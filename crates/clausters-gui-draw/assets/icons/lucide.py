@@ -29,17 +29,18 @@ from pathlib import Path
 # edit tools (the roll's, which its pointer is drawn from too:
 # mouse-pointer-2, pencil, eraser, scissors, unfold-horizontal; the snap
 # switch, magnet; the audio editor's clipboard, scissors, copy,
-# clipboard-paste, trash).
+# clipboard-paste, trash; the file dialog's tools, folder-plus, pencil,
+# trash, upload and download).
 SUBSET = [
     "arrow-down-to-line", "arrow-left", "arrow-right", "arrow-right-to-line",
     "audio-waveform",
     "check", "chevron-down", "chevron-left", "chevron-right", "chevron-up",
     "circle", "clipboard-paste", "copy", "download", "ellipsis-vertical",
-    "eraser", "file-text", "folder", "folder-open", "grip-vertical", "house",
+    "eraser", "file-text", "folder", "folder-open", "folder-plus", "grip-vertical", "house",
     "keyboard-music", "layers", "list-video", "magnet", "menu", "minus",
     "mouse-pointer-2", "music", "pause", "pencil", "play", "plus",
     "refresh-cw", "repeat", "rotate-ccw", "scissors", "search", "skip-back",
-    "skip-forward", "square", "trash", "unfold-horizontal", "x",
+    "skip-forward", "square", "trash", "unfold-horizontal", "upload", "x",
 ]
 
 TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?")

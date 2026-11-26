@@ -1390,6 +1390,11 @@ fn draw_line(
     let (from, to) = (line_byte + shown.start, line_byte + shown.end);
     let visible = &value[from..to];
 
+    // The band a selection and the caret cover: the line's whole ink, its
+    // accents above the body box and its descenders below, as an editor's
+    // line is selected -- never the capitals alone.
+    let (top, tall) = ink_band(y, size);
+
     // Selection highlight (drawn under the text): the part of the selection
     // this line shows, painted over every span it covers as drawn -- one, or
     // several where it crosses a change of direction.
@@ -1397,10 +1402,7 @@ fn draw_line(
         let (a, b) = (s.clamp(from, to), e.clamp(from, to));
         if b > a {
             for (x0, x1) in font::spans(visible, a - from, b - from, size) {
-                mesh.rect(
-                    Rect::new(x + x0, y, x1 - x0, font::height(size)),
-                    theme.selection,
-                );
+                mesh.rect(Rect::new(x + x0, top, x1 - x0, tall), theme.selection);
             }
         }
     }
@@ -1417,11 +1419,16 @@ fn draw_line(
             == value[..line_byte].bytes().filter(|&b| b == b'\n').count()
     {
         let cx = x + font::caret_x(visible, caret.pos - from, size);
-        mesh.rect(
-            Rect::new(cx, y, size.max(1.0), font::height(size)),
-            theme.text,
-        );
+        mesh.rect(Rect::new(cx, top, size.max(1.0), tall), theme.text);
     }
+}
+
+/// **The band a line of a field's text covers**, from the top of its body box
+/// at `y`: its ascent above and its descent below, so a selection and the
+/// caret hold the accents and the tails of the letters they cover.
+fn ink_band(y: f32, size: f32) -> (f32, f32) {
+    let up = font::ascent(size);
+    (y - up, up + font::height(size) + font::descent(size))
 }
 
 /// The caret byte offset a click at `(x, y)` lands on in a text `field`,

@@ -4,8 +4,9 @@
 //! rows are a directory listed by the front -- the disk natively, the page's
 //! own storage in a tab ([`crate::host::files`]) -- so neither client lists
 //! anything. It is the [`Rows`] of a `table` over that listing: a `..` row when
-//! there is a directory above, the directories, then the files that pass the
-//! `filter`.
+//! there is a directory above (unless its `parent` prop is false, for an
+//! owner that goes up by a control of its own), the directories, then the
+//! files that pass the `filter`.
 //!
 //! What the chooser is doing -- the directory, the ask it waits on, an error
 //! -- is a [`Chooser`]; this element is that state drawn as rows, with the
@@ -46,6 +47,9 @@ const SIZE_PAD: f32 = 16.0;
 #[derive(Debug, Clone)]
 pub struct Files {
     chooser: Chooser,
+    /// The `parent` prop: whether a `..` row leads up where there is a
+    /// directory above.
+    parent: bool,
     /// Whether the rows start with `..`.
     up: bool,
     rows: Rows,
@@ -77,6 +81,10 @@ fn from_props(props: &Map<String, Value>) -> Files {
             props.get("path").and_then(Value::as_str).unwrap_or("."),
             filter_of(props.get("filter")),
         ),
+        parent: props
+            .get("parent")
+            .and_then(crate::host::widget::parse::truthy)
+            .unwrap_or(true),
         up: false,
         rows,
     };
@@ -149,7 +157,7 @@ impl Files {
 
     /// Rebuilds the rows from what the chooser shows; nothing stays selected.
     fn refill(&mut self) {
-        self.up = self.chooser.up().is_some();
+        self.up = self.parent && self.chooser.up().is_some();
         let mut rows = Vec::new();
         if self.up {
             rows.push(Row {
@@ -270,6 +278,14 @@ impl Element for Files {
                     crate::host::diag::warn!("files: {why}");
                     false
                 }
+            },
+            "parent" => match crate::host::widget::parse::truthy(v) {
+                Some(on) => {
+                    self.parent = on;
+                    self.refill();
+                    true
+                }
+                None => false,
             },
             "text_size" | "multiple" => self.rows.set(key, v),
             _ => false,
@@ -492,6 +508,21 @@ mod tests {
             "filtered, with the way up"
         );
         assert_eq!(f.rows.rows()[2].cells[1], "2.0 kB");
+    }
+
+    /// **With `parent` off there is no `..` row**, for an owner that goes
+    /// up by a control of its own; a double click on the first row opens
+    /// the first entry.
+    #[test]
+    fn parent_off_leaves_the_way_up_out() {
+        let mut f = chooser(r#"{"path":"takes","filter":["wav"],"parent":false}"#);
+        let ask = f.wants_listing().expect("asked");
+        assert!(f.listed(ask.ticket, Ok(listing())));
+        let names: Vec<&str> = f.rows.rows().iter().map(|r| r.cells[0].as_str()).collect();
+        assert_eq!(names, vec!["old/", "kick.wav"]);
+        assert_eq!(f.entry(0).map(|e| e.name), Some("old".to_string()));
+        assert!(f.set("parent", &Value::from(true)));
+        assert_eq!(f.rows.rows()[0].cells[0], "..");
     }
 
     /// **A folder longer than the chooser says so**: a scroll bar down its
