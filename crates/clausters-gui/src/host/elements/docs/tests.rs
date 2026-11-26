@@ -359,6 +359,77 @@ fn a_long_code_line_scrolls_across_its_block() {
     assert!(v.pan_of(0) < wide.most());
 }
 
+/// **A code block is used with the mouse as the page is**: its bar's
+/// thumb dragged moves it across, its copy button is drawn held while the
+/// hand holds it and copies its code, and its text is selected by a drag.
+#[test]
+fn a_code_block_is_dragged_copied_and_selected_by_the_mouse() {
+    use crate::host::graphics::docs::layout::Ink;
+    let long = "x = ".to_string() + &"1 + ".repeat(80) + "1";
+    let mut props = Map::new();
+    props.insert(
+        "documents".into(),
+        serde_json::json!({ "a.md": format!("# A\n\n```python\n{long}\n```\n") }),
+    );
+    let mut v = DocsView::new(&props);
+    v.set("open", &Value::from("a.md"));
+    let m = Metrics::default();
+    let input = input(&m);
+    let g = v.geometry(RECT, 1.0, &m, None);
+    let (scroll, laid) = v.settle(&g);
+    let origin = (g.text.x, g.text.y - scroll);
+    // the bar's thumb, taken and dragged right
+    let bar = laid.pan_bar(0, origin, 0.0, &m).expect("a bar");
+    let on_thumb = (
+        f64::from(bar.thumb.x + 1.0),
+        f64::from(bar.thumb.y + bar.thumb.h * 0.5),
+    );
+    v.press(on_thumb, &input);
+    v.drag((on_thumb.0 + 40.0, on_thumb.1), &input);
+    assert!(v.pan_of(0) > 0.0, "the thumb moved it across");
+    assert!(v.select.get().is_none(), "and selected nothing");
+    v.release(on_thumb, true, &input);
+    // the copy button: held while pressed, its code copied
+    let (button, code) = laid.copies[0].clone();
+    let on_button = (
+        f64::from(origin.0 + button.x + 1.0),
+        f64::from(origin.1 + button.y + 1.0),
+    );
+    v.press(on_button, &input);
+    assert_eq!(v.copy_held, Some(0));
+    assert_ne!(
+        super::ink_held(&Default::default(), Ink::Button(0), v.copy_held)[3],
+        0.0
+    );
+    assert_eq!(v.copy.as_deref(), Some(code.as_str()));
+    v.release(on_button, true, &input);
+    assert_eq!(v.copy_held, None, "at rest again");
+    // its text, selected by a drag along its line
+    let block = laid.pans[0];
+    let line_y = laid
+        .items
+        .iter()
+        .find_map(|i| match i {
+            crate::host::graphics::docs::layout::Item::Text { y, text, .. }
+                if text.starts_with("x") =>
+            {
+                Some(*y)
+            }
+            _ => None,
+        })
+        .expect("the code's first line");
+    let row_y = f64::from(origin.1 + line_y + 2.0);
+    let from = (f64::from(origin.0 + block.rect.x + 20.0), row_y);
+    v.press(from, &input);
+    v.drag((from.0 + 60.0, row_y), &input);
+    v.release((from.0 + 60.0, row_y), true, &input);
+    let picked = v.selected().expect("a selection");
+    assert!(
+        !picked.is_empty() && long.contains(picked.trim()),
+        "{picked:?}"
+    );
+}
+
 /// **The header ends in find and the folder**, as the reference's, when
 /// its owner names the verb that chooses the folder; a press on it asks
 /// for that verb, and with none named there is no button.

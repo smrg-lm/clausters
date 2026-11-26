@@ -724,6 +724,9 @@ pub struct Card {
     /// is scrolled across**, by the block's index in the layout's `pans`, as
     /// the documentation panel scrolls one.
     pub pans: Vec<f32>,
+    /// The copy button of its documentation a press holds, drawn held
+    /// down until the release.
+    pub copy_held: Option<usize>,
 }
 
 impl Card {

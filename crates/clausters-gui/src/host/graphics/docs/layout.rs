@@ -32,6 +32,10 @@ pub enum Ink {
     CodeGround,
     /// A rule, a quote's bar, a table's lines.
     Line,
+    /// **A code block's copy button's ground**, by the button's index in
+    /// [`Laid::copies`]: none at rest, the look of a button held down while
+    /// the hand holds it, which the caller's ink says.
+    Button(usize),
 }
 
 /// One thing drawn.
@@ -151,10 +155,76 @@ impl Laid {
 
     /// The copy button under `(x, y)`, and its code.
     pub fn copy_at(&self, x: f32, y: f32) -> Option<&str> {
+        self.copy_index_at(x, y).map(|i| self.copies[i].1.as_str())
+    }
+
+    /// The copy button under `(x, y)`, by its index in [`Self::copies`].
+    pub fn copy_index_at(&self, x: f32, y: f32) -> Option<usize> {
         self.copies
             .iter()
-            .find(|(r, _)| r.contains(f64::from(x), f64::from(y)))
-            .map(|(_, code)| code.as_str())
+            .position(|(r, _)| r.contains(f64::from(x), f64::from(y)))
+    }
+
+    /// **The scroll bar of code block `i` wider than the page**, the page's
+    /// top left at `(left, top)` and the block scrolled across by `pan`: a
+    /// bar along its foot, which says how far and which a hand drags.
+    /// `None` for a block that fits.
+    pub fn pan_bar(
+        &self,
+        i: usize,
+        (left, top): (f32, f32),
+        pan: f32,
+        m: &clausters_gui_draw::metrics::Metrics,
+    ) -> Option<crate::host::graphics::controls::ScrollBar> {
+        let block = self.pans.get(i)?;
+        let track = Rect::new(
+            left + block.rect.x,
+            top + block.rect.y + block.rect.h - m.scrollbar_w,
+            block.rect.w,
+            m.scrollbar_w,
+        );
+        crate::host::graphics::controls::ScrollBar::new(
+            false,
+            track,
+            block.rect.w,
+            block.most(),
+            pan.clamp(0.0, block.most()),
+            m.pad * 2.0,
+        )
+    }
+
+    /// **The code block whose bar is under `at`**, as a press takes it: its
+    /// index, the thumb in hand and where the block is scrolled to.
+    pub fn pan_press(
+        &self,
+        origin: (f32, f32),
+        at: (f64, f64),
+        pan: &dyn Fn(usize) -> f32,
+        m: &clausters_gui_draw::metrics::Metrics,
+    ) -> Option<(usize, crate::host::graphics::controls::ThumbGrip, f32)> {
+        (0..self.pans.len()).find_map(|i| {
+            let bar = self.pan_bar(i, origin, pan(i), m)?;
+            let (grip, to) = bar.press(at, pan(i).clamp(0.0, self.pans[i].most()))?;
+            Some((i, grip, to))
+        })
+    }
+
+    /// The thumbs of the code blocks wider than the page, where each is
+    /// scrolled across: the documentation panel's page and a hover card's
+    /// documentation alike.
+    pub fn draw_pan_bars(
+        &self,
+        mesh: &mut Mesh,
+        origin: (f32, f32),
+        pan: &dyn Fn(usize) -> f32,
+        m: &clausters_gui_draw::metrics::Metrics,
+        theme: &clausters_gui_draw::theme::Theme,
+    ) {
+        for i in 0..self.pans.len() {
+            if let Some(bar) = self.pan_bar(i, origin, pan(i), m) {
+                crate::host::graphics::controls::scroll_thumb(mesh, bar.thumb, m, theme);
+            }
+        }
     }
 }
 
@@ -168,13 +238,25 @@ pub fn draw_items(
     view: Rect,
     ink: impl Fn(Ink) -> Color,
 ) {
-    draw_items_with(mesh, laid, (left, top), view, ink, &|_| None, &|_| 0.0);
+    draw_items_with(
+        mesh,
+        laid,
+        (left, top),
+        view,
+        ink,
+        &|_| None,
+        &|_| 0.0,
+        &mut |_| {},
+    );
 }
 
 /// [`draw_items`], each picture drawn from the texels of the sheet of
 /// pictures `uv` names it by (`clausters_gui_draw::image`) -- one it names
 /// none for is not drawn -- and each code block's lines moved across by how
-/// far `pan` says it is scrolled, cut to its ground.
+/// far `pan` says it is scrolled, cut to its ground. `under` draws between
+/// the grounds and the text: **a selection shows over a code block's ground**
+/// and under its letters.
+#[allow(clippy::too_many_arguments)] // the page's one drawing door, its hooks named
 pub fn draw_items_with(
     mesh: &mut Mesh,
     laid: &Laid,
@@ -183,67 +265,87 @@ pub fn draw_items_with(
     ink: impl Fn(Ink) -> Color,
     uv: &dyn Fn(&str) -> Option<[f32; 4]>,
     pan: &dyn Fn(usize) -> f32,
+    under: &mut dyn FnMut(&mut Mesh),
 ) {
     let kept = mesh.clip();
-    for item in &laid.items {
-        if item.bottom() + top < view.y || item.top() + top > view.y + view.h {
-            continue;
+    let seen = |item: &Item| !(item.bottom() + top < view.y || item.top() + top > view.y + view.h);
+    // the grounds first, then what goes under the text, then the rest
+    for grounds in [true, false] {
+        if !grounds {
+            under(mesh);
+            mesh.set_clip(kept);
         }
-        match item {
-            Item::Fill { rect, ink: role } => mesh.rect(
-                Rect::new(left + rect.x, top + rect.y, rect.w, rect.h),
-                ink(*role),
-            ),
-            Item::Picture { rect, url } => {
-                if let Some(uv) = uv(url) {
-                    let r = Rect::new(left + rect.x, top + rect.y, rect.w, rect.h);
-                    let r = Rect::new(r.x.round(), r.y.round(), r.w.round(), r.h.round());
-                    mesh.image(r, uv);
-                }
-            }
-            Item::Text {
-                x,
-                y,
-                text,
-                family,
-                size,
-                ink: role,
-                underline,
-                strike,
-                pan: across,
-                ..
-            } => {
-                let color = ink(*role);
-                let mut left = left;
-                if let Some(p) = across.and_then(|i| laid.pans.get(i).map(|b| (i, b))) {
-                    let (i, block) = p;
-                    left -= pan(i).clamp(0.0, block.most());
-                    let mut ground = Rect::new(
-                        left + pan(i).clamp(0.0, block.most()) + block.rect.x,
-                        top + block.rect.y,
-                        block.rect.w,
-                        block.rect.h,
-                    );
-                    // a line beside the copy button stops short of it
-                    let b = block.button;
-                    let row = font::line_advance(*size);
-                    if *y < b.y + b.h && y + row > b.y {
-                        ground.w = (b.x - block.rect.x - font::height(*size) * 0.5).max(0.0);
+        for item in laid
+            .items
+            .iter()
+            .filter(|i| seen(i) && matches!(i, Item::Fill { .. }) == grounds)
+        {
+            match item {
+                Item::Fill {
+                    rect,
+                    ink: role @ Ink::Button(_),
+                } => {
+                    let color = ink(*role);
+                    if color[3] > 0.0 {
+                        let r = Rect::new(left + rect.x, top + rect.y, rect.w, rect.h);
+                        mesh.round_rect(r, r.h * 0.2, color);
                     }
-                    mesh.set_clip(Some(kept.map_or(ground, |k| k.intersect(ground))));
-                } else {
-                    mesh.set_clip(kept);
                 }
-                font::text_in(mesh, *family, text, left + x, top + y, *size, color);
-                let w = font::width_in(*family, text, *size);
-                let thick = (size * 0.5).max(1.0).round();
-                if *underline {
-                    let uy = top + y + font::height(*size) + thick;
-                    mesh.rect(Rect::new(left + x, uy, w, thick), color);
+                Item::Fill { rect, ink: role } => mesh.rect(
+                    Rect::new(left + rect.x, top + rect.y, rect.w, rect.h),
+                    ink(*role),
+                ),
+                Item::Picture { rect, url } => {
+                    if let Some(uv) = uv(url) {
+                        let r = Rect::new(left + rect.x, top + rect.y, rect.w, rect.h);
+                        let r = Rect::new(r.x.round(), r.y.round(), r.w.round(), r.h.round());
+                        mesh.image(r, uv);
+                    }
                 }
-                if *strike {
-                    let sy = top + y + font::height(*size) * 0.5;
-                    mesh.rect(Rect::new(left + x, sy, w, thick), color);
+                Item::Text {
+                    x,
+                    y,
+                    text,
+                    family,
+                    size,
+                    ink: role,
+                    underline,
+                    strike,
+                    pan: across,
+                    ..
+                } => {
+                    let color = ink(*role);
+                    let mut left = left;
+                    if let Some(p) = across.and_then(|i| laid.pans.get(i).map(|b| (i, b))) {
+                        let (i, block) = p;
+                        left -= pan(i).clamp(0.0, block.most());
+                        let mut ground = Rect::new(
+                            left + pan(i).clamp(0.0, block.most()) + block.rect.x,
+                            top + block.rect.y,
+                            block.rect.w,
+                            block.rect.h,
+                        );
+                        // a line beside the copy button stops short of it
+                        let b = block.button;
+                        let row = font::line_advance(*size);
+                        if *y < b.y + b.h && y + row > b.y {
+                            ground.w = (b.x - block.rect.x - font::height(*size) * 0.5).max(0.0);
+                        }
+                        mesh.set_clip(Some(kept.map_or(ground, |k| k.intersect(ground))));
+                    } else {
+                        mesh.set_clip(kept);
+                    }
+                    font::text_in(mesh, *family, text, left + x, top + y, *size, color);
+                    let w = font::width_in(*family, text, *size);
+                    let thick = (size * 0.5).max(1.0).round();
+                    if *underline {
+                        let uy = top + y + font::height(*size) + thick;
+                        mesh.rect(Rect::new(left + x, uy, w, thick), color);
+                    }
+                    if *strike {
+                        let sy = top + y + font::height(*size) * 0.5;
+                        mesh.rect(Rect::new(left + x, sy, w, thick), color);
+                    }
                 }
             }
         }
@@ -671,6 +773,17 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
     let mut next = 0;
     let mut start = 0;
     let pan = out.pans.len();
+    // the copy button at its top right, which a line beside it stops short
+    // of (`draw_items_with`)
+    let label_size = m.size * 0.75;
+    let face = copy_face();
+    let bh = font::line_advance(label_size) + m.em * 0.3;
+    let fw = font::width_in(Family::Prose, &face, label_size);
+    // an icon alone stands in a square, a word inset on both sides
+    let bw = if face == COPY { fw + m.em * 0.8 } else { bh };
+    let button = Rect::new(x + w - bw - m.em * 0.3, *y + m.em * 0.3, bw, bh);
+    let beside = |ty: f32| ty < button.y + button.h && ty + font::line_advance(size) > button.y;
+    let short = (button.x - x - font::height(size) * 0.5).max(0.0);
     let mut content = w;
     for (n, line) in lines.iter().enumerate() {
         let para = out.next_para();
@@ -709,6 +822,12 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
             at = edge;
         }
         content = content.max(pen - x + pad_x);
+        // **a line beside the button is seen to its end too**: it is cut
+        // short of the button, so the block scrolls far enough to bring its
+        // end out from under it
+        if beside(ty) {
+            content = content.max(pen - x - short + w);
+        }
         start += line.len() + 1;
     }
     // a block wider than the page scrolls across, with room under its last
@@ -723,18 +842,13 @@ fn lay_code(out: &mut Laid, lang: &str, text: &str, x: f32, w: f32, y: &mut f32,
     out.pans.push(Pan {
         rect: Rect::new(x, *y, w, h),
         content,
-        button: Rect::new(x + w, *y, 0.0, 0.0),
+        button,
     });
-    let label_size = m.size * 0.75;
-    let face = copy_face();
-    let bh = font::line_advance(label_size) + m.em * 0.3;
-    let fw = font::width_in(Family::Prose, &face, label_size);
-    // an icon alone stands in a square, a word inset on both sides
-    let bw = if face == COPY { fw + m.em * 0.8 } else { bh };
-    let button = Rect::new(x + w - bw - m.em * 0.3, *y + m.em * 0.3, bw, bh);
-    if let Some(last) = out.pans.last_mut() {
-        last.button = button;
-    }
+    // its ground, which shows it held down
+    out.items.push(Item::Fill {
+        rect: button,
+        ink: Ink::Button(out.copies.len()),
+    });
     out.items.push(Item::Text {
         x: button.x + (bw - fw) * 0.5,
         y: button.y + (bh - font::height(label_size)) * 0.5,

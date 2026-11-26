@@ -196,3 +196,56 @@ fn help_finds_the_entry_named() {
     assert_eq!(hits[1].path, "guide.md");
     assert!(!hits[1].named);
 }
+
+/// **A code line that ends under the copy button can still be read to its
+/// end**: it is cut short of the button, so the block scrolls across far
+/// enough to bring its end out from under it, even when the line itself
+/// fits the block.
+#[test]
+fn a_code_line_under_the_copy_button_scrolls_out_from_under_it() {
+    use clausters_gui_draw::font::{self, Family};
+    let first_line_end = |laid: &super::layout::Laid| {
+        laid.items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Text {
+                    x,
+                    y,
+                    text,
+                    family: Family::Mono,
+                    size,
+                    pan: Some(0),
+                    ..
+                } => Some((*y, x + font::width_in(Family::Mono, text, *size))),
+                _ => None,
+            })
+            .fold(None, |top: Option<(f32, f32)>, (y, end)| match top {
+                Some((ty, te)) if ty < y => Some((ty, te)),
+                Some((ty, te)) if ty == y => Some((ty, te.max(end))),
+                _ => Some((y, end)),
+            })
+            .map(|(_, end)| end)
+            .unwrap()
+    };
+    // the shortest line that reaches under the button, and fits the block
+    let laid = (1..400)
+        .map(|n| {
+            lay(
+                &parse(&format!("```\n{}\n```\n", "x".repeat(n))),
+                300.0,
+                2.0,
+            )
+        })
+        .find(|laid| {
+            let block = laid.pans[0];
+            let end = first_line_end(laid);
+            end > block.button.x && end < block.rect.x + block.rect.w
+        })
+        .expect("a line ending under the button");
+    let block = laid.pans[0];
+    assert!(block.most() > 0.0, "it scrolls across");
+    assert!(
+        first_line_end(&laid) - block.most() <= block.button.x,
+        "its end comes out from under the button"
+    );
+}

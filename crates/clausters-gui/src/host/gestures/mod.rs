@@ -175,6 +175,9 @@ enum Drag {
         owner: i32,
         /// Its scroll bar's thumb, when the press took that.
         thumb: Option<crate::host::graphics::controls::ThumbGrip>,
+        /// The code block of its documentation whose bar the press took,
+        /// with `thumb` that bar's.
+        pan: Option<usize>,
     },
     /// **The marquee**: the objects a rectangle covers -- a patcher's boxes, a
     /// multitrack's clips -- and nothing else.

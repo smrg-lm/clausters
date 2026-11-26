@@ -220,6 +220,10 @@ pub struct DocsView {
     thumb: Option<controls::ThumbGrip>,
     /// The part of the strips a press holds, drawn held until the release.
     pressed: Option<Part>,
+    /// **A code block's bar a press holds**: the block, and its thumb.
+    pan_thumb: Option<(usize, controls::ThumbGrip)>,
+    /// The copy button a press holds, drawn held until the release.
+    copy_held: Option<usize>,
     /// A place to be brought to the top once the page is laid out.
     reveal: RefCell<Option<String>>,
     /// The page laid out: for which page, at which width and size.
@@ -307,6 +311,8 @@ impl DocsView {
             scroll: Cell::new(0.0),
             thumb: None,
             pressed: None,
+            pan_thumb: None,
+            copy_held: None,
             reveal: RefCell::new(None),
             laid: RefCell::new(None),
             index: RefCell::new(None),
@@ -1072,57 +1078,38 @@ impl DocsView {
             mesh.set_clip(Some(clip(g.page)));
             let (left, top) = (g.text.x, g.text.y - scroll);
             let marks = self.matches(&laid);
-            if let Some((a, b)) = self.select.get().filter(|(a, b)| a != b) {
-                let flow = self.flow(&laid);
-                let fill = clausters_gui_draw::theme::with_alpha(theme.selection, 0.35);
-                for (i, from, to, on) in flow.spans(a, b) {
-                    let row = &flow.rows[i];
-                    let pan = self.row_pan(&laid, row);
-                    let x0 = row.x_of(from);
-                    let mut x1 = row.x_of(to);
-                    if on && let Some(r) = row.runs.last() {
-                        x1 += font::width_in(r.family, " ", r.size);
+            // the selection over the code blocks' grounds, under the letters
+            let mut selection = |mesh: &mut clausters_gui_draw::paint::Mesh| {
+                if let Some((a, b)) = self.select.get().filter(|(a, b)| a != b) {
+                    let flow = self.flow(&laid);
+                    let fill = clausters_gui_draw::theme::with_alpha(theme.selection, 0.35);
+                    for (i, from, to, on) in flow.spans(a, b) {
+                        let row = &flow.rows[i];
+                        let pan = self.row_pan(&laid, row);
+                        let x0 = row.x_of(from);
+                        let mut x1 = row.x_of(to);
+                        if on && let Some(r) = row.runs.last() {
+                            x1 += font::width_in(r.family, " ", r.size);
+                        }
+                        mesh.rect(
+                            Rect::new(left + x0 - pan, top + row.y, (x1 - x0).max(0.0), row.h),
+                            fill,
+                        );
                     }
-                    mesh.rect(
-                        Rect::new(left + x0 - pan, top + row.y, (x1 - x0).max(0.0), row.h),
-                        fill,
-                    );
                 }
-            }
+            };
             draw_items_with(
                 mesh,
                 &laid,
                 (left, top),
                 g.page,
-                |ink| ink_color(theme, ink),
+                |ink| ink_held(theme, ink, self.copy_held),
                 &|url| self.picture_uv(url),
                 &|i| self.pan_of(i),
+                &mut selection,
             );
             // a code block wider than the page says how far across it is
-            for (i, block) in laid.pans.iter().enumerate() {
-                let ground = Rect::new(
-                    left + block.rect.x,
-                    top + block.rect.y,
-                    block.rect.w,
-                    block.rect.h,
-                );
-                let track = Rect::new(
-                    ground.x,
-                    ground.y + ground.h - m.scrollbar_w,
-                    ground.w,
-                    m.scrollbar_w,
-                );
-                if let Some(bar) = controls::ScrollBar::new(
-                    false,
-                    track,
-                    block.rect.w,
-                    block.most(),
-                    self.pan_of(i),
-                    m.pad * 2.0,
-                ) {
-                    controls::scroll_thumb(mesh, bar.thumb, m, theme);
-                }
-            }
+            laid.draw_pan_bars(mesh, (left, top), &|i| self.pan_of(i), m, theme);
             for (i, (x, y, w, h)) in marks.iter().enumerate() {
                 let color = if i == self.current {
                     theme.find_current
@@ -1324,6 +1311,17 @@ pub(crate) fn ink_color(theme: &Theme, ink: Ink) -> Color {
         Ink::Code(Some(kind)) => crate::host::elements::code::role(theme, kind),
         Ink::CodeGround => theme.field,
         Ink::Line => theme.separator,
+        // at rest a copy button has no ground of its own
+        Ink::Button(_) => [0.0; 4],
+    }
+}
+
+/// [`ink_color`], with copy button `held` drawn held down, as a button the
+/// hand holds is ([`controls::ButtonLook::held`]).
+pub(crate) fn ink_held(theme: &Theme, ink: Ink, held: Option<usize>) -> Color {
+    match ink {
+        Ink::Button(i) if held == Some(i) => theme.toggled,
+        ink => ink_color(theme, ink),
     }
 }
 
@@ -1623,9 +1621,18 @@ impl Element for DocsView {
             return Claim::take();
         }
         let (scroll, laid) = self.settle(&g);
+        // a code block's bar: its thumb in hand, or a page of it across
+        let origin = (g.text.x, g.text.y - scroll);
+        if let Some((i, grip, to)) = laid.pan_press(origin, at, &|i| self.pan_of(i), input.metrics)
+        {
+            self.pans.borrow_mut().insert(i, to);
+            self.pan_thumb = Some((i, grip));
+            return Claim::take();
+        }
         let (px, py) = (at.0 as f32 - g.text.x, at.1 as f32 - g.text.y + scroll);
-        if let Some(code) = laid.copy_at(px, py) {
-            self.copy = Some(code.to_string());
+        if let Some(i) = laid.copy_index_at(px, py) {
+            self.copy = Some(laid.copies[i].1.clone());
+            self.copy_held = Some(i);
             return Claim::events(Events::none().and_command("copy"));
         }
         if let Some(href) = laid.link_at(px, py).map(str::to_string) {
@@ -1658,6 +1665,14 @@ impl Element for DocsView {
             }
             return Events::none();
         }
+        if let Some((i, grip)) = self.pan_thumb {
+            let (scroll, laid) = self.settle(&g);
+            let origin = (g.text.x, g.text.y - scroll);
+            if let Some(bar) = laid.pan_bar(i, origin, self.pan_of(i), input.metrics) {
+                self.pans.borrow_mut().insert(i, bar.drag(grip, at));
+            }
+            return Events::none();
+        }
         let Some((held, unit)) = self.held else {
             return Events::none();
         };
@@ -1680,6 +1695,8 @@ impl Element for DocsView {
         self.thumb = None;
         self.held = None;
         self.pressed = None;
+        self.pan_thumb = None;
+        self.copy_held = None;
         Events::none()
     }
 

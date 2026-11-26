@@ -1332,8 +1332,12 @@ fn draw_note(
     {
         controls::scroll_thumb(over, bar.thumb, m, theme);
     }
-    // the selection, under the text it selects
-    if let Some((a, b)) = card.and_then(|c| c.select).filter(|(a, b)| a != b) {
+    // the selection, under the text it selects: drawn by the documentation
+    // between its grounds and its letters, so it shows on a code block
+    let selection = |over: &mut Mesh| {
+        let Some((a, b)) = card.and_then(|c| c.select).filter(|(a, b)| a != b) else {
+            return;
+        };
         let fill = with_alpha(theme.selection, 0.35);
         let flow = popup::Flow::of(place.heads.iter().chain(&place.lines).cloned().collect());
         for (i, from, to, on) in flow.spans(flow.offset(a), flow.offset(b)) {
@@ -1347,6 +1351,9 @@ fn draw_note(
             over.set_clip(Some(if in_head { place.head } else { place.doc }));
             over.rect(Rect::new(place.head.x + x0, y, (x1 - x0).max(0.0), h), fill);
         }
+    };
+    if place.laid.is_none() {
+        selection(over);
     }
     over.set_clip(Some(rect));
     let line = place.head_line;
@@ -1395,39 +1402,21 @@ fn draw_note(
                 .clamp(0.0, laid.pans.get(i).map_or(0.0, |b| b.most()))
         };
         let (left, top) = (place.doc.x, place.doc.y - scroll);
+        let held = card.and_then(|c| c.copy_held);
         crate::host::graphics::docs::layout::draw_items_with(
             over,
             laid,
             (left, top),
             place.doc,
-            |ink| crate::host::elements::docs::ink_color(theme, ink),
+            |ink| crate::host::elements::docs::ink_held(theme, ink, held),
             &|_| None,
             &pan,
+            &mut |over| {
+                selection(over);
+                over.set_clip(Some(place.doc));
+            },
         );
-        for (i, block) in laid.pans.iter().enumerate() {
-            let ground = Rect::new(
-                left + block.rect.x,
-                top + block.rect.y,
-                block.rect.w,
-                block.rect.h,
-            );
-            let track = Rect::new(
-                ground.x,
-                ground.y + ground.h - m.scrollbar_w,
-                ground.w,
-                m.scrollbar_w,
-            );
-            if let Some(bar) = controls::ScrollBar::new(
-                false,
-                track,
-                block.rect.w,
-                block.most(),
-                pan(i),
-                m.pad * 2.0,
-            ) {
-                controls::scroll_thumb(over, bar.thumb, m, theme);
-            }
-        }
+        laid.draw_pan_bars(over, (left, top), &pan, m, theme);
         return rect;
     }
     let glyph = font::height(note.text_size);

@@ -1721,6 +1721,74 @@ fn a_hover_card_s_scroll_bar_is_dragged() {
     assert!(card.select.is_none(), "and nothing selected");
 }
 
+/// **A hover card's code block is used with the mouse as the page's is**:
+/// its bar's thumb dragged moves it across and selects nothing, its copy
+/// button pressed copies its code and is drawn held until the release, and
+/// a drag along its line selects its text.
+#[test]
+fn a_hover_card_s_code_block_is_dragged_copied_and_selected() {
+    let mut host = host_from(CODE);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let line = "x = ".to_string() + &"1 + ".repeat(80) + "1";
+    rest_on_a_name(
+        &mut g,
+        &mut host,
+        &mut ctx,
+        &format!("Wide.\n\n```\n{line}\n```\n"),
+    );
+    let (_, note, place) = host.card_place(1, ctx.fb_w, ctx.fb_h).expect("a card");
+    let m = *host.metrics_for(1);
+    let laid = place.laid.clone().expect("Markdown");
+    let origin = (place.doc.x, place.doc.y);
+    let card = |host: &Host| host.popups(1).and_then(|p| p.card.clone()).expect("up");
+    // the bar's thumb, dragged right
+    let bar = laid
+        .pan_bar(0, origin, 0.0, &m)
+        .expect("a wide block has a bar");
+    let thumb = (
+        f64::from(bar.thumb.x + 1.0),
+        f64::from(bar.thumb.y + bar.thumb.h * 0.5),
+    );
+    g.motion(&mut host, &ctx, thumb.0, thumb.1);
+    g.press(&mut host, &ctx, thumb.0, thumb.1);
+    g.drag_to(&mut host, &ctx, thumb.0 + 30.0, thumb.1);
+    g.release(&mut host, &ctx, thumb.0 + 30.0, thumb.1);
+    assert!(card(&host).pan(0) > 0.0, "moved across");
+    assert!(card(&host).select.is_none(), "and nothing selected");
+    // the copy button: held while pressed, its code copied
+    let (button, code) = laid.copies[0].clone();
+    let on = (
+        f64::from(origin.0 + button.x + 1.0),
+        f64::from(origin.1 + button.y + 1.0),
+    );
+    g.press(&mut host, &ctx, on.0, on.1);
+    assert_eq!(card(&host).copy_held, Some(0), "drawn held");
+    assert_eq!(host.clipboard.text(), code);
+    assert!(redraws(&g.release(&mut host, &ctx, on.0, on.1)));
+    assert_eq!(card(&host).copy_held, None, "at rest again");
+    // its line, selected by a drag
+    let row = (0..place.count())
+        .find(|&r| {
+            place
+                .line(r)
+                .is_some_and(|(l, head)| !head && l.text.starts_with("x ="))
+        })
+        .expect("the code's line");
+    let (top, h) = place.line_top(row, 0.0);
+    let y = f64::from(top + h * 0.5);
+    let x0 = f64::from(place.doc.x + 20.0);
+    g.press(&mut host, &ctx, x0, y);
+    g.drag_to(&mut host, &ctx, x0 + 60.0, y);
+    g.release(&mut host, &ctx, x0 + 60.0, y);
+    let (a, b) = card(&host).select.expect("a selection");
+    let picked = note.text_between(&place, a, b);
+    assert!(
+        !picked.is_empty() && line.contains(picked.trim()),
+        "{picked:?}"
+    );
+}
+
 /// The placement of dialog `id` in window 1.
 fn dialog_place(
     host: &Host,

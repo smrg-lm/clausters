@@ -77,13 +77,51 @@ impl Gestures {
             self.drag = Some(Drag::Card {
                 owner,
                 thumb: Some(grip),
+                pan: None,
             });
             out.push(GestureEffect::Redraw(ctx.def_id));
             return true;
         }
+        // **the documentation's code blocks, as on its page**: a block's bar
+        // in hand, or its copy button held and its code copied
+        if let Some(laid) = &place.laid {
+            let origin = (place.doc.x, place.doc.y - scroll);
+            if let Some((i, grip, to)) = laid.pan_press(origin, (x, y), &|i| card.pan(i), &m) {
+                if card.pans.len() <= i {
+                    card.pans.resize(i + 1, 0.0);
+                }
+                card.pans[i] = to;
+                self.drag = Some(Drag::Card {
+                    owner,
+                    thumb: Some(grip),
+                    pan: Some(i),
+                });
+                out.push(GestureEffect::Redraw(ctx.def_id));
+                return true;
+            }
+            let (px, py) = (x as f32 - origin.0, y as f32 - origin.1);
+            if place.doc.contains(x, y)
+                && let Some(i) = laid.copy_index_at(px, py)
+            {
+                card.copy_held = Some(i);
+                let code = laid.copies[i].1.clone();
+                host.clipboard.set_text(&code);
+                self.drag = Some(Drag::Card {
+                    owner,
+                    thumb: None,
+                    pan: None,
+                });
+                out.push(GestureEffect::Redraw(ctx.def_id));
+                return true;
+            }
+        }
         let at = note.pos_at(&place, scroll, &card.pans, x as f32, y as f32);
         card.select = Some((at, at));
-        self.drag = Some(Drag::Card { owner, thumb: None });
+        self.drag = Some(Drag::Card {
+            owner,
+            thumb: None,
+            pan: None,
+        });
         out.push(GestureEffect::Redraw(ctx.def_id));
         true
     }
@@ -94,7 +132,12 @@ impl Gestures {
         host: &mut Host,
         ctx: &GestureCtx,
         owner: i32,
-        thumb: Option<crate::host::graphics::controls::ThumbGrip>,
+        // what the press holds: a scroll bar's thumb, and the code block
+        // whose bar it is
+        (thumb, pan): (
+            Option<crate::host::graphics::controls::ThumbGrip>,
+            Option<usize>,
+        ),
         x: f64,
         y: f64,
     ) -> Vec<GestureEffect> {
@@ -104,6 +147,20 @@ impl Gestures {
         let m = *host.metrics_for(ctx.def_id);
         let card = host.card_mut(ctx.def_id, owner);
         let scroll = card.scroll.min(place.max_scroll());
+        if let (Some(grip), Some(i), Some(laid)) = (thumb, pan, place.laid.as_ref()) {
+            let origin = (place.doc.x, place.doc.y - scroll);
+            let Some(bar) = laid.pan_bar(i, origin, card.pan(i), &m) else {
+                return Vec::new();
+            };
+            if card.pans.len() <= i {
+                card.pans.resize(i + 1, 0.0);
+            }
+            card.pans[i] = bar.drag(grip, (x, y));
+            return vec![GestureEffect::Redraw(ctx.def_id)];
+        }
+        if card.copy_held.is_some() {
+            return Vec::new();
+        }
         if let Some(grip) = thumb {
             let Some(bar) = place.bar(scroll, &m) else {
                 return Vec::new();
@@ -124,6 +181,9 @@ impl Gestures {
         let Some((note, place)) = shown(host, ctx, owner) else {
             return;
         };
+        if host.card_mut(ctx.def_id, owner).copy_held.take().is_some() {
+            return;
+        }
         let Some((a, b)) = host
             .card_mut(ctx.def_id, owner)
             .select
