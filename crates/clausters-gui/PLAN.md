@@ -1519,6 +1519,96 @@ engraving-refinements milestone"), the notation pages of the client's book, and
 the score examples in their `notation/` family — this feature's manual test
 surface — which grow the case the milestone adds, in both packages.
 
+## G47–G50 — The file dialog: one element, its presentation behind a seam
+
+*(Opened 2026-11-26 with the user. It continues `G41` — "An option: rows of
+data, and choosing a file", archived in
+[`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) — whose `files`
+chooser it builds on.)*
+
+**Why.** Choosing a file has three implementations: the applications' file
+forms (`clausters_apps::forms::Chooser` and `forms::Dialogs`, which keep the
+folder, the selection, the typed name, the kind and the storage's tools in
+each application), the code editor's desktop dialog for its documentation
+folder (`rfd`, `Platform::choose`), and the clients' `file_dialog()` /
+`fileDialog()`, which compose a chooser of their own. And the dialog the host
+draws lacks what a window manager's dialog has, first of all **where you
+are**: nothing shows the path, so the hand loses its place in the storage.
+
+**What stays decided.** The dialog is the host's, in a window and in a page
+alike (`docs/decisions/gui.md`, "A file chooser is the host's, and the host
+lists the directory"): the platforms' own dialogs would be three
+implementations to write and keep (a portal, Win32, AppKit) for what one
+drawn dialog does everywhere, and a page needs the drawn one anyway, for its
+uploads and downloads. What changes is that **the request is separated from
+its presentation**, so a system dialog can be added later, per platform,
+without any application, client or wire changing.
+
+**The design.**
+
+- **The request is an element, `file_dialog`**, declared in a tree like any
+  dialog and opened by a prop: `mode` (`open`, `save`, `folder`), `kinds`
+  (each a name and its extensions), `all_files`, `multiple`, `path` (where it
+  opens; for a save, the file it writes), `title`, `accept`, `open`. It
+  reports `"chosen" kind path...` and `"cancel"`, and nothing else reaches the
+  owner. **A request says only what a system dialog can say** -- the kinds,
+  one file or several, a folder, where to start, a name -- which is what
+  keeps the door open: anything more is not the dialog's.
+- **Its presentation is behind a seam in the host** (a presenter): the one
+  there is draws it, in both fronts, as a modal of the widgets the host
+  already has (the chooser, a field, a choice, the buttons), its ids the
+  host's own and its events answered by the host. A system presenter is a
+  second one a native front may pick (a "Future directions" entry), answering
+  the same `"chosen"`.
+- **The dialog chooses where and which kind; a kind's parameters are asked
+  after**, in the application's own form, as many applications do: a text, a
+  session, a roll's sequence or a score's MEI is written with nothing more to
+  ask, a WAV asks its bit depth, a multitrack's render will ask its many
+  options. **A save never converts**: it offers the kinds that write the
+  same contents (the code editor's languages and every file; a WAV; a
+  session); writing a roll's sequence or a score as another format is an
+  Export or a conversion, a verb of its own, whose dialog offers that
+  format's kinds and whose options form comes after (the roll's "Write as
+  notation" is already that form).
+
+- ⬜ **G47 — One element: `file_dialog`, drawn by the host's presenter.** The
+  element, its props and its two reports; the presenter seam with the drawn
+  presenter, which holds what `forms::Dialogs` holds for a file form today
+  (the folder, the selection, the typed name, the kind, the storage's tools
+  and the line they speak in) and answers the chooser, the field, the kind
+  and the tools itself; `"chosen"` named as the kind chosen (a save's
+  extension added, every file's name as typed). The chooser given its path
+  again stops losing what the keys select (the "Found by use" entry, closed
+  here with a host test). Acceptance: a host test opens one of each mode,
+  walks it by key and by report, and reads one `"chosen"`; the protocol's
+  reference and both clients' builders (`file_dialog()` / `fileDialog()`,
+  the same signature) name it.
+- ⬜ **G48 — Where you are: the path bar, and the save that asks first.** Over
+  the chooser, the folder shown as a button per segment (a press goes
+  there), cut from the left so the current one always shows; `Ctrl+L`, or a
+  press past the last segment, turns it into a field holding the path, where
+  Enter goes and Escape gives the buttons back; back, forward and up beside
+  it. A save over a file that exists asks before it replaces it. In a page
+  the root is the page's storage.
+- ⬜ **G49 — Every application asks through it.** The audio, multitrack,
+  notes and score editors and the code editor declare their file requests and
+  read one report; `clausters_apps::forms` keeps the forms of values (a new
+  file, notation, the close form) and loses the chooser, its state and
+  `forms::storage`. The audio editor's bit depth moves to a form after the
+  dialog; the score's Export and the roll's conversion offer their format's
+  kinds and then their options. The code editor's own dialog module, its
+  `Platform::choose` and its desktop dialog (`rfd`) go, the documentation
+  folder becoming a `folder` request (its third-party notices regenerated);
+  its Preferences and Environments dialogs are built from the forms' parts
+  (a field with its caption and its help line, a row of buttons, a footer of
+  one button), which `forms` gains, instead of helpers of its own.
+  `docs/app-behavior.md` says the rule (the dialog chooses where and which
+  kind; a kind's parameters come after; a save never converts).
+- ⬜ **G50 — The rest of a window manager's dialog.** Places (the root, the
+  user's folder natively, the folders used recently); the size and the date
+  of each file as columns, ordered by a press on a header; hidden files on
+  asking; a name typed over the list goes to the first that starts with it.
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.
@@ -1532,6 +1622,16 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
+
+- ⬜ **The platforms' own file dialogs, as a second presenter** *(2026-11-26,
+  with `G47`)*. A native front may present a `file_dialog` with the system's
+  dialog instead of drawing it: the xdg desktop portal on Linux (`ashpd`,
+  which reports the filter chosen), `IFileDialog` on Windows, `NSOpenPanel`
+  and `NSSavePanel` on macOS. It answers the same `"chosen"`, so nothing
+  above the host changes; what it needs of each platform is the kinds as
+  filters, the filter chosen reported back, one file or several, a folder,
+  a starting place and a name. Not taken now: three implementations for what
+  the drawn dialog does in every front.
 
 - ⬜ **Subpixel (LCD) antialiasing of text, where the desktop asks for
   it** *(found 2026-11-17, in `ST2`)*. The webview editor's text is drawn
@@ -1606,7 +1706,7 @@ finished work, where a pending item reads as done.
   row, and the name field it binds stayed empty. Without the second `path`
   the same keys select `one.mjs`. The editor now sets only the focus, which
   is what its freshly drawn dialog lacked; the chooser itself is to be
-  looked at (two listings of one folder in flight, the second answered
+  looked at, in `G47` (two listings of one folder in flight, the second answered
   against the first's rows, is the first suspect), with a host test that
   defines a chooser, sets its path, changes the storage and selects by key.
 

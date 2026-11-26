@@ -2557,6 +2557,20 @@ A list longer than the chooser draws a scroll bar the hand drags: a folder
 whose files came after its subfolders hid them, with nothing to say they
 were there.
 
+*(2026-11-26, with the user.)* **The request is separated from its
+presentation.** A dialog from each platform was weighed again, for the
+consistency a desktop reader expects, and left out once more: the previous
+editor had them from its framework's libraries, and here they would be three
+implementations (a portal, Win32, AppKit) of what one drawn dialog does in
+every front, while a page needs the drawn one anyway for what crosses to and
+from the disk. What changed is the shape: choosing a file is one element,
+`file_dialog`, which an application or a client declares and reads one report
+from, and the host presents it -- today by drawing it, later, if wanted, with
+a system dialog behind the same element. So a request says only what a
+system dialog can say (the kinds, one file or several, a folder, where to
+start, a name), and a kind's parameters are asked after the dialog, in the
+application's own form.
+
 ## The clipboard is the platform's, and text is all that crosses
 
 *(2026-10-04, with the user.)* The host had one typed clipboard of its own --

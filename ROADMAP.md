@@ -278,6 +278,12 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **`G47`-`G50` — the file dialog: one element, its presentation behind a
+  seam** *(`crates/clausters-gui/PLAN.md`)*. Taken now (2026-11-26): three
+  implementations of choosing a file become one host element, every
+  application asks through it, and the drawn dialog gains the path bar and
+  the rest of a window manager's.
+
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
 
