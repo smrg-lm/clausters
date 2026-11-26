@@ -1196,10 +1196,17 @@ impl Dock {
         Ok(())
     }
 
-    /// **Shows pane `def_id`** in its group, and gives it the keyboard.
+    /// **Shows pane `def_id`** in its group, and gives it the keyboard: on
+    /// another page, that page is shown first, since a pane selected where
+    /// nobody sees it is not shown.
     pub fn select(&mut self, def_id: i32) -> Result<(), String> {
         if !self.holds(def_id) {
             return Err(format!("no pane {def_id}"));
+        }
+        if self.tree.group_of(def_id).is_none()
+            && let Some(page) = self.page_of(def_id)
+        {
+            self.switch_to(page);
         }
         if self.tree.select(def_id) {
             self.arrange();

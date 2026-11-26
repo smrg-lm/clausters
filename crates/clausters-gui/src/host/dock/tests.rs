@@ -423,6 +423,19 @@ fn an_application_is_alone_on_a_page_of_its_own() {
     assert_eq!(ws.page_names(), [FIRST_PAGE, "Score 2"]);
 }
 
+/// **A pane selected on another page is shown**: its page comes forward
+/// first, so whatever selected it (a window asking a question) is seen.
+#[test]
+fn a_pane_selected_on_another_page_brings_its_page() {
+    let mut ws = dock((600, 400), 4.0, &[1]);
+    assert!(ws.add_on(7, Some("Roll")));
+    assert_eq!(ws.page_name(), "Roll");
+    ws.select(1).expect("held");
+    assert_eq!(ws.page_name(), FIRST_PAGE);
+    assert!(ws.shown(1));
+    assert_eq!(ws.focus, Some(1));
+}
+
 /// **An application opened on an empty dock takes its one page**, named
 /// after it, and leaves no empty page beside it.
 #[test]
