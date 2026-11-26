@@ -2298,6 +2298,13 @@ export interface ButtonOptions extends WidgetOptions {
     variant?: "default" | "outline" | "secondary" | "ghost" | "destructive" | "link";
     /** Its height: `"default"`, `"sm"`, `"xs"` or `"lg"`; an icon alone makes it square. */
     size?: "default" | "sm" | "xs" | "lg";
+    /**
+     * The keys that press it while the dialog it is in is up (`"Ctrl+L"`),
+     * whichever of the dialog's widgets has the keys: a dialog's own keys,
+     * since the window's are behind it. A chord the field being typed in
+     * edits with (`Ctrl+A`) stays the field's.
+     */
+    chord?: string;
     textSize?: number;
 }
 
@@ -2339,7 +2346,7 @@ export function button(
     const [source_, opts] = controlArgs<ButtonOptions>(control, options);
     const {
         label: text, mode, on, off, icon, flat, menu: list, verb, default: isDefault, variant,
-        size, textSize, ...rest
+        size, chord, textSize, ...rest
     } = opts;
     if (mode !== undefined && mode !== "gate" && mode !== "press") {
         throw new Error(
@@ -2351,7 +2358,7 @@ export function button(
         ["label", text], ["mode", mode], ["on", on], ["off", off],
         ["icon", icon], ["menu", list === undefined ? undefined : [...list]], ["verb", verb],
         ["text_size", textSize], ["flat", flag(flat)], ["default", flag(isDefault)],
-        ["variant", variant], ["size", size],
+        ["variant", variant], ["size", size], ["chord", chord],
     ]);
     let built;
     if (source_ === null) {
@@ -2444,10 +2451,18 @@ export function text(
         invalid?: boolean;
         /** What the field shows, quieter, while it holds nothing. */
         placeholder?: string;
+        /**
+         * What is selected, `[start, end]` in characters, or one offset for the
+         * caret alone: a field opening with a name selects what is typed over
+         * (`select: [0, 4]` over `"take.wav"`). Set live, it is carried out
+         * once and kept nowhere, as a key is.
+         */
+        select?: readonly [number, number] | number;
         textSize?: number;
     } = {},
 ): View {
-    const { value, label: name, multiline, invalid, placeholder, textSize, ...rest } = options;
+    const { value, label: name, multiline, invalid, placeholder, select, textSize, ...rest } =
+        options;
     return node("text", {
         ...rest,
         ...drop([
@@ -2458,6 +2473,7 @@ export function text(
             ["multiline", multiline],
             ["invalid", flag(invalid)],
             ["placeholder", placeholder],
+            ["select", typeof select === "number" || select === undefined ? select : [...select]],
             ["text_size", textSize],
         ]),
     });
@@ -2569,6 +2585,22 @@ export function files(
 }
 
 /**
+ * **Where a folder is**: a `path_bar`, one button per folder of `path` from
+ * the root to it, as a platform's file dialog shows the folder it lists.
+ * `root` is what the root is called (`"/"` by default).
+ *
+ * A press on a folder reports `"go" path`, the path up to it, and a press
+ * past the last one `"edit"`, for whoever owns the bar to give the path to a
+ * field. It goes nowhere itself: set its `path` to the folder shown. A path
+ * wider than the bar is cut from the left behind a `...` that goes to the
+ * folder before the first shown, so the folder shown is always there.
+ */
+export function pathBar(path = "/", options: WidgetOptions & { root?: string } = {}): View {
+    const { root, ...rest } = options;
+    return node("path_bar", { ...rest, ...drop([["path", path], ["root", root]]) });
+}
+
+/**
  * A **file dialog**: the host's, which an application asks a file of and
  * hears one report from.
  *
@@ -2582,10 +2614,14 @@ export function files(
  * typed.
  *
  * It is up while `open` is true, set on it to open and close it. The host
- * draws it (the chooser with the path and the storage's tools, the name,
- * the file type, the buttons) and answers all of it, so what reaches the
- * owner is `"chosen" kind ...paths`, a save's path named with the kind's
- * extension, or `"cancel"`; either takes it down.
+ * draws it (where it is as a {@link pathBar} with back, forward and up, the
+ * chooser with the storage's tools, the name, the file type, the buttons)
+ * and answers all of it, so what reaches the owner is
+ * `"chosen" kind ...paths`, a save's path named with the kind's extension,
+ * or `"cancel"`; either takes it down. `Ctrl+L` gives the path to a field,
+ * where Enter goes and Escape gives the folders back. A save opens with the
+ * name's stem selected, and one over a file the folder holds asks before it
+ * replaces it.
  */
 export function fileDialog(
     path = ".",

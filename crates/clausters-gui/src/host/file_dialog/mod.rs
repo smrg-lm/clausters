@@ -17,6 +17,14 @@
 //! say (a file selected, a folder entered, a name typed, a kind chosen, a
 //! tool pressed) is the presenter's, and so is what it keeps between two
 //! openings: the folder the hand last went into.
+//!
+//! **Where the hand is stays in sight**: over the chooser the drawn dialog
+//! shows the folder as a `path_bar`, a button per folder, with back, forward
+//! and up beside it; `Ctrl+L`, its "Type a path" button or a press past the
+//! last folder gives the path to a field instead, where Enter goes and
+//! Escape gives the buttons back. A save over a file the folder holds asks
+//! before it replaces it, and a save opens with the name's stem selected,
+//! so what is typed replaces it.
 
 mod hosting;
 mod storage;
@@ -26,6 +34,8 @@ pub(crate) use hosting::Presented;
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value, json};
 
+use crate::host::elements::path_bar::{EDIT, GO};
+use crate::host::files::{self, Listing};
 use storage::{Storage, Tool};
 
 /// The element's type.
@@ -269,10 +279,16 @@ pub trait Presenter: std::fmt::Debug {
     /// **What one of its widgets said**: its tag (empty for a value), and
     /// what followed.
     fn event(&mut self, id: i32, tag: &str, args: &[OscType]) -> Answer;
+    /// **A folder one of its widgets shows was listed**: where it resolved
+    /// and what it holds, or why it could not be. Nothing, for a dialog
+    /// whose platform lists its own folders.
+    fn listed(&mut self, _id: i32, _listing: Result<&Listing, &str>) -> Answer {
+        Answer::default()
+    }
 }
 
 /// How many ids a drawn dialog takes from the host's.
-pub const IDS: usize = 32;
+pub const IDS: usize = 64;
 
 /// Offsets of the drawn dialog's widgets in its block of ids.
 const DIALOG: i32 = 0;
@@ -283,8 +299,19 @@ const SAYS: i32 = 4;
 const CANCEL: i32 = 5;
 const ACCEPT: i32 = 6;
 const TOOLS: i32 = 7;
+const BACK: i32 = 12;
+const FORWARD: i32 = 13;
+const UP: i32 = 14;
+/// The path bar, the field the path is typed in instead, and the stack that
+/// shows one of the two.
+const BAR: i32 = 15;
+const PATH: i32 = 16;
+const PLACE: i32 = 17;
+/// The button that gives the path to the field, and its chord.
+const TYPE_PATH: i32 = 18;
+const TYPE_PATH_CHORD: &str = "Ctrl+L";
 /// Where its nodes with no role are numbered from.
-const SPARE: i32 = 12;
+const SPARE: i32 = 24;
 
 /// How large the chooser is drawn, in logical pixels.
 const CHOOSER_W: f64 = 520.0;
@@ -294,6 +321,8 @@ const CHOOSER_H: f64 = 300.0;
 const CAPTION_GAP: f64 = 8.0;
 const BODY_GAP: f64 = 16.0;
 const FOOTER_GAP: f64 = 8.0;
+/// Between the buttons of the row over the chooser.
+const NAV_GAP: f64 = 4.0;
 
 /// The folder a chooser starts in before anything else says where: the one
 /// the host resolves `.` to.
@@ -302,6 +331,16 @@ const START: &str = ".";
 /// The extension a folder chooser filters on, which no file can have: it
 /// lists the folders alone.
 const FOLDERS_ONLY: &str = "/";
+
+/// **What the root of the storage is called** in the path bar: the disk's
+/// is `/`, and a page's is its storage.
+fn root_name() -> &'static str {
+    if storage::STORAGE_IS_THE_DISK {
+        "/"
+    } else {
+        "Storage"
+    }
+}
 
 /// **The dialog the host draws.**
 #[derive(Debug)]
@@ -314,10 +353,27 @@ pub struct Drawn {
     up: bool,
     /// The folder shown.
     dir: String,
+    /// The folders the hand left, the last left last, and those it came
+    /// back from.
+    back: Vec<String>,
+    forward: Vec<String>,
+    /// The files of the folder shown, by name, once its listing is in.
+    names: Option<Vec<String>>,
     /// The files the chooser has selected.
     selected: Vec<String>,
     /// What the name field holds.
     typed: String,
+    /// Whether the path is being typed, the field shown for the bar, and
+    /// what it holds.
+    editing: bool,
+    typed_dir: String,
+    /// The file a save asked about replacing: a second accept replaces it.
+    replacing: Option<String>,
+    /// A save to a folder not listed yet, decided when its listing is in.
+    pending: bool,
+    /// Whether it was opened and nothing has been said since: the name's
+    /// stem is still the selection it opened with.
+    fresh: bool,
     /// The kind chosen, among [`Request::offers`].
     kind: usize,
     storage: Storage,
@@ -337,8 +393,16 @@ impl Drawn {
             request,
             up: false,
             dir: START.into(),
+            back: Vec::new(),
+            forward: Vec::new(),
+            names: None,
             selected: Vec::new(),
             typed: String::new(),
+            editing: false,
+            typed_dir: String::new(),
+            replacing: None,
+            pending: false,
+            fresh: false,
             kind: 0,
             storage: Storage::default(),
             last: None,
@@ -371,17 +435,20 @@ impl Drawn {
         }
     }
 
+    /// `name` from the root when it is a path from there, else in the folder
+    /// shown.
+    fn resolve(&self, name: &str) -> String {
+        if std::path::Path::new(name).has_root() || self.dir.is_empty() || self.dir == START {
+            return name.to_string();
+        }
+        files::join(&self.dir, name)
+    }
+
     /// **The path the name field says**: from the root when it is one, else
     /// in the folder shown; `None` with no name.
     fn typed_path(&self) -> Option<String> {
         let name = self.typed.trim();
-        if name.is_empty() {
-            return None;
-        }
-        if std::path::Path::new(name).has_root() || self.dir.is_empty() || self.dir == START {
-            return Some(name.to_string());
-        }
-        Some(crate::host::files::join(&self.dir, name))
+        (!name.is_empty()).then(|| self.resolve(name))
     }
 
     fn says(&self) -> Value {
@@ -391,6 +458,12 @@ impl Drawn {
     fn say(&mut self, says: &str) -> Answer {
         self.storage.says = says.into();
         Answer::set(self.at(SAYS), self.says())
+    }
+
+    /// The stem of the name field's value, as its selection: a save's name,
+    /// which what is typed then replaces.
+    fn stem(&self) -> Value {
+        json!({"select": [0, stem_len(&self.typed)]})
     }
 
     /// **Where it opens**: a save in the folder of the file it writes, that
@@ -419,15 +492,108 @@ impl Drawn {
         }
     }
 
+    /// **The chooser is in folder `to`**, gone there by the hand or asked:
+    /// what the last one held is gone, and the bar and the way back say
+    /// where it is.
+    fn moved(&mut self, to: String, answer: &mut Answer) {
+        self.dir = to.clone();
+        self.last = Some(to.clone());
+        self.names = None;
+        self.selected.clear();
+        self.disarm(answer);
+        answer.push(self.at(BAR), json!({"path": to}));
+        self.ways(answer);
+    }
+
+    /// **The hand goes to folder `to`**: the folder left is the way back, and
+    /// the chooser is asked to list `to`.
+    fn go(&mut self, to: String, answer: &mut Answer) {
+        if to != self.dir {
+            self.back.push(self.dir.clone());
+            self.forward.clear();
+        }
+        answer.push(self.at(FILES), json!({"path": to}));
+        self.moved(to, answer);
+    }
+
+    /// Back, forward and up, enabled where they go somewhere.
+    fn ways(&self, answer: &mut Answer) {
+        answer.push(self.at(BACK), json!({"enabled": !self.back.is_empty()}));
+        answer.push(
+            self.at(FORWARD),
+            json!({"enabled": !self.forward.is_empty()}),
+        );
+        answer.push(
+            self.at(UP),
+            json!({"enabled": files::parent(&self.dir).is_some()}),
+        );
+    }
+
+    /// **Back or forward**: the folder the hand left, the one it leaves the
+    /// way it did not go.
+    fn step(&mut self, forward: bool) -> Answer {
+        let mut answer = Answer::default();
+        let (from, to) = if forward {
+            (&mut self.forward, &mut self.back)
+        } else {
+            (&mut self.back, &mut self.forward)
+        };
+        let Some(dir) = from.pop() else {
+            return answer;
+        };
+        to.push(self.dir.clone());
+        answer.push(self.at(FILES), json!({"path": dir}));
+        self.moved(dir, &mut answer);
+        answer
+    }
+
+    /// **The path given to the field**, or the bar back, the keys going where
+    /// they were.
+    fn edit(&mut self, on: bool) -> Answer {
+        self.editing = on;
+        let mut answer = Answer::set(self.at(PLACE), json!({"index": i32::from(on)}));
+        if on {
+            self.typed_dir = self.dir.clone();
+            let end = self.typed_dir.chars().count();
+            answer.push(self.at(PATH), json!({"value": self.typed_dir}));
+            answer.push(self.at(PATH), json!({"select": [0, end], "focus": 1}));
+        } else {
+            answer.push(self.at(self.keys()), json!({"focus": 1}));
+        }
+        answer
+    }
+
+    /// Where the keys go in it: a save's name, an open's files.
+    fn keys(&self) -> i32 {
+        if self.request.mode == Mode::Save {
+            NAME
+        } else {
+            FILES
+        }
+    }
+
+    /// **The question about replacing a file, taken back**: the name, the
+    /// kind or the folder changed.
+    fn disarm(&mut self, answer: &mut Answer) {
+        if self.replacing.take().is_some() {
+            self.storage.says.clear();
+            answer.push(self.at(SAYS), self.says());
+            answer.push(self.at(ACCEPT), json!({"label": self.request.accept}));
+        }
+    }
+
     /// **Accepted**: the paths chosen, or why there are none.
     fn accept(&mut self) -> Answer {
+        if self.editing {
+            return self.go_typed();
+        }
         let paths = match self.request.mode {
             Mode::Open => match self.typed_path() {
                 Some(typed) if !self.selected.contains(&typed) => vec![typed],
                 _ => self.selected.clone(),
             },
             Mode::Save => match self.typed_path() {
-                Some(typed) => vec![self.offer().named(&typed)],
+                Some(typed) => return self.save(self.offer().named(&typed)),
                 None => Vec::new(),
             },
             Mode::Folder => vec![self.typed_path().unwrap_or_else(|| self.dir.clone())],
@@ -438,6 +604,65 @@ impl Drawn {
                 _ => "Select a file first.",
             });
         }
+        self.chosen(paths)
+    }
+
+    /// **The folder typed in the path field, gone to**, and the bar back.
+    fn go_typed(&mut self) -> Answer {
+        let to = self.typed_dir.trim().to_string();
+        let mut answer = self.edit(false);
+        if !to.is_empty() {
+            let to = self.resolve(&to);
+            self.go(to, &mut answer);
+        }
+        answer
+    }
+
+    /// **A save to `path`**: written where its folder holds no file by its
+    /// name; else asked once, and written on the second accept. A folder
+    /// other than the one shown is gone to first, the name kept, and the
+    /// save decided once it is listed.
+    fn save(&mut self, path: String) -> Answer {
+        if self.replacing.as_ref() == Some(&path) {
+            return self.chosen(vec![path]);
+        }
+        let (dir, name) = split(&path);
+        let mut answer = Answer::default();
+        if !dir.is_empty() && dir != self.dir {
+            self.typed = name;
+            answer.push(self.at(NAME), json!({"value": self.typed}));
+            self.go(dir, &mut answer);
+            self.pending = true;
+            return answer;
+        }
+        if self.names.is_none() {
+            self.pending = true;
+            return answer;
+        }
+        self.decide(path)
+    }
+
+    /// **A save to `path` in the folder shown, once it is listed**: written
+    /// where it holds no file by that name, else asked about.
+    fn decide(&mut self, path: String) -> Answer {
+        let (_, name) = split(&path);
+        let mut answer = Answer::default();
+        match &self.names {
+            None => self.chosen(vec![path]),
+            Some(names) if names.contains(&name) => {
+                self.storage.says = format!("{name} already exists. Replace it?");
+                self.replacing = Some(path);
+                answer.push(self.at(SAYS), self.says());
+                answer.push(self.at(ACCEPT), json!({"label": "Replace"}));
+                answer
+            }
+            Some(_) => self.chosen(vec![path]),
+        }
+    }
+
+    /// **Chosen**: the dialog goes, and the caller hears the kind and the
+    /// paths.
+    fn chosen(&mut self, paths: Vec<String>) -> Answer {
         let kind = match self.request.mode {
             Mode::Folder => String::new(),
             _ => self.offer().name,
@@ -461,10 +686,10 @@ impl Drawn {
             .storage
             .press(tool, &self.dir, selected.as_deref(), typed.as_deref());
         let mut answer = Answer::default();
+        self.replacing = None;
+        answer.push(self.at(ACCEPT), json!({"label": self.request.accept}));
         if let Some(to) = pressed.go {
-            self.dir = to.clone();
-            self.last = Some(to.clone());
-            answer.push(self.at(FILES), json!({"path": to}));
+            self.go(to, &mut answer);
         }
         if let Some(change) = pressed.change {
             self.selected.clear();
@@ -476,6 +701,34 @@ impl Drawn {
         }
         answer.push(self.at(SAYS), self.says());
         answer
+    }
+
+    /// **The row over the chooser**: back, forward, up, where the folder is
+    /// (its bar, or the field its path is typed in), and the button that
+    /// gives the path to the field.
+    fn nav(&self) -> Value {
+        let way = |id: i32, icon: &str, tip: &str, enabled: bool| {
+            json!({"id": self.at(id), "type": "button", "icon": icon, "tip": tip,
+                "variant": "ghost", "size": "sm", "enabled": enabled})
+        };
+        let mut field = json!({"type": "text", "id": self.at(PATH), "value": self.typed_dir});
+        if self.editing && self.fresh {
+            field["select"] = json!([0, self.typed_dir.chars().count()]);
+        }
+        json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
+            "gap": NAV_GAP, "w": CHOOSER_W, "children": [
+            way(BACK, "arrow-left", "Back", !self.back.is_empty()),
+            way(FORWARD, "arrow-right", "Forward", !self.forward.is_empty()),
+            way(UP, "chevron-up", "Up", files::parent(&self.dir).is_some()),
+            {"type": "layout", "id": self.at(PLACE), "flow": "stack", "weight": 1, "margin": 0,
+                "index": i32::from(self.editing), "children": [
+                {"type": "path_bar", "id": self.at(BAR), "path": self.dir, "root": root_name()},
+                field,
+            ]},
+            {"id": self.at(TYPE_PATH), "type": "button", "label": "Type a path",
+                "variant": "ghost", "size": "sm", "chord": TYPE_PATH_CHORD,
+                "tip": TYPE_PATH_CHORD},
+        ]})
     }
 
     /// **The dialog's widgets**, as it stands now.
@@ -504,12 +757,16 @@ impl Drawn {
                     "variant": "ghost", "size": "sm"})
             })
             .collect();
-        let name = json!({"type": "text", "id": self.at(NAME), "value": self.typed});
+        let mut name = json!({"type": "text", "id": self.at(NAME), "value": self.typed});
+        if self.up && self.fresh && self.request.mode == Mode::Save {
+            name["select"] = self.stem()["select"].clone();
+        }
         let caption = match self.request.mode {
             Mode::Folder => "Folder",
             Mode::Open | Mode::Save => "Name",
         };
         let mut rows = vec![
+            self.nav(),
             row("", files, Some(CHOOSER_W)),
             json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
                 "gap": 4, "children": tools}),
@@ -525,11 +782,16 @@ impl Drawn {
             json!({"type": "label", "id": self.at(SAYS), "text": self.storage.says,
             "wrap": 1, "muted": 1, "shown": !self.storage.says.is_empty()}),
         );
+        let accept = if self.replacing.is_some() {
+            "Replace"
+        } else {
+            self.request.accept.as_str()
+        };
         let footer = json!({"type": "layout", "flow": "row", "hug": true, "pack": true,
         "margin": 0, "gap": FOOTER_GAP, "children": [
             {"type": "separator", "weight": 1, "line": false},
             {"type": "button", "id": self.at(CANCEL), "label": "Cancel", "variant": "outline"},
-            {"type": "button", "id": self.at(ACCEPT), "label": self.request.accept,
+            {"type": "button", "id": self.at(ACCEPT), "label": accept,
                 "default": true, "variant": "default"},
         ]});
         json!({"type": "layout", "id": self.at(DIALOG), "modal": true, "hug": true,
@@ -538,6 +800,15 @@ impl Drawn {
                 "children": rows},
             footer,
         ]})
+    }
+}
+
+/// How many characters of `name` are its stem: all but its last extension,
+/// and all of a name that has none (or only starts with a dot).
+fn stem_len(name: &str) -> usize {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => name[..dot].chars().count(),
+        _ => name.chars().count(),
     }
 }
 
@@ -602,6 +873,10 @@ impl Presenter for Drawn {
         number(&mut empty, &mut next);
         let mut page = json!({"type": "layout", "children": [dialog]});
         number(&mut page, &mut next);
+        debug_assert!(
+            next <= self.at(IDS as i32),
+            "a drawn dialog outgrew its ids"
+        );
         json!({"type": "layout", "id": self.id, "flow": "stack", "index": i32::from(self.up),
             "margin": 0, "h": 0, "children": [empty, page]})
     }
@@ -615,16 +890,27 @@ impl Presenter for Drawn {
 
     fn open(&mut self) -> Answer {
         self.up = true;
+        self.fresh = true;
         self.start();
         self.selected.clear();
+        self.names = None;
+        self.back.clear();
+        self.forward.clear();
+        self.editing = false;
+        self.replacing = None;
+        self.pending = false;
         self.kind = 0;
         self.storage.reset();
         let labels: Vec<String> = self.request.offers().into_iter().map(|o| o.label).collect();
         let mut answer = Answer::default();
         answer.push(self.at(SAYS), self.says());
-        // the keys go where the hand starts: a save's name, an open's files
-        let saves = self.request.mode == Mode::Save;
+        // the keys go where the hand starts: a save's name, its stem
+        // selected, and an open's files
         answer.push(self.at(NAME), json!({"value": self.typed}));
+        if self.request.mode == Mode::Save {
+            // after the value, which it is a selection of
+            answer.push(self.at(NAME), self.stem());
+        }
         if self.request.mode != Mode::Folder {
             answer.push(self.at(TYPE), json!({"options": labels, "index": 0}));
         }
@@ -632,17 +918,22 @@ impl Presenter for Drawn {
             self.at(FILES),
             json!({"path": self.dir, "filter": self.filter()}),
         );
+        answer.push(self.at(PLACE), json!({"index": 0}));
+        answer.push(self.at(BAR), json!({"path": self.dir}));
+        self.ways(&mut answer);
         answer.push(self.at(DIALOG), json!({"title": self.request.title}));
         answer.push(self.at(ACCEPT), json!({"label": self.request.accept}));
         answer.push(self.id, json!({"index": 1}));
-        let keys = if saves { NAME } else { FILES };
-        answer.push(self.at(keys), json!({"focus": 1}));
+        answer.push(self.at(self.keys()), json!({"focus": 1}));
         answer
     }
 
     fn close(&mut self) -> Answer {
         self.up = false;
         self.selected.clear();
+        self.editing = false;
+        self.replacing = None;
+        self.pending = false;
         Answer::set(self.id, json!({"index": 0}))
     }
 
@@ -658,18 +949,46 @@ impl Presenter for Drawn {
         if !self.up {
             return Answer::default();
         }
+        self.fresh = false;
         let saves = self.request.mode == Mode::Save;
         match id - self.base {
+            // Escape while the path is typed gives the bar back
+            DIALOG if tag == "cancel" && self.editing => self.edit(false),
             DIALOG if tag == "cancel" => self.cancel(),
             CANCEL if tag == "click" => self.cancel(),
             ACCEPT if tag == "click" => self.accept(),
+            BACK if tag == "click" => self.step(false),
+            FORWARD if tag == "click" => self.step(true),
+            UP if tag == "click" => {
+                let mut answer = Answer::default();
+                if let Some(up) = files::parent(&self.dir) {
+                    self.go(up, &mut answer);
+                }
+                answer
+            }
+            TYPE_PATH if tag == "click" => self.edit(!self.editing),
+            BAR => match (tag, paths(args).into_iter().next()) {
+                (GO, Some(to)) => {
+                    let mut answer = Answer::default();
+                    self.go(to, &mut answer);
+                    answer
+                }
+                (EDIT, _) => self.edit(true),
+                _ => Answer::default(),
+            },
+            PATH if args.is_empty() && tag != "focus" => {
+                self.typed_dir = tag.to_string();
+                Answer::default()
+            }
             FILES => match tag {
                 "select" => {
                     self.selected = paths(args);
                     if let Some(last) = self.selected.last() {
                         self.typed = last.clone();
                     }
-                    Answer::default()
+                    let mut answer = Answer::default();
+                    self.disarm(&mut answer);
+                    answer
                 }
                 "pick" => {
                     let picked = paths(args);
@@ -692,17 +1011,22 @@ impl Presenter for Drawn {
                     let Some(dir) = paths(args).into_iter().next() else {
                         return Answer::default();
                     };
-                    self.dir = dir.clone();
-                    self.last = Some(dir);
+                    // the hand went there in the chooser: the way back is
+                    // where it was
+                    if dir != self.dir {
+                        self.back.push(self.dir.clone());
+                        self.forward.clear();
+                    }
                     // a file chosen in a folder left behind is not what an
                     // open opens; a save's name is the file it writes
                     let forget = !saves && self.selected.contains(&self.typed);
-                    self.selected.clear();
+                    let mut answer = Answer::default();
+                    self.moved(dir, &mut answer);
                     if forget {
                         self.typed.clear();
-                        return Answer::set(self.at(NAME), json!({"value": ""}));
+                        answer.push(self.at(NAME), json!({"value": ""}));
                     }
-                    Answer::default()
+                    answer
                 }
                 "changed" => {
                     let why = paths(args).into_iter().next().unwrap_or_default();
@@ -714,13 +1038,19 @@ impl Presenter for Drawn {
                 path if args.is_empty() && !path.is_empty() => {
                     self.selected = vec![path.to_string()];
                     self.typed = path.to_string();
-                    Answer::default()
+                    let mut answer = Answer::default();
+                    self.disarm(&mut answer);
+                    answer
                 }
                 _ => Answer::default(),
             },
-            NAME if args.is_empty() => {
-                self.typed = tag.to_string();
-                Answer::default()
+            NAME if args.is_empty() && tag != "focus" => {
+                let mut answer = Answer::default();
+                if tag != self.typed {
+                    self.typed = tag.to_string();
+                    self.disarm(&mut answer);
+                }
+                answer
             }
             TYPE if tag != "focus" => {
                 let Some(i) = index_of(tag, args).filter(|i| *i < self.request.offers().len())
@@ -728,7 +1058,9 @@ impl Presenter for Drawn {
                     return Answer::default();
                 };
                 self.kind = i;
-                Answer::set(self.at(FILES), json!({"filter": self.filter()}))
+                let mut answer = Answer::set(self.at(FILES), json!({"filter": self.filter()}));
+                self.disarm(&mut answer);
+                answer
             }
             offset
                 if (TOOLS..TOOLS + Tool::ALL.len() as i32).contains(&offset) && tag == "click" =>
@@ -737,6 +1069,52 @@ impl Presenter for Drawn {
             }
             _ => Answer::default(),
         }
+    }
+
+    /// **The chooser's folder listed**: where it resolved is the folder
+    /// shown, its files are what a save asks about replacing, and a save
+    /// that waited for them is decided.
+    fn listed(&mut self, id: i32, listing: Result<&Listing, &str>) -> Answer {
+        if id != self.at(FILES) || !self.up {
+            return Answer::default();
+        }
+        let mut answer = Answer::default();
+        match listing {
+            Ok(listing) => {
+                if listing.path != self.dir {
+                    // as it resolved: the same folder, so no way back to it
+                    self.dir = listing.path.clone();
+                    self.last = Some(self.dir.clone());
+                    answer.push(self.at(BAR), json!({"path": self.dir}));
+                    self.ways(&mut answer);
+                }
+                self.names = Some(
+                    listing
+                        .entries
+                        .iter()
+                        .filter(|e| !e.dir)
+                        .map(|e| e.name.clone())
+                        .collect(),
+                );
+                if std::mem::take(&mut self.pending)
+                    && let Some(typed) = self.typed_path()
+                {
+                    // decided here, in the folder listed, whatever path it
+                    // resolved to
+                    let decided = self.decide(self.offer().named(&typed));
+                    answer.set.extend(decided.set);
+                    answer.report = decided.report;
+                }
+            }
+            Err(why) => {
+                self.names = None;
+                if std::mem::take(&mut self.pending) {
+                    let said = self.say(why);
+                    answer.set.extend(said.set);
+                }
+            }
+        }
+        answer
     }
 }
 

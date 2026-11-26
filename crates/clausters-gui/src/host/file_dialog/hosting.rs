@@ -7,6 +7,7 @@ use clausters_core::osc::{OscMessage, OscType};
 use serde_json::{Map, Value};
 
 use super::{Answer, Drawn, IDS, KIND, Presenter, Request, truthy};
+use crate::host::files::Listing;
 use crate::host::guidef::GuiNode;
 use crate::host::{Host, HostEffect, diag};
 
@@ -170,6 +171,34 @@ impl Host {
         self.answer_file_dialog(id, answer, &mut effects);
         self.pending_effects.extend(effects);
         true
+    }
+
+    /// Whether widget `widget` is one of a file dialog's, which hears what
+    /// its folder holds.
+    pub(in crate::host) fn file_dialog_hears(&self, widget: i32) -> bool {
+        self.file_dialogs
+            .values()
+            .any(|shown| shown.presenter.owns(widget))
+    }
+
+    /// **A file dialog's chooser listed its folder**: the dialog told, and
+    /// what it answers carried out with the host's next effects.
+    pub(in crate::host) fn file_dialog_listed(
+        &mut self,
+        widget: i32,
+        listing: Result<&Listing, &str>,
+    ) {
+        let Some((&id, shown)) = self
+            .file_dialogs
+            .iter_mut()
+            .find(|(_, shown)| shown.presenter.owns(widget))
+        else {
+            return;
+        };
+        let answer = shown.presenter.listed(widget, listing);
+        let mut effects = Vec::new();
+        self.answer_file_dialog(id, answer, &mut effects);
+        self.pending_effects.extend(effects);
     }
 
     /// **What a presenter answered, carried out**: its widgets set, and its

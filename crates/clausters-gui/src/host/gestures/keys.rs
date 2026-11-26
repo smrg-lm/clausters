@@ -230,6 +230,12 @@ impl Gestures {
             out.extend(more);
             return Some(out);
         }
+        // **A dialog's own chord presses its button**, ahead of the table,
+        // whose verbs are behind the dialog while it is up.
+        if command && press_chord(host, ctx, &key, mods, &mut out) {
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return Some(out);
+        }
         let Some(verb) = host.keys.lookup_in(&key, mods, &scopes).map(str::to_string) else {
             diag::note!(host, ctx.def_id, "key", "key {key:?}: bound to nothing");
             return None;
@@ -1192,6 +1198,28 @@ fn press_default(host: &mut Host, ctx: &GestureCtx, out: &mut Vec<GestureEffect>
     else {
         return;
     };
+    press_button(host, ctx, button, out);
+}
+
+/// **The button of the dialog up in the window that `key` is the chord of,
+/// pressed**: `true` when there was one.
+fn press_chord(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    key: &Key,
+    mods: Mods,
+    out: &mut Vec<GestureEffect>,
+) -> bool {
+    let chord = super::super::keymap::Chord::of(key, mods);
+    let Some(button) = host.dialog(ctx.def_id).and_then(|d| d.chord_button(&chord)) else {
+        return false;
+    };
+    press_button(host, ctx, button, out);
+    true
+}
+
+/// Button `button` of the window pressed, as a click on it is.
+fn press_button(host: &mut Host, ctx: &GestureCtx, button: i32, out: &mut Vec<GestureEffect>) {
     let Some(at) = host
         .layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)
         .and_then(|placed| {

@@ -20,8 +20,10 @@ This window holds one of each, laid out the way an application lays them out:
 - a **context menu** on the pages (the secondary button), and a **tip** on
   every tool (rest the pointer on one);
 - a **dialog**, opened by ``Info > About`` and closed by freeing it, and a **file
-  chooser** in another, opened by ``File > Open``: the host lists the
-  directory itself -- the disk here, the page's own storage in the twin page;
+  dialog** in another, opened by ``File > Open`` and ``File > Save as``: the
+  host lists the folders itself -- the disk here, the page's own storage in
+  the twin page -- shows where it is as a bar of folders (Ctrl+L types the
+  path), and a save over a file that exists asks before it replaces it;
 - **keys** for the bar's verbs, shown beside its entries: F1 is ``About``,
   Ctrl+O is ``Open``, and M is a verb no menu names.
 
@@ -83,6 +85,7 @@ bar = menu(
     entry("File", menu=menu(
         entry("New", "new"),
         entry("Open", "open"),
+        entry("Save as", "save_as"),
         entry("Recent", menu=menu("take 1.wav", "take 2.wav", "take 3.wav")),
         "-",
         entry("Export", "export", enabled=False),
@@ -295,9 +298,11 @@ for name in ("play", "pause", "stop", "record"):
 # the holder, and its button frees it -- as do Escape and the close mark at the
 # end of its title strip, which ask the dialog to go as `("cancel",)`.
 # `File > Open` defines a `file_dialog` there instead, up from the start: the
-# host draws it and answers everything in it (the folders, the name, the
-# file type, the tools), and the window hears one report, what was chosen or
-# a cancel.
+# host draws it and answers everything in it (where it is, the folders, the
+# name, the file type, the tools), and the window hears one report, what was
+# chosen or a cancel. `File > Save as` defines one that saves: it opens with
+# the name's stem selected, and asks before it replaces a file. The example
+# writes nothing; it prints what it would write.
 
 
 # %%
@@ -330,6 +335,23 @@ def open_file():
     box["chooser"].on_event(on_chooser)
 
 
+def save_file():
+    """The same, saving: the kinds it writes, the first chosen."""
+    box = gui.define(win["dialogs"].id,
+                     layout(file_dialog("take.wav", mode="save",
+                                        kinds=[("WAV", ["wav"]), ("FLAC", ["flac"])],
+                                        open=True, name="chooser"),
+                            h=0.0))
+
+    def on_chooser(tag, *payload):
+        if tag == "chosen":
+            kind, *paths = payload
+            print(f"save: {paths} ({kind})")
+        box["chooser"].free()
+
+    box["chooser"].on_event(on_chooser)
+
+
 def on_bar(tag, *payload):
     """The window's own events: a pick in the menu bar is one of them."""
     print(f"window: {(tag, *payload)}")
@@ -337,6 +359,8 @@ def on_bar(tag, *payload):
         about()
     elif tag == "menu" and payload[0] == "open":
         open_file()
+    elif tag == "menu" and payload[0] == "save_as":
+        save_file()
     elif tag == "menu" and payload[0] == "quit":
         win.close()
 

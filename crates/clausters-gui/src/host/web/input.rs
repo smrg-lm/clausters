@@ -21,7 +21,7 @@ impl WebApp {
     /// **Hands the loop what the host did on its own** -- a window it opened
     /// in answer to a gesture -- since opening a canvas needs the event loop,
     /// which a gesture's handler does not hold.
-    fn post_host_effects(&self) {
+    pub(super) fn post_host_effects(&self) {
         if !self.host.has_effects() {
             return;
         }

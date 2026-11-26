@@ -274,10 +274,10 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`G48`-`G50` — the file dialog: the path bar, every application
-  through it, the rest of a window manager's** *(`crates/clausters-gui/PLAN.md`,
-  "G47–G50 — The file dialog")*. Taken now (2026-11-26); the element itself
-  is in.
+- ⬜ **`G49`-`G50` — the file dialog: every application through it, the
+  rest of a window manager's** *(`crates/clausters-gui/PLAN.md`,
+  "G47–G50 — The file dialog")*. Taken now (2026-11-26); the element and its
+  path bar are in.
 
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.

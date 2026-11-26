@@ -37,9 +37,11 @@ six views, the controls with their other looks, a plane with <b>scroll
 bars</b>, a <b>pager</b>, and rows of data: a <b>table</b> whose order is the
 page's and a <b>tree</b>; a <b>context menu</b> on the pages (the secondary
 button) and a <b>tip</b> on every tool; and a <b>dialog</b>, opened by
-<code>Info &gt; About</code> and closed by freeing it, and a <b>file chooser</b> in
-another, opened by <code>File &gt; Open</code>: the host lists the directory
-itself -- the page's own storage here, the disk in the script; and <b>keys</b>
+<code>Info &gt; About</code> and closed by freeing it, and a <b>file dialog</b> in
+another, opened by <code>File &gt; Open</code> and <code>File &gt; Save as</code>: the
+host lists the folders itself -- the page's own storage here, the disk in the
+script -- shows where it is as a bar of folders (Ctrl+L types the path), and a
+save over a file that exists asks before it replaces it; and <b>keys</b>
 for the bar's verbs, shown beside its entries: F1 is <code>About</code>, Ctrl+O
 is <code>Open</code>, and M is a verb no menu names.
 
@@ -111,6 +113,7 @@ the host reports when a hand changes them -- the lines this prints.</div>
           gui.entry("File", undefined, { menu: gui.menu(
             gui.entry("New", "new"),
             gui.entry("Open", "open"),
+            gui.entry("Save as", "save_as"),
             gui.entry("Recent", undefined,
                       { menu: gui.menu("take 1.wav", "take 2.wav", "take 3.wav") }),
             "-",
@@ -328,9 +331,12 @@ the host reports when a hand changes them -- the lines this prints.</div>
         // frees it -- as do Escape and the close mark at the end of its title
         // strip, which ask the dialog to go as `"cancel"`. `File > Open`
         // defines a `fileDialog` there instead, up from the start: the host
-        // draws it and answers everything in it (the folders, the name, the
-        // file type, the tools), and the window hears one report, what was
-        // chosen or a cancel.
+        // draws it and answers everything in it (where it is, the folders, the
+        // name, the file type, the tools), and the window hears one report,
+        // what was chosen or a cancel. `File > Save as` defines one that
+        // saves: it opens with the name's stem selected, and asks before it
+        // replaces a file. The example writes nothing; it logs what it would
+        // write.
         const about = () => {
           const box = host.define(win.widget("dialogs").id, gui.layout(
             { h: 0.0 },
@@ -360,11 +366,30 @@ the host reports when a hand changes them -- the lines this prints.</div>
           });
         };
 
+        // The same, saving: the kinds it writes, the first chosen.
+        const saveFile = () => {
+          const box = host.define(win.widget("dialogs").id, gui.layout(
+            { h: 0.0 },
+            gui.fileDialog("take.wav", {
+              mode: "save", kinds: [["WAV", ["wav"]], ["FLAC", ["flac"]]],
+              open: true, name: "chooser",
+            })));
+
+          box.widget("chooser").onEvent((tag, ...payload) => {
+            if (tag === "chosen") {
+              const [kind, ...paths] = payload;
+              log(`save: ${paths} (${kind})`);
+            }
+            box.widget("chooser").free();
+          });
+        };
+
         // The window's own events: a pick in the menu bar is one of them.
         const onBar = (tag, ...payload) => {
           log(`window: ${[tag, ...payload]}`);
           if (tag === "menu" && payload[0] === "about") about();
           else if (tag === "menu" && payload[0] === "open") openFile();
+          else if (tag === "menu" && payload[0] === "save_as") saveFile();
           else if (tag === "menu" && payload[0] === "quit") win.close();
         };
 

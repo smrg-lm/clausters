@@ -1592,7 +1592,18 @@ without any application, client or wire changing.
   walks it by key and by report, and reads one `"chosen"`; the protocol's
   reference and both clients' builders (`file_dialog()` / `fileDialog()`,
   the same signature) name it.
-- ⬜ **G48 — Where you are: the path bar, and the save that asks first.** Over
+- ✅ **G48 — Where you are: the path bar, and the save that asks first.**
+  *(Done 2026-11-26. Decided with the code: the bar is an element of its
+  own, `path_bar`, which owns its room (it cuts from the left behind a
+  `...`) and only reports `"go"` and `"edit"`; `Ctrl+L` is a button's new
+  `chord` prop, a dialog's own keys, pressed while the dialog is up ahead of
+  the window's key table; the field's selection is `text`'s new `select`,
+  carried out once. The presenter hears its chooser's listings (a new
+  `Presenter::listed`), which give the folder as it resolved and the names
+  a save asks about; a save to a folder not shown goes there first and is
+  decided once it is listed. Enter in the path field goes, through the
+  default button the dialog already had.)*
+  Over
   the chooser, the folder shown as a button per segment (a press goes
   there), cut from the left so the current one always shows; `Ctrl+L`, or a
   press past the last segment, turns it into a field holding the path, where

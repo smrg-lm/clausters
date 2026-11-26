@@ -583,6 +583,21 @@ impl Widget {
         found
     }
 
+    /// **The button of the dialog it is that `chord` presses**: the first a
+    /// reader sees that names it and can be pressed.
+    pub(crate) fn chord_button(&self, chord: &crate::host::keymap::Chord) -> Option<i32> {
+        let mut found = None;
+        self.each_read(&mut |w| {
+            if found.is_none()
+                && w.enabled
+                && w.kind.as_element().and_then(|el| el.chord()) == Some(chord)
+            {
+                found = w.id;
+            }
+        });
+        found
+    }
+
     /// Interprets a generic [`GuiNode`] (and the blobs carried beside it in the
     /// `/gui_def` message) into a typed widget tree. `root_id` is the def id from
     /// the OSC argument, used for the root whose JSON carries no `id`.

@@ -98,6 +98,7 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
           gui.choice(["one", "two", "three"], { name: "choice", index: 1 }),
           gui.table({ name: "table", columns: ["a", "b"], rows: [["1", "2"], ["3", "4"]] }),
           gui.files(".", { name: "files" }),
+          gui.pathBar("/takes/old", { name: "path_bar", root: "Storage" }),
           gui.separator({ name: "separator" }),
           gui.progress(0.3, { name: "progress", label: "progress" }),
           // the containers that draw something of their own

@@ -1892,6 +1892,45 @@ fn enter_in_a_dialogs_field_presses_its_default_button() {
     }
 }
 
+/// **A dialog's chord presses its button**, whichever of its widgets has the
+/// keys, while it is up; a chord the focused field edits with stays the
+/// field's, and outside a dialog the chord is the window's key table's.
+#[test]
+fn a_dialogs_chord_presses_its_button() {
+    let tree = |modal: i32| {
+        format!(
+            r#"{{"type":"window","margin":0,"status":false,"children":[
+                {{"id":10,"type":"layout","modal":{modal},"w":300,"h":200,"children":[
+                    {{"id":11,"type":"text","value":"abc"}},
+                    {{"id":12,"type":"button","label":"Select","chord":"Ctrl+A"}},
+                    {{"id":13,"type":"button","label":"Type a path","chord":"Ctrl+L"}}]}}]}}"#
+        )
+    };
+    for (modal, pressed) in [(1, true), (0, false)] {
+        let mut host = host_from(&tree(modal));
+        let mut effects = Vec::new();
+        host.set_props(
+            11,
+            vec![("focus".into(), serde_json::json!(1))],
+            &mut effects,
+        );
+        let mut g = Gestures::default();
+        let ctrl = GestureCtx {
+            ctrl: true,
+            ..ctx()
+        };
+        // the whole of a key, as both fronts call it
+        let e = g
+            .press_key(&mut host, &ctrl, Key::Char('l'), None)
+            .unwrap_or_default();
+        assert_eq!(!emitted(&e, 13).is_empty(), pressed, "modal {modal}");
+        let e = g
+            .press_key(&mut host, &ctrl, Key::Char('a'), None)
+            .unwrap_or_default();
+        assert!(emitted(&e, 12).is_empty(), "Ctrl+A is the field's");
+    }
+}
+
 /// **A pane's dialog stands over the whole dock**, centred in the area its
 /// front gave it, as its lists do.
 #[test]

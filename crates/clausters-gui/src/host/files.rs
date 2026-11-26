@@ -522,10 +522,17 @@ impl Host {
         ticket: u64,
         listing: Result<Listing, String>,
     ) -> bool {
-        self.window_def_mut(def)
+        // a file dialog's chooser: the dialog hears where it is too
+        let heard = self.file_dialog_hears(widget).then(|| listing.clone());
+        let taken = self
+            .window_def_mut(def)
             .and_then(|tree| tree.find_mut(widget))
             .and_then(|w| w.kind.as_element_mut())
-            .is_some_and(|el| el.listed(ticket, listing))
+            .is_some_and(|el| el.listed(ticket, listing));
+        if taken && let Some(listing) = heard {
+            self.file_dialog_listed(widget, listing.as_ref().map_err(String::as_str));
+        }
+        taken
     }
 }
 

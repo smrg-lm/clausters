@@ -51,7 +51,7 @@ export type { MapHolder, Pass, PlayheadSyncOptions, PlayheadSyncTargets } from "
 export {
     ICON, KEEP, Source, View, bpf, button, canvas, choice, code, curve, dialog, docs, entry,
     envToPoints, fileDialog, files, keys, knob, label, layout, menu, meter, node,
-    nodes, nodetree, number, pageJson, pager, pane, panel, patch,
+    nodes, nodetree, number, pageJson, pager, pane, panel, patch, pathBar,
     peaksCacheEmptyFile, peaksCacheFile, peaksCacheStreamFile, peaksCacheUpdateFile,
     phasescope, piano, plane, plot, pointsToEnv, post, progress, row, samplesToBlob,
     samplesToFile, scope, score, scoreView, scroll, separator, signal, slider,

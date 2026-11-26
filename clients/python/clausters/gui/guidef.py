@@ -255,6 +255,7 @@ __all__ = [
     "row",
     "table",
     "files",
+    "path_bar",
     "file_dialog",
     "waveform",
     "spectrogram",
@@ -1681,6 +1682,7 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
            icon: str | None = None, flat: bool | None = None, menu: list | None = None,
            verb: str | None = None, default: bool | None = None,
            variant: str | None = None, size: str | None = None,
+           chord: str | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A push ``button``, whose **press is the event**. ``text_size`` scales its
@@ -1746,7 +1748,12 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     ``default`` marks the **default action** of the dialog the button is in:
     the keys go to it as the dialog comes up, when the dialog has no field to
     give them to, and Enter in one of the dialog's single-line fields presses
-    it, as a form submits."""
+    it, as a form submits.
+
+    ``chord`` is the keys that press it while the dialog it is in is up
+    (``"Ctrl+L"``), whichever of the dialog's widgets has the keys: a
+    dialog's own keys, since the window's are behind it. A chord the field
+    being typed in edits with (``Ctrl+A``) stays the field's."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
@@ -1756,7 +1763,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
     if size is not None and size not in BUTTON_SIZES:
         raise ValueError(f"unknown button size {size!r}; use one of {BUTTON_SIZES}")
     extra = _drop_none(label=label, mode=mode, on=on, off=off, icon=icon, menu=menu,
-                       verb=verb, text_size=text_size, color=color, variant=variant, size=size)
+                       verb=verb, text_size=text_size, color=color, variant=variant, size=size,
+                       chord=chord)
     if flat is not None:
         extra["flat"] = 1 if flat else 0
     if default is not None:
@@ -1819,7 +1827,7 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
 
 def text(*, value: str | None = None, label: str | None = None, text_size: float | None = None,
          multiline: bool | None = None, invalid: bool | None = None,
-         placeholder: str | None = None, color: str | None = None,
+         placeholder: str | None = None, select=None, color: str | None = None,
          id: int | None = None, **props) -> View:
     """An editable ``text`` field. The user types into it and the entered string
     is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
@@ -1828,9 +1836,15 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
     seeds the initial contents (and ``/gui_set value`` sets it live). ``text_size``
     scales the field text and its label. ``invalid=True`` says what it holds is
     refused: its edge is drawn in the destructive role until it is set off.
-    ``placeholder`` is what the field shows, quieter, while it holds nothing."""
+    ``placeholder`` is what the field shows, quieter, while it holds nothing.
+
+    ``select`` gives what is selected, ``(start, end)`` in characters, or one
+    offset for the caret alone: a field opening with a name selects what is
+    typed over (``select=(0, 4)`` over ``"take.wav"``). Set live, it is
+    carried out once and kept nowhere, as a key is."""
     extra = _drop_none(value=value, label=label, text_size=text_size, color=color,
-                       placeholder=placeholder)
+                       placeholder=placeholder,
+                       select=list(select) if isinstance(select, (tuple, list)) else select)
     if multiline is not None:
         extra["multiline"] = bool(multiline)
     if invalid is not None:
@@ -1918,6 +1932,22 @@ def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: fl
     return node("files", id=id, **extra, **props)
 
 
+def path_bar(path: str = "/", *, root: str | None = None, id: int | None = None,
+             **props) -> View:
+    """**Where a folder is**: a ``path_bar``, one button per folder of
+    ``path`` from the root to it, as a platform's file dialog shows the folder
+    it lists. ``root`` is what the root is called (``"/"`` by default).
+
+    A press on a folder reports ``("go", path)``, the path up to it, and a
+    press past the last one ``("edit",)``, for whoever owns the bar to give
+    the path to a field. It goes nowhere itself: set its ``path`` to the
+    folder shown. A path wider than the bar is cut from the left behind a
+    ``...`` that goes to the folder before the first shown, so the folder
+    shown is always there."""
+    extra = _drop_none(path=path, root=root)
+    return node("path_bar", id=id, **extra, **props)
+
+
 def file_dialog(path: str = ".", *, mode: str = "open", kinds=None,
                 all_files: bool | None = None, multiple: bool = False,
                 title: str | None = None, accept: str | None = None,
@@ -1935,10 +1965,14 @@ def file_dialog(path: str = ".", *, mode: str = "open", kinds=None,
     writes, whose name is then typed.
 
     It is up while ``open`` is true, set on it to open and close it. The host
-    draws it (the chooser with the path and the storage's tools, the name,
-    the file type, the buttons) and answers all of it, so what reaches the
-    owner is ``("chosen", kind, *paths)``, a save's path named with the kind's
-    extension, or ``("cancel",)``; either takes it down."""
+    draws it (where it is as a `path_bar` with back, forward and up, the
+    chooser with the storage's tools, the name, the file type, the buttons)
+    and answers all of it, so what reaches the owner is
+    ``("chosen", kind, *paths)``, a save's path named with the kind's
+    extension, or ``("cancel",)``; either takes it down. ``Ctrl+L`` gives the
+    path to a field, where Enter goes and Escape gives the folders back. A
+    save opens with the name's stem selected, and one over a file the folder
+    holds asks before it replaces it."""
     extra = _drop_none(
         path=path, mode=mode,
         kinds=None if kinds is None else [[name, list(exts)] for name, exts in kinds],

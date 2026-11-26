@@ -511,6 +511,8 @@ impl WebApp {
     ) {
         if self.host.deliver_listing(def, widget, ticket, result) {
             self.request_redraw(def);
+            // what a file dialog answered to it
+            self.post_host_effects();
         }
     }
 }

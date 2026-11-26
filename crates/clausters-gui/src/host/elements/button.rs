@@ -29,6 +29,7 @@ use clausters_core::osc::OscType;
 use clausters_editing::verbs::ActionState;
 
 use crate::host::graphics::controls;
+use crate::host::keymap::Chord;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box};
@@ -111,8 +112,23 @@ pub struct Button {
     /// which has the keyboard when the dialog comes up and has no field to
     /// give it to.
     pub default: bool,
+    /// The `chord` prop: the keys that press it while the dialog it is in is
+    /// up (`"Ctrl+L"`), as a platform's dialog has keys of its own.
+    pub chord: Option<Chord>,
     /// Whether it is being held right now -- drawn pressed.
     held: bool,
+}
+
+/// A `chord` prop: a chord as the key table spells it, or none.
+fn chord_of(v: Option<&Value>) -> Option<Chord> {
+    let text = v.and_then(Value::as_str).filter(|s| !s.is_empty())?;
+    match Chord::parse(text) {
+        Ok(chord) => Some(chord),
+        Err(why) => {
+            crate::host::diag::warn!("button: chord {why}");
+            None
+        }
+    }
 }
 
 pub(super) fn build(
@@ -184,6 +200,7 @@ fn from_props(props: &Map<String, Value>) -> Button {
             .get("default")
             .and_then(parse::truthy)
             .unwrap_or(false),
+        chord: chord_of(props.get("chord")),
         held: false,
     }
 }
@@ -219,12 +236,20 @@ impl Element for Button {
                 true
             }
             "default" => parse::truthy(v).map(|b| self.default = b).is_some(),
+            "chord" => {
+                self.chord = chord_of(Some(v));
+                true
+            }
             _ => false,
         }
     }
 
     fn is_default(&self) -> bool {
         self.default
+    }
+
+    fn chord(&self) -> Option<&Chord> {
+        self.chord.as_ref()
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {

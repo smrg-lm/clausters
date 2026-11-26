@@ -739,6 +739,9 @@ itself, from the disk in a window and from the page's storage in a tab (where `/
 `{{api file_dialog}}` is the whole file dialog (to open, to save or to choose
 a folder, over the kinds of file you name), which the host draws and answers:
 what reaches you is {{alt `("chosen", kind, *paths)` || `"chosen" kind ...paths`}} or {{alt `("cancel",)` || `"cancel"`}}.
+It shows where it is as a {{alt `path_bar` || `pathBar`}}, a button per folder, with back, forward and up;
+`Ctrl+L` gives the path to a field, a save asks before it replaces a file,
+and the same bar is yours to put over a chooser of your own.
 
 {{alt `examples/panels/chrome.py` || `examples/panels/chrome.html`}} holds one of each in a single window.
 

@@ -1989,6 +1989,13 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **The chord that presses it while the dialog it stands in is up** (a
+    /// button's `chord`): a dialog's own keys, which the window's key table
+    /// does not reach while it is up.
+    fn chord(&self) -> Option<&crate::host::keymap::Chord> {
+        None
+    }
+
     /// **Whether Enter here submits the form it stands in**: a single-line
     /// field, where Enter has nothing of its own to do, so in a dialog it
     /// presses the dialog's default button, as a form submits on Enter. A

@@ -778,6 +778,12 @@ def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
         "kinds": [["WAV", ["wav"]]], "title": "Save as", "open": 1}
     assert guidef.file_dialog(all_files=False, multiple=True) == {
         "type": "file_dialog", "path": ".", "mode": "open", "all_files": 0, "multiple": 1}
+    # Where a folder is, a dialog's own keys, and a selection given.
+    assert guidef.path_bar("/takes", root="Storage") == {
+        "type": "path_bar", "path": "/takes", "root": "Storage"}
+    assert guidef.button(label="Type a path", chord="Ctrl+L")["chord"] == "Ctrl+L"
+    assert guidef.text(value="take.wav", select=(0, 4))["select"] == [0, 4]
+    assert guidef.text(select=3)["select"] == 3
 
 
 def test_a_number_is_never_narrowed_on_the_way_to_the_host():

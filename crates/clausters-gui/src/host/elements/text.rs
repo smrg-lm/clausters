@@ -18,6 +18,12 @@
 //! [`controls::field`], which is the same rule every ported leaf follows: the
 //! element owns its state, not its geometry.
 //!
+//! **What is selected can be given** (its `select` prop, `[start, end]` in
+//! characters, or one offset for the caret alone): a field that opens
+//! holding a name selects the part that is typed over -- a save's stem --
+//! as a platform's dialog does. It is carried out once, like a key, and
+//! kept nowhere.
+//!
 //! **Every content change delivers**, exactly as a numeric control delivers on
 //! every drag step -- never gated on Enter. A single-line field ignores Enter
 //! altogether, because there is nothing for it to mean when the value has
@@ -117,7 +123,7 @@ pub(super) fn build(
 }
 
 fn from_props(props: &Map<String, Value>) -> Text {
-    Text {
+    let mut text = Text {
         value: props
             .get("value")
             .and_then(Value::as_str)
@@ -141,10 +147,46 @@ fn from_props(props: &Map<String, Value>) -> Text {
         caret: Caret::default(),
         held: None,
         history: History::default(),
+    };
+    if let Some(v) = props.get("select") {
+        text.select(v);
     }
+    text
+}
+
+/// The byte offset of character `n` in `s`, or its end.
+fn byte_at(s: &str, n: usize) -> usize {
+    s.char_indices().nth(n).map_or(s.len(), |(i, _)| i)
 }
 
 impl Text {
+    /// **What is selected, given**: `[start, end]` in characters, the caret
+    /// at the end, or one offset for the caret alone. `false` for a value
+    /// that is neither.
+    fn select(&mut self, v: &Value) -> bool {
+        let n = |v: &Value| v.as_f64().map(|x| x.max(0.0) as usize);
+        let (from, to) = match v {
+            Value::Array(ends) => match (ends.first().and_then(n), ends.get(1).and_then(n)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => return false,
+            },
+            Value::String(text) => match serde_json::from_str::<Value>(text) {
+                Ok(list @ Value::Array(_)) => return self.select(&list),
+                _ => return false,
+            },
+            other => match n(other) {
+                Some(at) => (at, at),
+                None => return false,
+            },
+        };
+        self.caret = Caret {
+            pos: byte_at(&self.value, to),
+            anchor: Some(byte_at(&self.value, from)),
+        };
+        textedit::clamp(&self.value, &mut self.caret);
+        true
+    }
+
     /// The caret offset a point lands on, reconstructing the layout the
     /// renderer drew through -- so a click lands on the glyph it points at.
     fn caret_at(&self, at: (f64, f64), input: &Input) -> usize {
@@ -289,8 +331,15 @@ impl Element for Text {
                 self.placeholder = v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
                 true
             }
+            "select" => self.select(v),
             _ => false,
         }
+    }
+
+    /// A selection given is the hand's from then on, never a prop a
+    /// redefinition gives again.
+    fn writes(&self, key: &str) -> bool {
+        key == "select"
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
@@ -599,6 +648,21 @@ mod tests {
         // reports nothing.
         let events = type_keys(&mut field, Mods::default(), &[Key::Left]);
         assert_eq!(events, Some(Events::none()));
+    }
+
+    /// **What is selected can be given**: a range in characters, after the
+    /// value it selects in, or the caret alone; carried out once.
+    #[test]
+    fn a_selection_can_be_given() {
+        let mut field = from_props(&props(r#"{"value":"t\u00e9ma.wav","select":[0,4]}"#));
+        assert_eq!(field.selected_text().as_deref(), Some("t\u{e9}ma"));
+        assert!(field.set("select", &serde_json::json!("[2, 8]")));
+        assert_eq!(field.selected_text().as_deref(), Some("ma.wav"));
+        assert!(field.set("select", &serde_json::json!(1)));
+        assert_eq!(field.selected_text(), None);
+        assert_eq!(field.caret.pos, 1);
+        assert!(!field.set("select", &serde_json::json!("all")));
+        assert!(field.writes("select"));
     }
 
     /// Enter is a newline in a multiline field and nothing at all in a
