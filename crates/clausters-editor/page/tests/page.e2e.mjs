@@ -619,6 +619,31 @@ try {
     check(await shownTool(true), "and are back on the editor's page");
   }
 
+  // Closing the last tab, its changes let go in the close form, empties it
+  // in place: the editor's panel stays where it is, with a new empty tab.
+  {
+    const files = async () =>
+      (await host(`return (await host.dockCall({ verb: "layout" })).panes`)).filter((p) => p.id >= FILE);
+    const discard = (win) =>
+      host(`host.pressKey(${win}, "Tab", "shift"); host.pressKey(${win}, "Tab", "shift"); host.pressKey(${win}, "Return");`);
+    const closeTab = async (win) => {
+      await host(`host.set(${win + 2}, { focus: 1 }); host.typeText(${win}, "z");`);
+      await sleep(300);
+      await host(`host.verb(${win}, "close_tab")`);
+      await sleep(500);
+      await discard(win);
+      await sleep(800);
+    };
+    for (let open = await files(); open.length > 1; open = await files()) await closeTab(open[open.length - 1].id);
+    const before = await host(`return (await host.dockCall({ verb: "layout" })).layout`);
+    const [last] = await files();
+    await closeTab(last.id);
+    const after = await files();
+    check(after.length === 1 && after[0].title.startsWith("untitled"), "closing the last tab leaves a new empty one");
+    const layout = await host(`return (await host.dockCall({ verb: "layout" })).layout`);
+    check(JSON.stringify(layout) === JSON.stringify(before), "in the same panel, the dock as it was");
+  }
+
   console.log(failures ? `${failures} failed` : "all passed");
   await finish(failures ? 1 : 0);
 } catch (error) {

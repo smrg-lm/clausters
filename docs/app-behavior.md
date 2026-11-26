@@ -101,6 +101,11 @@ code that keeps it lives.
   window, one opened from a menu (the code editor's applications), and one
   a client opened without keeping the work (a sound file the window alone
   writes). Only a client that takes the work back says it keeps it.
+  **The code editor's last tab never takes its panel with it.** Closed,
+  its changes saved or let go, it becomes a new empty tab in place: the
+  same window defined again, so the dock does not move. A window the
+  editor frees is answered by no `/gui_closed`, so the editor forgets its
+  file when it frees it, not when the host would say so.
   **A document is open once in a host.** Opening a session file a window
   already holds brings that window forward and opens nothing: from the
   window's File > Open, from a client (`/gui_app_open`), or from the host's

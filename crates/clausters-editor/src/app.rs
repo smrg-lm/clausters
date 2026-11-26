@@ -634,13 +634,20 @@ impl App {
             // window does
             BAR_WIN | FOOT_WIN => return,
             DOCS_WIN => self.docs_shown = false,
-            _ => {
-                if let Some(i) = self.files.iter().position(|f| f.win == id) {
-                    self.files.remove(i);
-                    if self.active == Some(id) {
-                        self.active = self.files.last().map(|f| f.win);
-                    }
-                }
+            _ => return self.forget_file(id),
+        }
+        self.remember_files();
+        self.menus();
+    }
+
+    /// **The file of window `win` is gone**: freed here or closed by the
+    /// host. A free is answered by no `/gui_closed`, so whoever frees a
+    /// file's window forgets it here too.
+    fn forget_file(&mut self, win: i32) {
+        if let Some(i) = self.files.iter().position(|f| f.win == win) {
+            self.files.remove(i);
+            if self.active == Some(win) {
+                self.active = self.files.last().map(|f| f.win);
             }
         }
         self.remember_files();
@@ -920,6 +927,7 @@ impl App {
                 self.open_window(Some(path.clone()), file_name(&path), text);
                 if let Some(win) = blank {
                     self.link.free(win);
+                    self.forget_file(win);
                 }
                 if why == Read::Open {
                     self.settings.add_recent(&path.to_string_lossy());
@@ -950,6 +958,7 @@ impl App {
         self.open_window(Some(path.to_path_buf()), file_name(path), String::new());
         if let Some(win) = blank {
             self.link.free(win);
+            self.forget_file(win);
         }
     }
 
@@ -1215,8 +1224,8 @@ impl App {
         }
     }
 
-    /// Closes a tab, asking first when it holds changes; the last one gives
-    /// way to a new empty one.
+    /// Closes a tab, asking first when it holds changes; the last one
+    /// becomes a new empty one in its place, so the editor's panel stays.
     fn close_tab(&mut self, win: Option<i32>) {
         let Some(file) = win.and_then(|w| self.files.iter().find(|f| f.win == w)) else {
             return;
@@ -1230,10 +1239,32 @@ impl App {
     }
 
     fn close_now(&mut self, win: i32) {
-        if self.files.len() == 1 {
-            self.new_file();
+        if self.files.len() == 1 && self.files[0].win == win {
+            return self.renew(win);
         }
         self.link.free(win);
+        self.forget_file(win);
+    }
+
+    /// **The last tab, emptied in place**: its window defined again as a
+    /// new untitled file, where the dock has it. Freed and opened anew, the
+    /// panel would go with it, and the new window would arrive where the
+    /// dock puts a pane it was not told of.
+    fn renew(&mut self, win: i32) {
+        self.untitled += 1;
+        let file = File {
+            win,
+            path: None,
+            name: format!("untitled {}", self.untitled),
+            dirty: false,
+        };
+        let tree = self.file_tree(&file, "");
+        self.link.def(win, &tree);
+        self.files = vec![file];
+        self.active = Some(win);
+        self.link.set(win + CODE, &[("focus", json!(1))]);
+        self.remember_files();
+        self.menus();
     }
 
     // -- questions, in a file window's close form
