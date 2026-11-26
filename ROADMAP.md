@@ -128,6 +128,11 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
 
+- ⬜ **A scroll bar is written four times, and behaves four ways**
+  *(`crates/clausters-gui/PLAN.md`, Found by use)*. One `controls::ScrollBar`
+  for every bar (the planes', the post window's, the lists'), one shortest
+  thumb and thickness, the pointer over a bar answered once.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and
