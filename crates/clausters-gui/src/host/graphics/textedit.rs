@@ -426,26 +426,31 @@ pub fn move_end(value: &str, caret: &mut Caret, select: bool) {
 }
 
 /// Moves the caret up one line, keeping its column (clamped to the target
-/// line's length) -- multiline only; a no-op on the first line.
+/// line's length) -- multiline only. On the first line it goes to the
+/// line's start, as every text editor does: there is no line above to go
+/// to, and the key still moves.
 pub fn move_up(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     let start = line_start(value, caret.pos);
     if start == 0 {
-        return; // already on the first line
+        caret.pos = 0;
+        return;
     }
     let col = clusters(&value[start..caret.pos]);
     let prev_start = line_start(value, start - 1);
     caret.pos = col_to_byte(value, prev_start, start - 1, col);
 }
 
-/// Moves the caret down one line, keeping its column -- multiline only; a no-op
-/// on the last line.
+/// Moves the caret down one line, keeping its column -- multiline only. On
+/// the last line, which no newline ends, it goes to the line's end, as every
+/// text editor does.
 pub fn move_down(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     let start = line_start(value, caret.pos);
     let end = line_end(value, caret.pos);
     if end >= value.len() {
-        return; // already on the last line
+        caret.pos = end;
+        return;
     }
     let col = clusters(&value[start..caret.pos]);
     let next_start = end + 1;
@@ -705,13 +710,18 @@ mod tests {
     }
 
     #[test]
-    fn move_up_on_first_line_and_down_on_last_are_no_ops() {
-        let s = "abc".to_string();
+    fn up_on_the_first_line_goes_to_its_start_and_down_on_the_last_to_its_end() {
+        let s = "abc\ndef".to_string();
         let mut c = caret(1);
         move_up(&s, &mut c, false);
-        assert_eq!(c.pos, 1);
+        assert_eq!(c.pos, 0);
+        c = caret(5);
         move_down(&s, &mut c, false);
-        assert_eq!(c.pos, 1);
+        assert_eq!(c.pos, 7);
+        // and extends a selection the same way
+        c = caret(5);
+        move_down(&s, &mut c, true);
+        assert_eq!((c.anchor, c.pos), (Some(5), 7));
     }
 
     #[test]
