@@ -1912,3 +1912,8 @@ typed there opens as one chosen. A change is written into the chooser and
 kept nowhere, so a window built again never repeats a delete. The copies
 are a page's alone: natively the storage is the disk, and they are not
 shown.
+
+*(2026-11-26.)* The tools moved into the host's `file_dialog` element,
+which every application's file form now is, and `forms::storage` went
+with the forms' chooser: the rule is still decided once, in the host
+(`file_dialog::storage`).

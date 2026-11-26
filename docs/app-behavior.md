@@ -694,36 +694,41 @@ code that keeps it lives.
   Quit. The words are the window's verbs' (`verbs::WINDOW`), so no
   application says "session" or "file" where another says neither, and a
   scope restates one only to add the ellipsis of a verb that asks (the audio
-  editor's New...). Open and Save As are one dialog, the host's `files`
-  chooser in a form (`forms::Chooser`): Open chooses among the files the
-  application reads, Save As shows the folder with the file's name in a
-  field under it, which a file selected fills, and a pick (a double click or
-  Enter) accepts either; Open has the same field, and a path typed there
-  opens as one chosen. **Under the name is the file type**, as file dialogs
-  have had it for decades (`forms::FileType`): a save offers the kinds it
-  writes, and a name typed with none of the chosen kind's extensions, or
-  with another's, is saved with the kind's added; an application that
-  writes any name (the code editor, whose sources are text) offers All
-  files among them, which saves the name as typed; an open offers every kind
-  it reads at once, each of them, and All files (`*.*`), so a file saved
-  with no extension can be chosen, and opening one the application does not
-  read says so. The kind chosen is the chooser's filter. **The dialog manages the storage it shows**: under
-  the chooser are New folder, Rename and Delete (asked first), and in a page
-  Upload... and Download, with a line they speak in, and in a page the
-  chooser says how much of the storage is used (`forms::storage`; the host's
-  chooser carries each change out). It is the same natively and in a page;
-  no application types a path into a bare field or asks the desktop's
-  dialog. Check it with `chrome`'s, the score menu's, `forms`' and
-  `forms::storage`'s tests and the editor page's e2e (found 2026-11-22: the
-  score asked for a path in a text field, its file entries under the
-  page's, the code editor used the desktop's dialog, and the multitrack
-  said "session"; found 2026-11-23: only the code editor's dialog had the
-  storage's tools, so in a page an application's document could not be
-  taken to the disk nor a file brought from it; found 2026-11-25: the code
-  editor's dialog was a second state machine beside `forms::Dialogs`,
-  only drawn with the same pieces, and its Save As had no All files. The
-  code editor is an application like the others, and its Open and Save
-  As are now two forms of the same mechanism).
+  editor's New...). **Open, Save As and Export are one dialog, the host's
+  `file_dialog` element**, which every application and client asks through
+  (a form whose `Spec::file` is a `forms::FileRequest`) and nothing else
+  draws: the form says what it chooses (a file to open, or several, the
+  file to write, a folder) and the kinds of file (`forms::FileType`), and
+  hears one report, the kind chosen and the paths, or a cancel. The dialog
+  shows where it is (the path bar, back, forward and up), the file's name
+  in a field under the files, which a file selected fills, and **the file
+  type under the name**, as file dialogs have had it for decades: a save
+  offers the kinds it writes and adds the chosen kind's extension to a name
+  that has none of them; an application that writes any name (the code
+  editor, whose sources are text) offers All files among them; an open
+  offers every kind it reads at once, each of them, and All files (`*.*`).
+  A save over a file that exists asks first. **The dialog manages the
+  storage it shows**: New folder, Rename and Delete (asked first), and in a
+  page Upload... and Download, with a line they speak in, and in a page how
+  much of the storage is used. **The dialog chooses where and which kind;
+  a kind's parameters are asked after**, in the application's own form (the
+  audio editor's Save As asks the bit depth once the path is chosen), and
+  **a save never converts**: it offers the kinds that write the same
+  contents, and writing as another format is an Export or a conversion, a
+  verb of its own. It is the same natively and in a page; no application
+  types a path into a bare field, draws a chooser of its own or asks the
+  desktop's dialog. Check it with `forms`', the applications' and the
+  host's `file_dialog` tests, the multitrack's file tests in the host and
+  the editor page's e2e (found 2026-11-22: the score asked for a path in a
+  text field, its file entries under the page's, the code editor used the
+  desktop's dialog, and the multitrack said "session"; found 2026-11-23:
+  only the code editor's dialog had the storage's tools, so in a page an
+  application's document could not be taken to the disk nor a file brought
+  from it; found 2026-11-25: the code editor's dialog was a second state
+  machine beside `forms::Dialogs`, only drawn with the same pieces, and its
+  Save As had no All files; found 2026-11-26: the host's `file_dialog` had
+  been written beside the applications' file forms and no application used
+  it, so the dialog with the path bar was in nobody's File menu).
 - **A step tells the window where it left the context once it has landed.**
   Undo or redo from one window of a shared order may restore a file another
   window holds; the asking window learns the new version only after that walk

@@ -1614,7 +1614,18 @@ without any application, client or wire changing.
   with the name's stem selected, so what is typed replaces it (the `text`
   field gains a selection it can be given). In a page the root is the
   page's storage.
-- ⬜ **G49 — Every application asks through it.** The audio, multitrack,
+- ✅ **G49 — Every application asks through it.** *(Done 2026-11-26.
+  Decided with the code: a form that chooses a file says so with
+  `Spec::file`, a `forms::FileRequest` (open, save or folder; its kinds;
+  several or one), and is the element alone, numbered by its prefix: the
+  file dialogs stand on the forms' stack's page 0, which takes no room, a
+  form up opens its own with a correction, its `"chosen"` reads as `OK`
+  (`Open::paths`) and a refused answer takes the form down with the
+  dialog (`Dialogs::refused`). The host routes an application's
+  correction of a `file_dialog` to its presenter as it does a client's
+  `/gui_set`. The code editor keeps a small `filedialog` module that
+  declares its three requests and their ids, and holds them in its bar
+  from the start, so each dialog keeps where the hand last went.)* The audio, multitrack,
   notes and score editors and the code editor declare their file requests and
   read one report; `clausters_apps::forms` keeps the forms of values (a new
   file, notation, the close form) and loses the chooser, its state and

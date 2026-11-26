@@ -1143,19 +1143,15 @@ fn file_open_chooses_a_session_in_the_form_and_opens_it_in_the_window() {
         shown.effects.iter().any(|effect| effect["kind"] == "echo"
             && effect["answer"]
                 .to_string()
-                .contains(&format!(r#""widget":{}"#, ids["stack"]))),
+                .contains(&format!(r#""widget":{}"#, ids["open"]))),
         "{shown:?}"
     );
-    // nothing chosen: the form stays up and says so
-    let refused = f.gesture(ids["open:ok"], 2, "click", json!([]));
-    assert!(
-        refused
-            .effects
-            .iter()
-            .any(|effect| effect["answer"].to_string().contains("select a session")),
-        "{refused:?}"
+    let picked = f.gesture(
+        ids["open"],
+        3,
+        "chosen",
+        json!(["Multitrack session", path]),
     );
-    let picked = f.gesture(ids["open:path"], 3, "pick", json!([[path]]));
     assert!(
         picked
             .effects

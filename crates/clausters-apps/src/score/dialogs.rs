@@ -298,9 +298,7 @@ impl Spec for Form {
                 ("left", "Left margin (mm)"),
                 ("staff", "Staff height (mm)"),
             ],
-            Form::File(File::Open) => vec![("path", "")],
-            Form::File(_) => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Close => Vec::new(),
+            Form::File(_) | Form::Close => Vec::new(),
         }
     }
 
@@ -341,18 +339,18 @@ impl Spec for Form {
         (self == Form::Close).then_some(UNSAVED)
     }
 
-    /// **A file is chosen in the host's chooser**: the score to open, and
-    /// where the score or an export of it is written, each among the files
-    /// of its kind.
-    fn chooser(self, name: &str) -> Option<forms::Chooser> {
+    /// **A file is chosen in the host's file dialog**: the score to open,
+    /// and where the score or an export of it is written, each among the
+    /// files of its kind.
+    fn file(self) -> Option<forms::FileRequest> {
         let Form::File(file) = self else {
             return None;
         };
-        (name == "path").then(|| match file {
-            File::Open => forms::Chooser::open(SCORES, false),
-            File::SaveAs => forms::Chooser::save(&[MEI]),
-            File::ExportMidi => forms::Chooser::save(&[SMF]),
-            File::ExportClip => forms::Chooser::save(&[CLIP]),
+        Some(match file {
+            File::Open => forms::FileRequest::open(SCORES, false),
+            File::SaveAs => forms::FileRequest::save(&[MEI]),
+            File::ExportMidi => forms::FileRequest::save(&[SMF]),
+            File::ExportClip => forms::FileRequest::save(&[CLIP]),
         })
     }
 
@@ -528,8 +526,15 @@ mod tests {
         assert_eq!(stack["h"], 0, "it takes no room in the window");
         let pages = stack["children"].as_array().unwrap();
         assert_eq!(pages.len(), 7, "no dialog, and the six forms");
-        assert!(pages[0].get("children").is_none());
+        // the file forms are the host's file dialog, on page 0, one each
+        // prefix
+        let files = pages[0]["children"].as_array().unwrap();
+        assert_eq!(files.len(), 2, "the open and the file form");
+        assert!(files.iter().all(|f| f["type"] == "file_dialog"));
         for (page, form) in pages[1..].iter().zip(FORMS) {
+            if matches!(form, Form::File(_)) {
+                continue;
+            }
             let dialog = &page["children"][0];
             assert_eq!(dialog["modal"], true);
             assert_eq!(dialog["id"], ids[form.prefix()]);
@@ -542,11 +547,7 @@ mod tests {
             } else {
                 assert_eq!(parts.len(), 2);
                 let fields = parts[0]["children"].as_array().unwrap();
-                // a file form's chooser has the storage's tools under it,
-                // and its file-type field and the line the tools speak in
-                // after its fields
-                let tools = if matches!(form, Form::File(_)) { 3 } else { 0 };
-                assert_eq!(fields.len(), form.fields().len() + tools);
+                assert_eq!(fields.len(), form.fields().len());
             }
         }
         // every name is a widget, each under an id of its own
@@ -563,23 +564,27 @@ mod tests {
     #[test]
     fn a_form_is_shown_by_correcting_its_fields_and_turning_the_stack() {
         let ids = ids();
-        let open = Open {
-            form: Form::Param(Param::Stretch),
-            values: [("value".to_string(), "3/2".to_string())].into(),
-        };
+        let open = Open::new(
+            Form::Param(Param::Stretch),
+            [("value".to_string(), "3/2".to_string())].into(),
+        );
         let shown = open.shown(&ids);
         assert!(shown.contains(&(ids["param:value"], json!({"value": "3/2"}))));
         assert!(shown.contains(&(ids["param:label"], json!({"text": "Factor"}))));
         assert!(shown.contains(&(ids["param"], json!({"title": "Stretch"}))));
         assert_eq!(shown.last(), Some(&(ids[STACK], json!({"index": 2}))));
-        // the file's form is one dialog for both ways a file goes
-        let save = Open {
-            form: Form::File(File::SaveAs),
-            values: [("path".to_string(), "a.mei".to_string())].into(),
-        };
+        // the file's form is the host's dialog, asked as the save or an
+        // export, and no page of the stack
+        let save = Open::new(
+            Form::File(File::SaveAs),
+            [("path".to_string(), "a.mei".to_string())].into(),
+        );
         let shown = save.shown(&ids);
-        assert!(shown.contains(&(ids["file"], json!({"title": "Save as"}))));
-        assert_eq!(shown.last(), Some(&(ids[STACK], json!({"index": 4}))));
+        let (_, asked) = shown.iter().find(|(w, _)| *w == ids["file"]).unwrap();
+        assert_eq!(asked["title"], "Save as");
+        assert_eq!(asked["path"], "a.mei");
+        assert_eq!(asked["open"], 1);
+        assert!(shown.contains(&(ids[STACK], json!({"index": 0}))));
         assert_eq!(hidden(&ids), vec![(ids[STACK], json!({"index": 0}))]);
     }
 
@@ -617,10 +622,7 @@ mod tests {
             notes: vec!["* one".into(), "** two".into()],
             ..Header::default()
         };
-        let mut open = Open {
-            form: Form::Text,
-            values: text_of(&header),
-        };
+        let mut open = Open::new(Form::Text, text_of(&header));
         assert_eq!(open.value("title"), "A title");
         assert_eq!(open.value(NOTES), "* one\n** two");
         open.values
@@ -650,10 +652,7 @@ mod tests {
     #[test]
     fn the_page_form_is_in_millimetres() {
         let setup = PageSetup::default();
-        let mut open = Open {
-            form: Form::Page,
-            values: page_of(&setup),
-        };
+        let mut open = Open::new(Form::Page, page_of(&setup));
         assert_eq!(open.value("top"), "12.7");
         assert_eq!(open.value("staff"), "7.2");
         open.values.insert("left".into(), "20".into());

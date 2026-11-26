@@ -432,8 +432,8 @@ impl AudioEditor {
     }
 
     /// **Opens `form` over the window**, its fields holding what the editor
-    /// has: the shape of the file in the window, or its path. The open form's
-    /// chooser opens where the hand last left it.
+    /// has: the shape of the file in the window, or its path. The host's
+    /// file dialog opens where the hand last left it.
     pub(super) fn open_form(&mut self, form: Form) -> (Option<String>, Vec<Correction>) {
         if !self.has_dialogs() {
             return (Some("this window has no dialogs".into()), Vec::new());
@@ -442,16 +442,9 @@ impl AudioEditor {
             Form::New => {
                 dialogs::new_of(self.file.channels, self.file.rate, &self.file.save_format())
             }
-            // the depth it is saved in, which the form may change
-            Form::SaveAs => [
-                ("path".to_string(), self.file.target.clone()),
-                (
-                    "format".to_string(),
-                    dialogs::format_name(&self.file.save_format()).to_string(),
-                ),
-            ]
-            .into(),
-            Form::Open | Form::Close => BTreeMap::new(),
+            // it starts at the file the take is written to
+            Form::SaveAs => [(forms::PATH.to_string(), self.file.target.clone())].into(),
+            Form::Depth | Form::Open | Form::Close => BTreeMap::new(),
         };
         (
             None,
@@ -463,21 +456,16 @@ impl AudioEditor {
         if tag == "save" {
             return !(self.untitled() && self.has_dialogs());
         }
-        // the close form's Save of a file not written yet asks where first
+        // the close form's Save of a file not written yet asks where first,
+        // and a Save as writes once its depth is chosen
         let writes = |open: &&forms::Open<Form>| {
-            open.form == Form::SaveAs || (open.form == Form::Close && !self.untitled())
+            open.form == Form::Depth || (open.form == Form::Close && !self.untitled())
         };
         let Some(open) = self.window_state.dialogs.up().filter(writes) else {
             return false;
         };
-        // a pick in the save form's chooser accepts it as `OK` does
-        self.dialog_name(widget).is_some_and(|name| {
-            match forms::read(open.form, &name, tag, values) {
-                Some(Said::Accept) => true,
-                Some(Said::Picked(..)) => open.form == Form::SaveAs,
-                _ => false,
-            }
-        })
+        self.dialog_name(widget)
+            .is_some_and(|name| forms::read(open.form, &name, tag, values) == Some(Said::Accept))
     }
 
     /// **A save from the window**: over what the take was opened from, or --
@@ -614,12 +602,11 @@ impl AudioEditor {
         }
     }
 
-    /// **What a widget of the dialogs said**: a field typed into, a chooser's
-    /// selection or the directory it went into, a form cancelled, or `OK` --
-    /// a new file's shape or files to open, which the outcome names for the
-    /// client to open, or a path the take is saved under from now on. A pick
-    /// in the chooser (a double click or Enter on a file) opens what is
-    /// selected as `OK` does.
+    /// **What a widget of the dialogs said**: a field typed into, a form
+    /// cancelled, or `OK` -- a new file's shape or the files the host's
+    /// dialog chose to open, which the outcome names for the client to
+    /// open, or the path the take is saved under from now on, and then the
+    /// depth it is written in.
     pub(super) fn form_event(
         &mut self,
         name: &str,
@@ -640,23 +627,12 @@ impl AudioEditor {
             return self.close_answered(said == Said::Discard, out);
         }
         let reason = match said {
-            Said::Field(..)
-            | Said::Chosen(..)
-            | Said::Entered(..)
-            | Said::Changed(..)
-            | Said::Tool(_) => {
-                return (None, Vec::new());
-            }
-            // the storage's tools: the chooser asked for a change, the line
-            // says what they have to say
-            Said::Corrected(list) => return (None, forms::corrections(list)),
+            Said::Field(..) => return (None, Vec::new()),
             Said::Cancel | Said::Discard => {
                 self.window_state.leaving = None;
                 self.window_state.let_go.clear();
                 return (None, forms::corrections(self.window_state.dialogs.hide()));
             }
-            Said::Picked(_, paths) if open.form == Form::Open => open_paths(&paths, out),
-            Said::Picked(..) => return (None, Vec::new()),
             Said::Accept => match open.form {
                 Form::New => match dialogs::new_shape(&open) {
                     // a new file has no samples
@@ -671,15 +647,33 @@ impl AudioEditor {
                     }
                     Err(why) => Some(why),
                 },
-                Form::Open => {
-                    let paths = self.window_state.dialogs.chosen("path").to_vec();
-                    open_paths(&paths, out)
-                }
+                Form::Open => open_paths(open.paths(), out),
                 // answered above
                 Form::Close => None,
-                Form::SaveAs => match (open.save_path("path"), dialogs::chosen_format(&open)) {
-                    (_, Err(why)) => Some(why),
-                    (Some(path), Ok(format)) => {
+                // **where, then the depth**: the path chosen is kept by the
+                // depth form, which opens on the depth the file is saved in
+                Form::SaveAs => {
+                    let Some(path) = open.path() else {
+                        let hidden = self.window_state.dialogs.hide();
+                        return (
+                            Some("a file is saved under a path".into()),
+                            forms::corrections(hidden),
+                        );
+                    };
+                    let depth = [
+                        (forms::PATH.to_string(), path),
+                        (
+                            "format".to_string(),
+                            dialogs::format_name(&self.file.save_format()).to_string(),
+                        ),
+                    ];
+                    let shown = self.window_state.dialogs.open(Form::Depth, depth.into());
+                    return (None, forms::corrections(shown));
+                }
+                Form::Depth => match dialogs::chosen_format(&open) {
+                    Err(why) => Some(why),
+                    Ok(format) => {
+                        let path = open.value(forms::PATH).to_string();
                         match self.save_target(Some(path), format) {
                             Ok(target) => {
                                 // the operation the request becomes writes
@@ -692,17 +686,19 @@ impl AudioEditor {
                             Err(why) => Some(why),
                         }
                     }
-                    (None, Ok(_)) => Some("a file is saved under a path".into()),
                 },
             },
         };
-        // a refused form stays up, holding what was typed and chosen
+        // a refused form stays up, holding what was typed
         if reason.is_some() {
-            return (reason, Vec::new());
+            return (
+                reason,
+                forms::corrections(self.window_state.dialogs.refused()),
+            );
         }
         let mut corrections = forms::corrections(self.window_state.dialogs.hide());
         // a file saved under a new path is called by it from now on
-        if let (Form::SaveAs, Some(pane)) = (open.form, self.window_state.pane) {
+        if let (Form::Depth, Some(pane)) = (open.form, self.window_state.pane) {
             corrections.push(Correction {
                 widget: i64::from(pane),
                 props: json!({"label": self.pane_label()}),

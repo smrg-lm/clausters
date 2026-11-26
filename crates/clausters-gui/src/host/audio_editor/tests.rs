@@ -308,6 +308,24 @@ fn host() -> Host {
     host
 }
 
+/// **The host's file dialog `element`, up, answered by a hand**: its folders
+/// listed from the disk as a front lists them, the name typed and its
+/// accepting button pressed.
+fn choose_in(host: &mut Host, def_id: i32, element: i32, name: &str) {
+    until(host, "the file dialog never came up", |h| {
+        h.file_dialog_up(element)
+    });
+    let list = |host: &mut Host| {
+        for (def, widget, ask) in host.pending_listings() {
+            let listing = crate::host::files::list_dir(&ask.path);
+            host.deliver_listing(def, widget, ask.ticket, listing);
+        }
+    };
+    list(host);
+    host.file_dialog_answer(def_id, element, name);
+    list(host);
+}
+
 /// The `widget` id of window `def_id`, as its tree names it.
 fn widget_of(host: &Host, def_id: i32) -> i32 {
     let audio = host.audio.as_ref().unwrap();
@@ -541,8 +559,8 @@ fn a_multitrack_with_unsaved_work_marks_its_title() {
 }
 
 /// **An untitled multitrack's Save asks where**: the window's Save opens
-/// the Save as form, whose `OK` writes the session at the path typed,
-/// and a later Save writes there again without asking.
+/// the host's file dialog, whose Save writes the session at the path
+/// typed, and a later Save writes there again without asking.
 #[test]
 fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
     let folder = std::env::temp_dir().join(format!("host-save-as-{}", std::process::id()));
@@ -558,26 +576,15 @@ fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
     });
     let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
     let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
-    let stack = widget(&host, "dialog:stack");
-    let page = |host: &Host| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
-        Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
-        other => panic!("a stack: {other:?}"),
-    };
-    assert_eq!(page(&host), 0, "no dialog is up");
+    let dialog = widget(&host, "dialog:file");
+    let up = |host: &Host| host.file_dialog_up(dialog);
+    assert!(!up(&host), "no dialog is up");
     let save = host.event_message(def_id, 1, vec![OscType::String("save".into())]);
     assert!(host.deliver(def_id, &save));
-    until(&mut host, "the Save as form never came up", |h| {
-        page(h) == 1
-    });
     let path = folder.join("named.json");
-    let field = widget(&host, "dialog:file:name");
-    let typed = host.event_message(field, 2, vec![OscType::String(path.display().to_string())]);
-    assert!(host.deliver(def_id, &typed));
-    let ok = widget(&host, "dialog:file:ok");
-    let click = host.event_message(ok, 3, vec![OscType::String("click".into())]);
-    assert!(host.deliver(def_id, &click));
+    choose_in(&mut host, def_id, dialog, &path.display().to_string());
     until(&mut host, "the session was never written", |h| {
-        path.exists() && page(h) == 0
+        path.exists() && !up(h)
     });
     let written: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(written["multitrack"]["tracks"][0]["name"], "a", "{written}");
@@ -586,14 +593,14 @@ fn an_untitled_multitrack_is_saved_through_the_save_as_form() {
     let save = host.event_message(def_id, 4, vec![OscType::String("save".into())]);
     assert!(host.deliver(def_id, &save));
     until(&mut host, "the second save never wrote", |_| path.exists());
-    assert_eq!(page(&host), 0);
+    assert!(!up(&host));
     host.close_audio(def_id);
     let _ = std::fs::remove_dir_all(&folder);
 }
 
 /// **A multitrack opened over no session opens one from its File
-/// menu**: Open puts the form up, a pick in its chooser opens the
-/// session in the window, and File > New over unsaved work asks first,
+/// menu**: Open puts the host's file dialog up, the session chosen in it
+/// opens in the window, and File > New over unsaved work asks first,
 /// Don't save letting it go.
 #[test]
 fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
@@ -621,27 +628,15 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
             Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
             other => panic!("a stack: {other:?}"),
         };
-    let dialogs = widget(&host, "dialog:stack");
+    let dialog = widget(&host, "dialog:open");
     let verb = |host: &mut Host, seq, verb: &str| {
         let message = host.event_message(def_id, seq, vec![OscType::String(verb.into())]);
         assert!(host.deliver(def_id, &message));
     };
     verb(&mut host, 1, "open_file");
-    until(&mut host, "the Open form never came up", |h| {
-        index(h, dialogs) == 2
-    });
-    let chooser = widget(&host, "dialog:open:path");
-    let picked = host.event_message(
-        chooser,
-        2,
-        vec![
-            OscType::String("pick".into()),
-            OscType::String(path.display().to_string()),
-        ],
-    );
-    assert!(host.deliver(def_id, &picked));
+    choose_in(&mut host, def_id, dialog, &path.display().to_string());
     until(&mut host, "the session was never opened", |h| {
-        index(h, dialogs) == 0 && ask(h, def_id, json!({"query": "file"}))["path"] == json!(path)
+        !h.file_dialog_up(dialog) && ask(h, def_id, json!({"query": "file"}))["path"] == json!(path)
     });
     // unsaved work: File > New asks, and Don't save lets it go
     let edited = ask(

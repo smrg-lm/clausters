@@ -1322,8 +1322,18 @@ fn a_roll_with_a_file_saves_and_asks_before_a_close_loses_work() {
         };
         e.event(&event, 1)
     };
-    said(&mut e, "file:name", "/tmp/a roll.mid");
-    let out = said(&mut e, "file:ok", "click");
+    let chosen = Event {
+        addr: "/gui_event".into(),
+        args: vec![
+            ids["file"].clone(),
+            json!(1),
+            json!(0),
+            json!("chosen"),
+            json!("MIDI file"),
+            json!("/tmp/a roll.mid"),
+        ],
+    };
+    let out = e.event(&chosen, 1);
     assert_eq!(out.save.as_deref(), Some("/tmp/a roll.mid"));
     // a path the host said: Save names it at once
     call_json(&mut e, r#"{"verb": "sync", "path": "/tmp/b.mid"}"#);

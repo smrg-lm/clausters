@@ -823,9 +823,9 @@ fn with_dialogs(facts: Value) -> (AudioEditor, BTreeMap<String, i64>) {
     (editor, ids)
 }
 
-/// **A file not written yet asks where it goes**: Ctrl+S opens the save-as
-/// form rather than writing, and its `OK` writes the join there -- the path
-/// the file is from then on.
+/// **A file not written yet asks where it goes**: Ctrl+S opens the host's
+/// file dialog rather than writing, then asks the depth, and its `OK`
+/// writes the join there -- the path the file is from then on.
 #[test]
 fn an_untitled_file_is_saved_through_the_save_as_form() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync", "untitled": true}));
@@ -839,23 +839,26 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
     );
     let asked = event(&mut editor, json!([900, 1, 0, "save"]));
     assert!(asked.get("steps").is_none(), "nothing is written yet");
-    let corrections = asked["answer"]["corrections"].to_string();
-    assert!(
-        corrections.contains("\"index\":2"),
-        "the save-as page: {corrections}"
+    assert_eq!(
+        corrections_of(&asked, ids["file"])["open"],
+        1,
+        "the host's dialog"
     );
+    assert_eq!(corrections_of(&asked, ids["file"])["mode"], "save");
 
-    event(
+    let depth = event(
         &mut editor,
-        json!([ids["file:name"], 2, 0, "/takes/new.wav"]),
+        json!([ids["file"], 2, 0, "chosen", "WAV", "/takes/new.wav"]),
     );
-    let ok = event(&mut editor.clone(), json!([ids["file:ok"], 3, 0, "click"]));
+    assert!(depth.get("steps").is_none(), "the depth is asked first");
+    assert_eq!(corrections_of(&depth, ids["stack"]), json!({"index": 5}));
+    let ok = event(&mut editor.clone(), json!([ids["depth:ok"], 3, 0, "click"]));
     assert!(
         ok["answer"]["corrections"]
             .to_string()
             .contains("\"index\":0")
     );
-    let (requested, saved) = window_save(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
+    let (requested, saved) = window_save(&mut editor, json!([ids["depth:ok"], 3, 0, "click"]));
     assert!(requested);
     assert_eq!(renders(&saved["steps"])[0]["path"], "/takes/new.wav");
     let file = call(&mut editor, json!({"verb": "file"}));
@@ -873,30 +876,18 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
     assert_eq!(renders(&again["steps"])[0]["path"], "/takes/new.wav");
 }
 
-/// A save-as with no path stays up and says why; Cancel takes it down.
+/// A save-as starts at the file the take is written to; its dialog
+/// cancelled takes the form down and changes nothing.
 #[test]
-fn a_save_as_with_no_path_is_refused_and_cancel_closes_it() {
+fn a_save_as_starts_at_its_file_and_cancel_closes_it() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync", "path": "/takes/a.wav"}));
     let shown = event(&mut editor, json!([900, 1, 0, "save_as"]));
-    // the chooser opens in the file's folder, its name in the name field
-    let said = shown["answer"]["corrections"].to_string();
-    assert!(
-        said.contains("\"/takes\"") && said.contains("\"a.wav\""),
-        "{said}"
-    );
-    event(&mut editor, json!([ids["file:name"], 2, 0, "  "]));
-    let refused = event(&mut editor, json!([ids["file:ok"], 3, 0, "click"]));
-    assert!(
-        refused["answer"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("path")
-    );
-    let cancelled = event(&mut editor, json!([ids["file:cancel"], 4, 0, "click"]));
-    assert!(
-        cancelled["answer"]["corrections"]
-            .to_string()
-            .contains("\"index\":0")
+    assert_eq!(corrections_of(&shown, ids["file"])["path"], "/takes/a.wav");
+    let cancelled = event(&mut editor, json!([ids["file"], 2, 0, "cancel"]));
+    assert_eq!(corrections_of(&cancelled, ids["file"]), json!({"open": 0}));
+    assert_eq!(
+        corrections_of(&cancelled, ids["stack"]),
+        json!({"index": 0})
     );
     assert_eq!(
         call(&mut editor, json!({"verb": "file"}))["path"],
@@ -1018,8 +1009,7 @@ fn channels_fold_solo_and_unfold_through_one_state() {
 }
 
 /// **A field's focus is not its text**: the host reports `"focus" 1` when a
-/// field takes the keyboard, and the form keeps what was typed. A field that
-/// holds the word `focus` is still a field.
+/// field takes the keyboard, and the form keeps what was typed.
 #[test]
 fn a_fields_focus_report_is_not_what_it_holds() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
@@ -1030,49 +1020,39 @@ fn a_fields_focus_report_is_not_what_it_holds() {
     let made = event(&mut editor, json!([ids["new:ok"], 5, 0, "click"]));
     assert_eq!(made["newFile"]["channels"], 3);
     event(&mut editor, json!([900, 6, 0, "save_as"]));
-    event(&mut editor, json!([ids["file:name"], 7, 0, "focus"]));
-    let (_, saved) = window_save(&mut editor, json!([ids["file:ok"], 8, 0, "click"]));
-    assert_eq!(
-        renders(&saved["steps"])[0]["path"],
-        "/in/focus.wav",
-        "a name typed as the word is the word, in the folder shown, saved as WAV"
+    event(
+        &mut editor,
+        json!([ids["file"], 7, 0, "chosen", "WAV", "/in/focus.wav"]),
     );
+    event(&mut editor, json!([ids["depth:format"], 8, 0, "focus", 1]));
+    let (_, saved) = window_save(&mut editor, json!([ids["depth:ok"], 9, 0, "click"]));
+    assert_eq!(renders(&saved["steps"])[0]["path"], "/in/focus.wav");
 }
 
-/// **A file to open is the client's to open**, as a new one is: the form's
-/// `OK` names the path in the outcome.
+/// **A file to open is the client's to open**, as a new one is: what the
+/// host's dialog chose is named in the outcome.
 #[test]
 fn the_open_file_form_names_a_path_for_the_client() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
     let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
-    assert!(
-        shown["answer"]["corrections"]
-            .to_string()
-            .contains("\"index\":3")
-    );
-    let refused = event(&mut editor, json!([ids["open:ok"], 2, 0, "click"]));
-    assert!(
-        refused["answer"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("select")
-    );
-    event(
+    assert_eq!(corrections_of(&shown, ids["open"])["open"], 1);
+    let opened = event(
         &mut editor,
         json!([
-            ids["open:path"],
-            3,
+            ids["open"],
+            2,
             0,
-            "select",
+            "chosen",
+            "All supported",
             "/takes/b.flac",
             "/takes/c.wav"
         ]),
     );
-    let opened = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
     assert_eq!(
         opened["openFile"],
         json!({"paths": ["/takes/b.flac", "/takes/c.wav"]})
     );
+    assert_eq!(corrections_of(&opened, ids["open"]), json!({"open": 0}));
     assert!(opened.get("steps").is_none(), "nothing is written");
 }
 
@@ -1104,114 +1084,39 @@ fn widget_in(tree: &Value, id: i64) -> Option<&Value> {
         .find_map(|child| widget_in(child, id))
 }
 
-/// **The open form is the shared forms mechanism over the host's chooser**:
-/// it shows audio files, takes the keyboard, and -- cancelled and opened
-/// again -- opens in the directory the hand went into, with nothing chosen,
-/// so `OK` opens nothing chosen before.
+/// **The open form is the host's file dialog**: it asks for the audio
+/// files, several at once; cancelled, it goes down and opens nothing.
 #[test]
-fn the_open_form_reopens_where_it_was_left_with_nothing_chosen() {
+fn the_open_form_is_the_host_s_file_dialog() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
-    let chooser = ids["open:path"];
     let window = call(
         &mut editor,
         json!({"verb": "window", "widget": 12, "dialogs": ids}),
     );
-    let drawn = widget_in(&window, chooser).expect("the chooser is in the window");
-    assert_eq!(drawn["type"], "files");
-    assert!(drawn["filter"].as_array().unwrap().contains(&json!("wav")));
-
-    // the open lists every kind it reads at once, as its file-type field
-    // first says
-    let every = crate::forms::Chooser::open(crate::audio::dialogs::AUDIO, true).choices()[0]
-        .extensions
-        .clone();
-    assert!(every.contains(&"flac") && every.contains(&"wav"));
-    let shown = event(&mut editor, json!([900, 1, 0, "open_file"]));
-    assert_eq!(
-        corrections_of(&shown, chooser),
-        json!({"path": ".", "focus": 1, "filter": every})
-    );
-    event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
-    event(
-        &mut editor,
-        json!([chooser, 3, 0, "select", "/takes/a.wav"]),
-    );
-    let cancelled = event(&mut editor, json!([ids["open:cancel"], 4, 0, "click"]));
+    let drawn = widget_in(&window, ids["open"]).expect("the dialog is in the window");
+    assert_eq!(drawn["type"], "file_dialog");
+    assert_eq!(drawn["multiple"], true);
+    assert!(drawn["kinds"].to_string().contains("flac"));
+    event(&mut editor, json!([900, 1, 0, "open_file"]));
+    let cancelled = event(&mut editor, json!([ids["open"], 2, 0, "cancel"]));
     assert_eq!(
         corrections_of(&cancelled, ids["stack"]),
         json!({"index": 0})
     );
     assert!(cancelled.get("openFile").is_none());
-
-    let again = event(&mut editor, json!([900, 5, 0, "open_file"]));
-    assert_eq!(
-        corrections_of(&again, chooser),
-        json!({"path": "/takes", "focus": 1, "filter": every}),
-        "where the hand left it"
-    );
-    let refused = event(&mut editor, json!([ids["open:ok"], 6, 0, "click"]));
-    assert!(
-        refused.get("openFile").is_none(),
-        "nothing chosen this time"
-    );
-    assert!(
-        refused["answer"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("select")
-    );
 }
 
-/// **A pick opens what is chosen and takes the form down**; a directory gone
-/// into forgets the files chosen in the last one.
-#[test]
-fn a_pick_in_the_chooser_opens_the_files_it_names() {
-    let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
-    let chooser = ids["open:path"];
-    event(&mut editor, json!([900, 1, 0, "open_file"]));
-    event(&mut editor, json!([chooser, 2, 0, "select", "/a/x.wav"]));
-    event(&mut editor, json!([chooser, 3, 0, "path", "/b"]));
-    let refused = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
-    assert!(
-        refused.get("openFile").is_none(),
-        "chosen in a directory left behind"
-    );
-    let picked = event(
-        &mut editor,
-        json!([chooser, 5, 0, "pick", "/b/y.wav", "/b/z.flac"]),
-    );
-    assert_eq!(
-        picked["openFile"],
-        json!({"paths": ["/b/y.wav", "/b/z.flac"]})
-    );
-    assert_eq!(corrections_of(&picked, ids["stack"]), json!({"index": 0}));
-    let after = event(&mut editor, json!([chooser, 6, 0, "pick", "/b/y.wav"]));
-    assert!(after.get("openFile").is_none(), "no form is up to pick in");
-}
-
-/// **A window drawn again while the open form is up shows it again**, its
-/// chooser where it was; a window closed has no form up when it opens again.
+/// **A window drawn again while the open form is up shows it again**; a
+/// window closed has no form up when it opens again.
 #[test]
 fn a_redrawn_window_keeps_the_form_up_and_a_closed_one_drops_it() {
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
-    let chooser = ids["open:path"];
     event(&mut editor, json!([900, 1, 0, "open_file"]));
-    event(&mut editor, json!([chooser, 2, 0, "path", "/takes"]));
-    event(
-        &mut editor,
-        json!([chooser, 3, 0, "select", "/takes/a.wav"]),
-    );
     let redrawn = call(
         &mut editor,
         json!({"verb": "window", "widget": 12, "dialogs": ids}),
     );
-    assert_eq!(widget_in(&redrawn, ids["stack"]).unwrap()["index"], 3);
-    assert_eq!(widget_in(&redrawn, chooser).unwrap()["path"], "/takes");
-    let refused = event(&mut editor, json!([ids["open:ok"], 4, 0, "click"]));
-    assert!(
-        refused.get("openFile").is_none(),
-        "the new chooser has nothing selected, so nothing is chosen"
-    );
+    assert_eq!(widget_in(&redrawn, ids["open"]).unwrap()["open"], true);
 
     call(
         &mut editor,
@@ -1221,9 +1126,17 @@ fn a_redrawn_window_keeps_the_form_up_and_a_closed_one_drops_it() {
         &mut editor,
         json!({"verb": "window", "widget": 12, "dialogs": ids}),
     );
-    assert_eq!(widget_in(&reopened, ids["stack"]).unwrap()["index"], 0);
+    assert!(
+        widget_in(&reopened, ids["open"])
+            .unwrap()
+            .get("open")
+            .is_none()
+    );
     call(&mut editor, json!({"verb": "sync", "window": 900}));
-    let ignored = event(&mut editor, json!([chooser, 5, 0, "pick", "/takes/a.wav"]));
+    let ignored = event(
+        &mut editor,
+        json!([ids["open"], 5, 0, "chosen", "WAV", "/takes/a.wav"]),
+    );
     assert!(ignored.get("openFile").is_none());
 }
 
@@ -1271,10 +1184,7 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
     assert_eq!(placeholder["text"], crate::samples::NO_FILE);
     assert!(tree["menu"].is_array(), "the menu bar stays");
     assert!(widget_in(&tree, 20).is_some(), "the file list stays");
-    assert!(
-        widget_in(&tree, ids["open:path"]).is_some(),
-        "the dialogs stay"
-    );
+    assert!(widget_in(&tree, ids["open"]).is_some(), "the dialogs stay");
     assert!(!tree.to_string().contains("\"signal\""), "no take is drawn");
 
     assert_eq!(
@@ -1313,10 +1223,10 @@ fn an_editor_opens_with_no_file_and_answers_only_the_window_s_verbs() {
     let saved = event(&mut editor, json!([900, 1, 0, "save"]));
     assert_eq!(saved["answer"]["reason"], NO_FILE_OPEN);
     let shown = event(&mut editor, json!([900, 2, 0, "open_file"]));
-    assert_eq!(corrections_of(&shown, ids["stack"]), json!({"index": 3}));
+    assert_eq!(corrections_of(&shown, ids["open"])["open"], 1);
     let picked = event(
         &mut editor,
-        json!([ids["open:path"], 3, 0, "pick", "/a.wav"]),
+        json!([ids["open"], 3, 0, "chosen", "WAV", "/a.wav"]),
     );
     assert_eq!(picked["openFile"], json!({"paths": ["/a.wav"]}));
 
@@ -1743,8 +1653,8 @@ fn a_file_is_saved_in_the_bit_depth_it_was_made_or_opened_in() {
     .unwrap();
     assert_eq!(mp3.file.save_format(), "float");
 
-    // New opens on the window's file's depth, and Save as on it too, where
-    // another is chosen
+    // New opens on the window's file's depth, and the depth a Save as asks
+    // after its path on it too, where another is chosen
     let (mut editor, ids) = with_dialogs(json!({"verb": "sync"}));
     editor.file.sample_format = Some("int24".into());
     let shown = event(&mut editor, json!([900, 1, 0, "new_file"]));
@@ -1753,17 +1663,17 @@ fn a_file_is_saved_in_the_bit_depth_it_was_made_or_opened_in() {
         json!({"index": 3})
     );
     event(&mut editor, json!([ids["new:cancel"], 2, 0, "click"]));
-    let shown = event(&mut editor, json!([900, 3, 0, "save_as"]));
+    event(&mut editor, json!([900, 3, 0, "save_as"]));
+    let shown = event(
+        &mut editor,
+        json!([ids["file"], 4, 0, "chosen", "WAV", "/takes/sixteen.wav"]),
+    );
     assert_eq!(
-        corrections_of(&shown, ids["file:format"]),
+        corrections_of(&shown, ids["depth:format"]),
         json!({"index": 3})
     );
-    event(&mut editor, json!([ids["file:format"], 4, 0, "4"]));
-    event(
-        &mut editor,
-        json!([ids["file:name"], 5, 0, "/takes/sixteen"]),
-    );
-    event(&mut editor, json!([ids["file:ok"], 6, 0, "click"]));
+    event(&mut editor, json!([ids["depth:format"], 5, 0, "4"]));
+    event(&mut editor, json!([ids["depth:ok"], 6, 0, "click"]));
     assert_eq!(editor.file.save_format(), "int16");
     assert_eq!(editor.target(), "/takes/sixteen.wav");
 }

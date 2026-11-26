@@ -239,3 +239,29 @@ impl Host {
         }
     }
 }
+
+#[cfg(test)]
+impl Host {
+    /// Whether file dialog `id` is up.
+    pub(crate) fn file_dialog_up(&self, id: i32) -> bool {
+        self.file_dialogs
+            .get(&id)
+            .is_some_and(|shown| shown.presenter.is_up())
+    }
+
+    /// **File dialog `id` of window `def_id` answered by a hand**: `name`
+    /// typed in its name field, and its accepting button pressed.
+    pub(crate) fn file_dialog_answer(&mut self, def_id: i32, id: i32, name: &str) {
+        let Some(base) = self.file_dialogs.get(&id).map(|shown| shown.base) else {
+            return;
+        };
+        let typed = self.event_message(base + super::NAME, 0, vec![OscType::String(name.into())]);
+        self.deliver(def_id, &typed);
+        let click = self.event_message(
+            base + super::ACCEPT,
+            0,
+            vec![OscType::String("click".into())],
+        );
+        self.deliver(def_id, &click);
+    }
+}

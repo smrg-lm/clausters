@@ -34,7 +34,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 
 # What only the desktop's program has: the host it links, the session's
-# process, the portal's dialogs, the system's fonts.
+# process, the desktop's light or dark preference, the system's fonts.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # The host it links, drawn in one dock: the windows, the elements (code, post,
 # docs) and the GPU are its, and this crate is an application of it, linked
@@ -46,13 +46,10 @@ clausters-verovio = { path = "../clausters-verovio", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.6.7", features = ["derive"] }
 shell-words = "1.1.1"
-# The platform's own file dialogs: the desktop portal natively, so the
-# application links no toolkit.
-rfd = { version = "0.16.0", default-features = false, features = ["xdg-portal", "async-std"] }
 # The folders an application keeps its configuration and data in.
 dirs = "6.0.0"
 # The desktop's light or dark preference and its changes, asked of the
-# settings portal (the one rfd's dialogs already speak to).
+# settings portal.
 ashpd = { version = "0.11.1", default-features = false, features = ["async-std"] }
 pollster = "0.4.0"
 # The system's monospaced faces, for the code's font (View > Font).

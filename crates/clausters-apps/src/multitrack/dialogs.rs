@@ -2,7 +2,7 @@
 //! and the session to open -- two forms of the shared mechanism
 //! ([`crate::forms`]), the audio editor's Save as and Open for a session.
 
-use crate::forms::{self, Chooser, FileType, Spec};
+use crate::forms::{self, FileRequest, FileType, Spec};
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub enum Form {
     /// The path the session is written to, from now on.
     SaveAs,
     /// The session file to open in this window, chosen in the host's
-    /// chooser.
+    /// file dialog.
     Open,
 }
 
@@ -37,20 +37,16 @@ impl Spec for Form {
     }
 
     fn fields(self) -> Vec<(&'static str, &'static str)> {
-        match self {
-            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
-        }
+        Vec::new()
     }
 
-    /// The session to open is chosen in the host's own chooser, one file,
+    /// The session to open is chosen in the host's file dialog, one file,
     /// and the file to save as in it too.
-    fn chooser(self, name: &str) -> Option<Chooser> {
-        match (self, name) {
-            (Form::Open, "path") => Some(Chooser::open(SESSIONS, false)),
-            (Form::SaveAs, "path") => Some(Chooser::save(SESSIONS)),
-            _ => None,
-        }
+    fn file(self) -> Option<FileRequest> {
+        Some(match self {
+            Form::Open => FileRequest::open(SESSIONS, false),
+            Form::SaveAs => FileRequest::save(SESSIONS),
+        })
     }
 
     fn accept(self) -> &'static str {

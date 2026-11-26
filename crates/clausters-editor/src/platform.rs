@@ -161,11 +161,6 @@ pub trait Platform {
     /// The user's folder, which the recent files are written from (`~`),
     /// empty where there is none.
     fn home(&self) -> PathBuf;
-    /// Asks the platform's dialog for the documentation folder, a
-    /// preference: `Msg::Chosen`. Only asked where it
-    /// [`Offers::docs_folder`]; a file is opened and saved in the editor's
-    /// own file dialog.
-    fn choose(&self, purpose: Purpose, start: Option<PathBuf>);
 
     // -- the look and the documentation
 

@@ -169,7 +169,15 @@ impl Host {
             if let (Ok(id), Value::Object(props)) =
                 (i32::try_from(correction.widget), correction.props)
             {
-                self.set_props(id, props.into_iter().collect(), &mut fx);
+                // a file dialog's open and request are its presenter's, as a
+                // client's `/gui_set` of them is
+                let mut props: Vec<(String, Value)> = props.into_iter().collect();
+                if self.file_dialogs.contains_key(&id) {
+                    props = self.set_file_dialog(id, props, &mut fx);
+                }
+                if !props.is_empty() {
+                    self.set_props(id, props, &mut fx);
+                }
             }
         }
         // **What the corrections changed is drawn now**: the redraw a set

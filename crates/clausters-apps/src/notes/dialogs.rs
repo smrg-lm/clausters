@@ -99,9 +99,7 @@ impl Spec for Form {
                 ("division", "Shortest value"),
                 ("writing", "Polyphony"),
             ],
-            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
-            Form::SaveAs(_) => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Close => Vec::new(),
+            Form::Open | Form::SaveAs(_) | Form::Close => Vec::new(),
         }
     }
 
@@ -117,16 +115,14 @@ impl Spec for Form {
         (self == Form::Close).then_some(UNSAVED)
     }
 
-    /// The file to open is chosen in the host's own chooser, one file a roll
-    /// reads, and the file to save as in it too, as the one kind its format
-    /// is written as.
-    fn chooser(self, name: &str) -> Option<forms::Chooser> {
-        match (self, name) {
-            (Form::Open, "path") => Some(forms::Chooser::open(super::file::OPENS, false)),
-            (Form::SaveAs(format), "path") => {
-                Some(forms::Chooser::save(super::file::written(format)))
-            }
-            _ => None,
+    /// The file to open is chosen in the host's file dialog, one file a
+    /// roll reads, and the file to save as in it too, as the one kind its
+    /// format is written as.
+    fn file(self) -> Option<forms::FileRequest> {
+        match self {
+            Form::Open => Some(forms::FileRequest::open(super::file::OPENS, false)),
+            Form::SaveAs(format) => Some(forms::FileRequest::save(super::file::written(format))),
+            Form::Notation | Form::Close => None,
         }
     }
 

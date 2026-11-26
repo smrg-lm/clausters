@@ -19,11 +19,12 @@ use clausters_apps::{closing, quitting};
 
 use crate::arrangement;
 use crate::docs::Book;
-use crate::filedialog::{self, Form, PATH};
+use crate::filedialog::{self, Form};
 use crate::platform::{self, Language, MonoFamily, Offers, Platform, Purpose, Read};
 use crate::settings::{Settings, ThemePref};
 use crate::wire::{self, Link, Said};
 use crate::{config, theme};
+use clausters_apps::forms::{PATH, buttons, caption, field, footer_of, help};
 
 /// What reaches the application's thread.
 pub enum Msg {
@@ -42,11 +43,6 @@ pub enum Msg {
     EnvsDone(Result<(), String>),
     /// The documentation, read.
     Docs(Result<Docs, String>),
-    /// A file dialog answered.
-    Chosen {
-        purpose: Purpose,
-        path: Option<PathBuf>,
-    },
     /// The desktop's preference: dark or not.
     SystemDark(bool),
     /// Time to ask the dock again whether every pane has arrived.
@@ -476,7 +472,6 @@ impl App {
                 }
             }
             Msg::Docs(Err(e)) => self.post("info", &format!("{e}\n")),
-            Msg::Chosen { purpose, path } => self.chosen(purpose, path),
             Msg::Arrange => self.dock(json!({"verb": "layout"}), DockFor::Arrange),
             Msg::Fonts(fonts) => {
                 self.fonts = fonts;
@@ -1106,39 +1101,37 @@ impl App {
         self.ask_path(purpose, start);
     }
 
-    /// **A path asked for `purpose`**, in the editor's file dialogs over
-    /// the platform's storage: every application's forms, drawn by the
-    /// host, the same natively and in a page. A save starts at the file it
-    /// writes; an open in the folder of `start`, with its name typed.
+    /// **A path asked for `purpose`**, in the host's file dialog over the
+    /// platform's storage: every application's, the same natively and in a
+    /// page. A save starts at the file it writes; an open and a folder in
+    /// the folder of `start`, unless the hand has been somewhere since.
     fn ask_path(&mut self, purpose: Purpose, start: Option<PathBuf>) {
-        use clausters_apps::forms::NAME;
-        if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
+        // the documentation's folder is chosen over the preferences, which
+        // say it
+        let over_prefs = self.prefs_open && purpose != Purpose::DocsFolder;
+        if over_prefs || self.envs_open || self.file_dialog.is_some() {
             return;
         }
         let text = |p: &Path| p.to_string_lossy().into_owned();
         let types = self.lang.types;
-        let (form, values) = match purpose {
-            Purpose::SaveAs { .. } => {
-                let file = start.as_deref().map(text).unwrap_or_default();
-                (Form::SaveAs(types), [(PATH.to_string(), file)].into())
-            }
-            Purpose::Open | Purpose::DocsFolder => {
-                let file = start.as_deref().filter(|p| p.extension().is_some());
-                let dir = match file {
-                    Some(f) => f.parent().map(text),
-                    None => start.as_deref().map(text),
+        let (form, at) = match purpose {
+            Purpose::SaveAs { .. } => (Form::SaveAs(types), start.as_deref().map(text)),
+            Purpose::Open => {
+                let dir = match start.as_deref() {
+                    Some(f) if f.extension().is_some() => f.parent().map(text),
+                    other => other.map(text),
                 };
-                let mut values = std::collections::BTreeMap::new();
-                values.extend(dir.filter(|d| !d.is_empty()).map(|d| (PATH.to_string(), d)));
-                values.extend(file.map(|f| (NAME.to_string(), text(f))));
-                (Form::Open(types), values)
+                (Form::Open(types), dir)
             }
+            Purpose::DocsFolder => (Form::Folder, start.as_deref().map(text)),
         };
+        let values = at
+            .filter(|p| !p.is_empty())
+            .map(|p| (PATH.to_string(), p))
+            .into_iter()
+            .collect();
         self.file_dialog = Some(purpose);
         let shown = self.dialogs.open(form, values);
-        if let Some(stack) = self.dialogs.stack(&filedialog::forms(types)) {
-            self.show_dialog(stack, filedialog::SPARE);
-        }
         self.correct(shown);
     }
 
@@ -1155,9 +1148,7 @@ impl App {
         }
     }
 
-    /// **What the hand did in the file dialog up**, read by the forms: a
-    /// field, a chooser, a tool, the file type -- or the path chosen, which
-    /// takes the dialog down.
+    /// **What the host's file dialog said**: the path chosen, or a cancel.
     fn on_file_dialog(&mut self, id: i32, tag: &str, args: &[OscType]) {
         use clausters_apps::forms::Said;
         let (Some(purpose), Some(name)) = (
@@ -1170,35 +1161,16 @@ impl App {
         let Some(said) = self.dialogs.read(&name, &tag, &values) else {
             return;
         };
-        let Some(open) = self.dialogs.up().cloned() else {
-            return;
-        };
-        let opens = matches!(open.form, Form::Open(_));
         let path = match said {
+            Said::Accept => self.dialogs.up().and_then(|open| open.path()),
             Said::Cancel | Said::Discard => None,
-            Said::Corrected(list) => return self.correct(list),
-            Said::Picked(_, paths) if opens => paths.first().map(PathBuf::from),
-            Said::Accept if opens => match self.dialogs.chosen(PATH).first() {
-                Some(path) => Some(PathBuf::from(path)),
-                None => return self.dialog_says(&open.form, "Select a file to open."),
-            },
-            Said::Accept => match open.save_path(PATH) {
-                Some(path) => Some(PathBuf::from(path)),
-                None => return self.dialog_says(&open.form, "Type a file's name first."),
-            },
-            _ => return,
+            Said::Field(..) => return,
         };
-        self.close_dialog();
-        self.chosen(purpose, path);
-    }
-
-    /// The line the file dialog up speaks in, saying `says`.
-    fn dialog_says(&self, form: &Form, says: &str) {
-        use clausters_apps::forms::Spec;
-        use clausters_apps::forms::storage::{SAYS, says_props};
-        if let Some(id) = self.dialogs.ids.get(&format!("{}:{SAYS}", form.prefix())) {
-            self.correct(vec![(*id, says_props(says))]);
-        }
+        self.file_dialog = None;
+        let hidden = self.dialogs.hide();
+        self.correct(hidden);
+        self.menus();
+        self.chosen(purpose, path.map(PathBuf::from));
     }
 
     fn chosen(&mut self, purpose: Purpose, path: Option<PathBuf>) {
@@ -1668,6 +1640,16 @@ impl App {
                 {"id": DIALOG_HOLD, "type": "layout", "w": 0, "h": 0, "margin": 0},
             ],
         }]);
+        // the file dialogs, the host's, in the bar from the start: an open
+        // is a set of one, and each keeps where the hand last went
+        if let (Some(stack), Some(children)) = (
+            self.dialogs.stack(&filedialog::forms(self.lang.types)),
+            tree["children"][0]["children"].as_array_mut(),
+        ) {
+            let mut stack = stack;
+            number(&mut stack, filedialog::SPARE);
+            children.push(stack);
+        }
         self.link.def(BAR_WIN, &tree);
     }
 
@@ -1794,7 +1776,7 @@ impl App {
             return;
         }
         let start = config::get().docs_dir.map(PathBuf::from);
-        self.platform.choose(Purpose::DocsFolder, start);
+        self.ask_path(Purpose::DocsFolder, start);
     }
 
     fn set_docs_dir(&mut self, dir: Option<String>) {
@@ -2262,12 +2244,10 @@ impl App {
         self.menus();
     }
 
-    /// The dialog that is up goes.
+    /// The dialog of the application's that is up goes.
     fn close_dialog(&mut self) {
         self.prefs_open = false;
         self.envs_open = false;
-        self.file_dialog = None;
-        self.dialogs.closed();
         self.link.def(
             DIALOG_HOLD,
             &json!({"type": "layout", "w": 0, "h": 0, "margin": 0}),
@@ -2333,8 +2313,8 @@ impl App {
                             "label": "Save and restart session", "variant": "ghost"}),
                     ]),
                 ]),
-                footer(json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1,
-                    "variant": "outline"})),
+                footer_of(&[json!({"id": PREFS_CLOSE, "type": "button", "label": "Close", "default": 1,
+                    "variant": "outline"})]),
             ]
         });
         // a folder of the user's only where the platform has one to choose
@@ -2387,8 +2367,8 @@ impl App {
                 // **nothing to say is no row**: shown once it says something
                 {"id": ENVS_STATUS, "type": "label", "text": "", "wrap": 1, "muted": 1,
                     "shown": 0},
-                footer(json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1,
-                    "variant": "outline"})),
+                footer_of(&[json!({"id": ENVS_CLOSE, "type": "button", "label": "Close", "default": 1,
+                    "variant": "outline"})]),
             ]
         });
         self.envs_open = true;
@@ -2532,34 +2512,6 @@ impl App {
             self.envs_say(&e);
         }
     }
-}
-
-/// **A field of a dialog**: its caption, its control and what helps with
-/// it, set close together.
-fn field(children: &[Value]) -> Value {
-    json!({"type": "layout", "flow": "col", "hug": 1, "margin": 0, "gap": 8, "children": children})
-}
-
-/// A field's caption.
-fn caption(text: &str) -> Value {
-    json!({"type": "label", "text": text, "variant": "caption"})
-}
-
-/// The sentence under a field that says what it is for, quieter.
-fn help(text: &str) -> Value {
-    json!({"type": "label", "text": text, "wrap": 1, "variant": "help"})
-}
-
-/// A row of buttons, as wide as what they say.
-fn buttons(children: &[Value]) -> Value {
-    json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
-        "children": children})
-}
-
-/// **A dialog's footer**: its buttons at its right.
-fn footer(button: Value) -> Value {
-    json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0, "gap": 8,
-        "children": [{"type": "separator", "weight": 1, "line": 0}, button]})
 }
 
 /// **Takes out of a menu the entries named in `hidden`**, by their verb or,

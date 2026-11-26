@@ -528,7 +528,7 @@ impl NotesEditor {
             }),
             _ => String::new(),
         };
-        let values = [("path".to_string(), offered)].into();
+        let values = [(forms::PATH.to_string(), offered)].into();
         (None, forms::corrections(self.dialogs.open(form, values)))
     }
 
@@ -881,9 +881,6 @@ impl NotesEditor {
             return (None, Vec::new());
         };
         let refused = match said {
-            // the storage's tools: the chooser asked for a change, the line
-            // says what they have to say
-            Said::Corrected(list) => return (None, forms::corrections(list)),
             Said::Cancel => {
                 self.leaving = None;
                 return (None, forms::corrections(self.dialogs.hide()));
@@ -893,18 +890,14 @@ impl NotesEditor {
                 crate::file::let_what_waits_go(self, out);
                 return (None, forms::corrections(self.dialogs.hide()));
             }
-            Said::Picked(_, paths) if open.form == Form::Open => self.open_chosen(&paths, out),
             Said::Accept => match open.form {
                 Form::Notation => match dialogs::conversion(&open) {
                     Ok((reading, writing)) => self.convert(reading, writing, out),
                     Err(why) => Some(why),
                 },
-                Form::Open => {
-                    let paths = self.dialogs.chosen("path").to_vec();
-                    self.open_chosen(&paths, out)
-                }
+                Form::Open => self.open_chosen(open.paths(), out),
                 Form::SaveAs(_) => {
-                    let path = open.save_path("path").unwrap_or_default();
+                    let path = open.path().unwrap_or_default();
                     crate::file::path_given(self, false, &path, out)
                 }
                 Form::Close => crate::file::save_then_go(self, out),
@@ -912,7 +905,7 @@ impl NotesEditor {
             _ => return (None, Vec::new()),
         };
         if let Some(why) = refused {
-            return (Some(why), Vec::new());
+            return (Some(why), forms::corrections(self.dialogs.refused()));
         }
         // a save the close form asked for, with no file yet, asks for one:
         // the Save as form is now the one up

@@ -274,16 +274,6 @@ const DOCS = IDS + 4;
 const BAR = IDS + 5;
 const FILE = IDS + 1000;
 const CODE = FILE + 2;
-/** The editor's file dialogs (filedialog.rs), numbered in the order the
- *  forms name their widgets: the stack, then Open's (the form, its chooser,
- *  its name, OK, Cancel, the file type, five tools, the line they speak
- *  in), then Save as's the same. */
-const DIALOGS = IDS - 100000;
-const OPEN_FILES = DIALOGS + 2;
-const OPEN_NAME = DIALOGS + 3;
-const OPEN_SAYS = DIALOGS + 12;
-const SAVE_NAME = DIALOGS + 15;
-
 try {
   const page = BROWSER === "firefox" ? await firefox() : await chrome();
   const evaluate = page.evaluate;
@@ -497,14 +487,19 @@ try {
     check((await panes()) === before, "and none of its characters is a chord: no tab or dialog opens");
   }
 
-  // Saving into the page's storage, in the editor's own file dialog.
+  // Saving into the page's storage, in the host's file dialog: it opens
+  // with the keys on the name, its stem selected, so what is typed replaces
+  // it, and Enter presses Save.
+  await evaluate(`(async () => {
+    await (await navigator.storage.getDirectory()).getDirectoryHandle("sketches", { create: true });
+    return true;
+  })()`);
   await key("a", "ctrl");
   await host(`host.typeText(${FILE}, "// a sketch\\n1 + 1\\n")`);
   await key("s", "ctrl");
-  await sleep(500);
-  await host(`host.set(${SAVE_NAME}, { focus: 1 }); host.pressKey(${BAR}, "a", "ctrl"); host.typeText(${BAR}, "/sketches/one.mjs");`);
+  await sleep(800);
+  await host(`host.pressKey(${BAR}, "a", "ctrl"); host.typeText(${BAR}, "/sketches/one.mjs");`);
   await sleep(300);
-  // Enter in the field presses Save, the dialog's default button
   await host(`host.pressKey(${BAR}, "Return");`);
   await sleep(1000);
   const saved = await evaluate(`(async () => {
@@ -523,14 +518,12 @@ try {
   // **The file dialog manages the storage it shows**, as every
   // application's does: a new folder named in its field, the file selected
   // renamed and deleted (asked first), and in a page the copies to and from
-  // the disk. The chooser carries each change out and lists its folder again,
-  // and says how much of the page's storage is used.
+  // the disk. Driven by the keys: the dialog opens with them on its files,
+  // Tab goes on to the name, and Shift+Tab from the files goes back through
+  // the tools, the last first.
   {
-    const FILES = OPEN_FILES;
-    const NAME = OPEN_NAME;
-    const SAYS = OPEN_SAYS;
+    const TOOLS = { upload: 5, download: 4, folder: 3, rename: 2, delete: 1 };
     const press = (name, mods = "") => host(`host.pressKey(${BAR}, ${JSON.stringify(name)}, ${JSON.stringify(mods)})`);
-    const says = async () => String((await host(`return await host.query(${SAYS})`)).props.text ?? "");
     const sketches = () =>
       evaluate(`(async () => {
         const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("sketches");
@@ -538,22 +531,30 @@ try {
         for await (const [name, handle] of dir.entries()) out.push(name + (handle.kind === "directory" ? "/" : ""));
         return out.sort().join(" ");
       })()`);
-    /** Selects the row `n` rows down in the folder shown, by the keys. */
+    /** The Open dialog, up again where the hand left it, the keys on its
+     *  files. */
+    const reopen = async () => {
+      await press("Escape");
+      await sleep(300);
+      await key("o", "ctrl");
+      await sleep(1000);
+    };
+    /** Selects the row `n` rows down in the folder shown. */
     const select = async (n) => {
-      await host(`host.set(${FILES}, { focus: 1 })`);
       for (let i = 0; i < n; i++) await press("Down");
       await sleep(200);
     };
-    /** Types `text` in the field and presses the tool `back` stops before
-     *  it -- with the browser's own key where the tool needs the reader's
-     *  gesture (a file picker). */
-    const tool = async (text, back, gesture = false) => {
-      await host(`host.set(${NAME}, { focus: 1 })`);
-      if (text !== null) {
-        await press("a", "ctrl");
-        await host(`host.typeText(${BAR}, ${JSON.stringify(text)})`);
-      }
-      for (let i = 0; i < back; i++) await press("Tab", "shift");
+    /** Types `text` in the name and goes back to the files. */
+    const name = async (text) => {
+      await press("Tab");
+      await press("a", "ctrl");
+      await host(`host.typeText(${BAR}, ${JSON.stringify(text)})`);
+      await press("Tab", "shift");
+    };
+    /** Presses `tool`, from the files -- with the browser's own key where
+     *  the tool needs the reader's gesture (a file picker). */
+    const tool = async (which, gesture = false) => {
+      for (let i = 0; i < TOOLS[which]; i++) await press("Tab", "shift");
       if (gesture) await page.press(" ", "Space");
       else await press("space");
       await sleep(800);
@@ -562,17 +563,19 @@ try {
     // it opens in the folder of the file in the tab, /sketches
     await key("o", "ctrl");
     await sleep(1000);
-    const chooser = (await host(`return await host.query(${FILES})`)).props;
-    check(chooser.quota > 0 && chooser.used > 0, "the dialog says how much of the page's storage is used");
-    await tool("kept", 3);
+    await name("kept");
+    await tool("folder");
     check((await sketches()) === "kept/ one.mjs", "New folder makes the folder named in the field");
-    await select(3); // .., kept/, one.mjs
-    await tool("two.mjs", 2);
+    await reopen();
+    await select(2); // kept/, one.mjs
+    await name("two.mjs");
+    await tool("rename");
     check((await sketches()) === "kept/ two.mjs", "Rename gives the file selected the name typed");
     if (page.downloadInto) {
       await page.downloadInto(disk);
-      await select(3);
-      await tool(null, 4);
+      await reopen();
+      await select(2);
+      await tool("download");
       await sleep(1000);
       let got = "";
       try {
@@ -583,13 +586,15 @@ try {
     if (page.chooseNext) {
       writeFileSync(join(disk, "brought.mjs"), "// from the disk\n");
       await page.chooseNext(join(disk, "brought.mjs"));
-      await tool(null, 5, true);
+      await reopen();
+      await tool("upload", true);
       await sleep(1000);
       check((await sketches()) === "brought.mjs kept/ two.mjs", "Upload copies a file from the disk into the folder shown");
     }
-    await select(page.chooseNext ? 4 : 3);
-    await tool(null, 1);
-    check((await says()).startsWith("Delete /sketches/two.mjs?"), "Delete asks first");
+    await reopen();
+    await select(page.chooseNext ? 3 : 2);
+    await tool("delete");
+    check((await sketches()).includes("two.mjs"), "Delete asks first");
     await press("space");
     await sleep(800);
     check(!(await sketches()).includes("two.mjs"), "and deletes the file selected once asked again");

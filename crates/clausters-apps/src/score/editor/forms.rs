@@ -45,7 +45,7 @@ impl ScoreEditor {
                     Some(_) => String::new(),
                     None => self.path.clone().unwrap_or_default(),
                 };
-                [("path".to_string(), offered)].into()
+                [(crate::forms::PATH.to_string(), offered)].into()
             }
         };
         (None, corrections(self.dialogs.open(form, values)))
@@ -65,16 +65,8 @@ impl ScoreEditor {
             return (None, Vec::new());
         };
         match said {
-            // what a field holds and where a chooser is are kept by the
-            // reading
-            Said::Field(..)
-            | Said::Chosen(..)
-            | Said::Entered(..)
-            | Said::Changed(..)
-            | Said::Tool(_) => (None, Vec::new()),
-            // the storage's tools: the chooser asked for a change, the line
-            // says what they have to say
-            Said::Corrected(list) => (None, corrections(list)),
+            // what a field holds is kept by the reading
+            Said::Field(..) => (None, Vec::new()),
             Said::Cancel => {
                 self.leaving = None;
                 (None, corrections(self.dialogs.hide()))
@@ -84,13 +76,13 @@ impl ScoreEditor {
                 crate::file::let_what_waits_go(self, out);
                 (None, corrections(self.dialogs.hide()))
             }
-            // a score picked in the chooser is opened as `OK` would
-            Said::Accept | Said::Picked(..) => {
+            // `OK`, or what the host's file dialog chose
+            Said::Accept => {
                 let Some(open) = self.dialogs.up().cloned() else {
                     return (None, Vec::new());
                 };
                 if let Some(reason) = self.accept(&open, out) {
-                    return (Some(reason), Vec::new());
+                    return (Some(reason), corrections(self.dialogs.refused()));
                 }
                 // a save the close form asked for, with no file yet, asks for
                 // one: the file form is now the one up
@@ -130,11 +122,7 @@ impl ScoreEditor {
             // A file is its holder's to read and write: the outcome names
             // it, and for a save it is the score's file from now on.
             Form::File(file) => {
-                let path = match file {
-                    dialogs::File::Open => self.dialogs.chosen("path").first().cloned(),
-                    _ => open.save_path("path"),
-                }
-                .unwrap_or_default();
+                let path = open.path().unwrap_or_default();
                 match file.format() {
                     Some(_) if path.is_empty() => Some("a file is named by its path".into()),
                     Some(format) => {

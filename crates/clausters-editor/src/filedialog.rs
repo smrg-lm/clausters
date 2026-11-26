@@ -1,16 +1,16 @@
-//! **The editor's file dialogs**: its Open and its Save as, two forms of
-//! the mechanism every application's dialogs are ([`clausters_apps::forms`]).
+//! **The editor's file dialogs**: its Open, its Save as and the folder of
+//! its documentation, file requests of the mechanism every application's
+//! dialogs are ([`clausters_apps::forms`]).
 //!
 //! The code editor is an application like the others, so its files are
-//! chosen the way theirs are: the host's `files` chooser over the platform's
-//! storage (the disk in a window, the page's storage in a tab), the
-//! storage's tools under it, the name it fills, the file type and the
-//! buttons, read by [`forms::Dialogs`]. This module says only what is the
-//! editor's: which forms it has, the kinds of file its language's sources
-//! are, and where its widgets are numbered. The application shows the
-//! dialogs in its dialog place and carries out what they answer.
+//! chosen the way theirs are: in the host's own file dialog, the
+//! `file_dialog` element, over the platform's storage (the disk in a
+//! window, the page's storage in a tab), read by [`forms::Dialogs`]. This
+//! module says only what is the editor's: which requests it makes, the
+//! kinds of file its language's sources are, and where their widgets are
+//! numbered.
 
-use clausters_apps::forms::{self, Chooser, FileType, Ids, Spec};
+use clausters_apps::forms::{self, FileRequest, FileType, Ids, Spec};
 use clausters_core::osc::OscType;
 use serde_json::{Value, json};
 
@@ -23,7 +23,7 @@ pub const SPARE: i32 = BASE + 100;
 /// Past the dialogs' ids.
 const END: i32 = BASE + 1000;
 
-/// **One of the editor's file forms**, over the kinds of file its
+/// **One of the editor's file requests**, over the kinds of file its
 /// language's sources are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
@@ -31,16 +31,16 @@ pub enum Form {
     Open(&'static [FileType]),
     /// Where a tab is written.
     SaveAs(&'static [FileType]),
+    /// The folder the documentation is read from.
+    Folder,
 }
-
-/// The field each form chooses its file in.
-pub const PATH: &str = "path";
 
 impl Spec for Form {
     fn prefix(self) -> &'static str {
         match self {
             Form::Open(_) => "open",
             Form::SaveAs(_) => "file",
+            Form::Folder => "folder",
         }
     }
 
@@ -48,6 +48,7 @@ impl Spec for Form {
         match self {
             Form::Open(_) => 1,
             Form::SaveAs(_) => 2,
+            Form::Folder => 3,
         }
     }
 
@@ -55,25 +56,27 @@ impl Spec for Form {
         match self {
             Form::Open(_) => "Open",
             Form::SaveAs(_) => "Save as",
+            Form::Folder => "Documentation folder",
         }
     }
 
     fn fields(self) -> Vec<(&'static str, &'static str)> {
-        vec![(PATH, ""), (forms::NAME, "Name")]
+        Vec::new()
     }
 
-    fn chooser(self, name: &str) -> Option<Chooser> {
-        match (self, name) {
-            (Form::Open(types), PATH) => Some(Chooser::open(types, false)),
-            (Form::SaveAs(types), PATH) => Some(Chooser::save(types)),
-            _ => None,
-        }
+    fn file(self) -> Option<FileRequest> {
+        Some(match self {
+            Form::Open(types) => FileRequest::open(types, false),
+            Form::SaveAs(types) => FileRequest::save(types),
+            Form::Folder => FileRequest::folder(),
+        })
     }
 
     fn accept(self) -> &'static str {
         match self {
             Form::Open(_) => "Open",
             Form::SaveAs(_) => "Save",
+            Form::Folder => "Choose",
         }
     }
 }
@@ -81,8 +84,8 @@ impl Spec for Form {
 /// **The forms the dialog place holds**, in the order of their pages, over
 /// the kinds of file `types`.
 #[must_use]
-pub fn forms(types: &'static [FileType]) -> [Form; 2] {
-    [Form::Open(types), Form::SaveAs(types)]
+pub fn forms(types: &'static [FileType]) -> [Form; 3] {
+    [Form::Open(types), Form::SaveAs(types), Form::Folder]
 }
 
 /// **Every widget of the dialogs, numbered** from the editor's range.
@@ -130,7 +133,7 @@ pub fn report(tag: &str, args: &[OscType]) -> (String, Vec<Value>) {
 mod tests {
     use super::*;
     use crate::platform::{JAVASCRIPT, PYTHON};
-    use clausters_apps::forms::{Dialogs, Said, TYPE};
+    use clausters_apps::forms::Said;
     use std::collections::BTreeMap;
 
     /// Every widget is numbered in the editor's range, before its spare
@@ -142,67 +145,41 @@ mod tests {
         assert!(ids.values().all(|id| owns(*id) && *id < SPARE));
     }
 
-    /// **A save writes the kind chosen, or any name**: a name with none of
-    /// the language's extensions is given its first, and with every file
-    /// chosen it is written as typed.
+    /// **Each request is the host's file dialog**, asking for the
+    /// language's kinds; a save writes any name too, as an editor of text.
     #[test]
-    fn a_save_writes_the_kind_chosen_or_any_name() {
-        let mut d = dialogs();
-        let form = Form::SaveAs(JAVASCRIPT.types);
-        let start = BTreeMap::from([(PATH.to_string(), "/sketches/a.mjs".to_string())]);
-        d.open(form, start);
-        let open = d.up().unwrap();
-        assert_eq!(open.value(PATH), "/sketches");
-        assert_eq!(open.save_path(PATH).as_deref(), Some("/sketches/a.mjs"));
-        let saved = |d: &mut Dialogs<Form>, name: &str| {
-            d.read("file:name", name, &[]);
-            d.up().unwrap().save_path(PATH)
-        };
-        assert_eq!(saved(&mut d, "c").as_deref(), Some("/sketches/c.mjs"));
-        assert_eq!(saved(&mut d, "c.JS").as_deref(), Some("/sketches/c.JS"));
-        assert_eq!(
-            saved(&mut d, "c.txt").as_deref(),
-            Some("/sketches/c.txt.mjs")
-        );
-        let (tag, values) = report("", &[OscType::Int(1)]);
-        d.read("file:type", &tag, &values);
-        assert_eq!(d.up().unwrap().value(TYPE), "All files (*.*)");
-        assert_eq!(saved(&mut d, "c.txt").as_deref(), Some("/sketches/c.txt"));
-        assert_eq!(
-            saved(&mut d, "Makefile").as_deref(),
-            Some("/sketches/Makefile")
-        );
+    fn each_request_is_the_host_s_file_dialog() {
+        let d = dialogs();
+        let stack = d.stack(&forms(JAVASCRIPT.types)).unwrap();
+        let files = stack["children"][0]["children"].as_array().unwrap();
+        assert_eq!(files.len(), 3);
+        let of = |id: i32| files.iter().find(|f| f["id"] == id).unwrap();
+        let save = of(d.ids["file"]);
+        assert_eq!(save["type"], "file_dialog");
+        assert_eq!(save["mode"], "save");
+        assert_eq!(save["kinds"], json!([["JavaScript", ["mjs", "js"]]]));
+        assert_eq!(save["all_files"], true);
+        assert_eq!(of(d.ids["folder"])["mode"], "folder");
     }
 
-    /// **An open lists the language's files, and every file on asking**,
-    /// every file once.
+    /// What the dialog chose is the form's `OK`, its path the one written.
     #[test]
-    fn an_open_lists_its_kinds_and_every_file() {
+    fn a_choice_is_the_path() {
         let mut d = dialogs();
-        let shown = d.open(Form::Open(PYTHON.types), BTreeMap::new());
-        assert!(shown.contains(&(
-            d.ids["open:type"],
-            json!({"options": ["Python (*.py, *.pyw)", "All files (*.*)"], "index": 0})
-        )));
-        let (tag, values) = report("", &[OscType::Float(1.0)]);
-        assert_eq!(
-            d.read("open:type", &tag, &values),
-            Some(Said::Corrected(vec![(
-                d.ids["open:path"],
-                json!({"filter": []})
-            )]))
+        let start = BTreeMap::from([(forms::PATH.to_string(), "/sketches/a.mjs".to_string())]);
+        let shown = d.open(Form::SaveAs(JAVASCRIPT.types), start);
+        let (_, asked) = shown.iter().find(|(w, _)| *w == d.ids["file"]).unwrap();
+        assert_eq!(asked["path"], "/sketches/a.mjs");
+        assert_eq!(asked["open"], 1);
+        let (tag, values) = report(
+            "chosen",
+            &[
+                OscType::String("JavaScript".into()),
+                OscType::String("/sketches/b.mjs".into()),
+            ],
         );
-    }
-
-    /// A save's kinds are the language's, every file last.
-    #[test]
-    fn a_save_offers_the_language_s_kinds_and_every_file() {
-        let mut d = dialogs();
-        let shown = d.open(Form::SaveAs(PYTHON.types), BTreeMap::new());
-        assert!(shown.contains(&(
-            d.ids["file:type"],
-            json!({"options": ["Python (*.py, *.pyw)", "All files (*.*)"], "index": 0})
-        )));
+        assert_eq!(d.read("file", &tag, &values), Some(Said::Accept));
+        assert_eq!(d.up().unwrap().path().as_deref(), Some("/sketches/b.mjs"));
     }
 
     /// A report's tag stands, and a number alone is a choice's index.

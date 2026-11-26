@@ -706,7 +706,8 @@ impl MultitrackEditor {
         (None, crate::closing::shown(&ids, true))
     }
 
-    /// **The Open form, up**, its chooser where the hand last left it.
+    /// **The Open form, up**: the host's file dialog, where the hand last
+    /// left it.
     fn open_session_form(&mut self) -> (Option<String>, Vec<Correction>) {
         if !self.dialogs.numbered(dialogs::forms()) {
             return (Some("this window has no dialogs".into()), Vec::new());
@@ -715,13 +716,10 @@ impl MultitrackEditor {
         (None, crate::forms::corrections(shown))
     }
 
-    /// **What a widget of the dialogs said**: a field typed into, a
-    /// chooser's selection or the directory it went into, the form
-    /// cancelled, or `OK` -- the path the session is saved under, which the
+    /// **What a widget of the dialogs said**: the file dialog cancelled, or
+    /// what it chose -- the path the session is saved under, which the
     /// outcome names for the holder to write, or the session to open, which
-    /// is opened as File > Open opens it. A pick in the chooser (a double
-    /// click or Enter on a file) opens it as `OK` does. A form refused
-    /// stays up.
+    /// is opened as File > Open opens it.
     fn form_event(
         &mut self,
         name: &str,
@@ -738,22 +736,15 @@ impl MultitrackEditor {
         };
         match said {
             Said::Cancel | Said::Discard => (None, crate::forms::corrections(self.dialogs.hide())),
-            // the storage's tools: the chooser asked for a change, the line
-            // says what they have to say
-            Said::Corrected(list) => (None, crate::forms::corrections(list)),
-            Said::Picked(_, paths) if open.form == dialogs::Form::Open => {
-                self.open_chosen(&paths, out)
-            }
-            Said::Accept if open.form == dialogs::Form::Open => {
-                let paths = self.dialogs.chosen("path").to_vec();
-                self.open_chosen(&paths, out)
-            }
+            Said::Accept if open.form == dialogs::Form::Open => self.open_chosen(open.paths(), out),
             Said::Accept => {
-                let Some(path) = open.save_path("path") else {
-                    return (Some("a session is saved under a path".into()), Vec::new());
+                let path = open.path();
+                let hidden = crate::forms::corrections(self.dialogs.hide());
+                let Some(path) = path else {
+                    return (Some("a session is saved under a path".into()), hidden);
                 };
                 out.save_as = Some(path);
-                (None, crate::forms::corrections(self.dialogs.hide()))
+                (None, hidden)
             }
             _ => (None, Vec::new()),
         }
@@ -3127,14 +3118,19 @@ mod tests {
         assert!(
             corrections
                 .iter()
-                .any(|c| c.widget == i64::from(ids["stack"]) && c.props["index"] == 1),
-            "the form is up: {corrections:?}"
+                .any(|c| c.widget == i64::from(ids["file"]) && c.props["open"] == 1),
+            "the host's file dialog is up: {corrections:?}"
         );
-        ed.event(
-            &event(i64::from(ids["file:name"]), 2, 1, "/songs/a.json", vec![]),
+        let accepted = ed.event(
+            &event(
+                i64::from(ids["file"]),
+                3,
+                1,
+                "chosen",
+                vec![json!("Multitrack session"), json!("/songs/a.json")],
+            ),
             1,
         );
-        let accepted = ed.event(&event(i64::from(ids["file:ok"]), 3, 1, "click", vec![]), 1);
         assert_eq!(accepted.save_as.as_deref(), Some("/songs/a.json"));
         // with a file, Save writes at once
         ed.set_untitled(false);

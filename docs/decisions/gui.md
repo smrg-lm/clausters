@@ -2571,6 +2571,17 @@ system dialog can say (the kinds, one file or several, a folder, where to
 start, a name), and a kind's parameters are asked after the dialog, in the
 application's own form.
 
+*(2026-11-26, later that day.)* **The element replaced the forms' chooser
+in the same change, or it is not a replacement.** It had landed beside the
+applications' file forms, their move left for a later milestone, and every
+File menu went on drawing the old dialog while the new one was in nobody's.
+Now a form that chooses a file is the element (`forms::FileRequest`) and the
+forms keep only forms of values; the chooser of their own, its state and its
+storage tools are gone, the audio editor asks its bit depth after the path,
+and the code editor's documentation folder is a `folder` request, so the
+desktop's dialog it was asked in went too. The rule this broke is in
+`AGENTS.md`, "A replacement replaces, in the same change".
+
 ## The clipboard is the platform's, and text is all that crosses
 
 *(2026-10-04, with the user.)* The host had one typed clipboard of its own --

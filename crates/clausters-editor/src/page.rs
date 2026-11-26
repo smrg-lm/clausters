@@ -24,7 +24,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use crate::app::{App, Msg};
 use crate::docs::Folder;
-use crate::platform::{self, Language, Offers, Platform, Purpose, Read};
+use crate::platform::{self, Language, Offers, Platform, Read};
 use crate::settings::Settings;
 use crate::wire::{Link, Said};
 
@@ -323,17 +323,6 @@ impl Platform for Page {
 
     fn home(&self) -> PathBuf {
         PathBuf::new()
-    }
-
-    /// Never asked: a page has no documentation folder of the user's.
-    fn choose(&self, purpose: Purpose, _start: Option<PathBuf>) {
-        Page::deliver(
-            &self.inner,
-            Msg::Chosen {
-                purpose,
-                path: None,
-            },
-        );
     }
 
     /// The browser's `prefers-color-scheme`, now and at every change.

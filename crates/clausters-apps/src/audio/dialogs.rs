@@ -1,10 +1,12 @@
 //! **The audio editor's dialogs**: a new file's shape, the path a file is
-//! saved under, the file to open and the question unsaved work asks -- four
-//! forms of the shared mechanism ([`crate::forms`]).
+//! saved under and then its bit depth, the file to open and the question
+//! unsaved work asks -- forms of the shared mechanism ([`crate::forms`]).
+//! The host's file dialog chooses where and which kind; the kind's
+//! parameter, the depth, is asked after it.
 
 use std::collections::BTreeMap;
 
-use crate::forms::{self, Chooser, FileType, Spec};
+use crate::forms::{self, FileRequest, FileType, Spec};
 
 /// **One of the forms.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,8 +15,11 @@ pub enum Form {
     /// bit depth -- the one it is saved in. It has no samples: what it
     /// holds, the edits put there.
     New,
-    /// The path the take is written to, from now on, and its bit depth.
+    /// The path the take is written to, from now on: the host's file
+    /// dialog.
     SaveAs,
+    /// **The bit depth it is written in**, asked once the path is chosen.
+    Depth,
     /// Files to open in this editor, chosen in the host's chooser.
     Open,
     /// **Whether to save the file in focus before it goes**: the window has
@@ -30,6 +35,7 @@ impl Spec for Form {
         match self {
             Form::New => "new",
             Form::SaveAs => "file",
+            Form::Depth => "depth",
             Form::Open => "open",
             Form::Close => "close",
         }
@@ -41,6 +47,7 @@ impl Spec for Form {
             Form::SaveAs => 2,
             Form::Open => 3,
             Form::Close => 4,
+            Form::Depth => 5,
         }
     }
 
@@ -48,6 +55,7 @@ impl Spec for Form {
         match self {
             Form::New => "New",
             Form::SaveAs => "Save as",
+            Form::Depth => "Bit depth",
             Form::Open => "Open",
             Form::Close => "Close",
         }
@@ -60,9 +68,8 @@ impl Spec for Form {
                 ("channels", "Channels"),
                 ("format", "Bit depth"),
             ],
-            Form::SaveAs => vec![("path", ""), (forms::NAME, "Name"), ("format", "Bit depth")],
-            Form::Open => vec![("path", ""), (forms::NAME, "Name")],
-            Form::Close => Vec::new(),
+            Form::Depth => vec![("format", "Bit depth")],
+            Form::SaveAs | Form::Open | Form::Close => Vec::new(),
         }
     }
 
@@ -73,23 +80,23 @@ impl Spec for Form {
     /// A file's bit depth is chosen among those a file is written in, as
     /// it is made and as it is saved as another.
     fn options(self, name: &str) -> Option<&'static [&'static str]> {
-        (matches!(self, Form::New | Form::SaveAs) && name == "format").then_some(&FORMAT_NAMES)
+        (matches!(self, Form::New | Form::Depth) && name == "format").then_some(&FORMAT_NAMES)
     }
 
-    /// The files to open are chosen in the host's own chooser, where Ctrl
+    /// The files to open are chosen in the host's file dialog, where Ctrl
     /// and Shift select several, and the file to save as in it too.
-    fn chooser(self, name: &str) -> Option<Chooser> {
-        match (self, name) {
-            (Form::Open, "path") => Some(Chooser::open(AUDIO, true)),
-            (Form::SaveAs, "path") => Some(Chooser::save(WRITES)),
-            _ => None,
+    fn file(self) -> Option<FileRequest> {
+        match self {
+            Form::Open => Some(FileRequest::open(AUDIO, true)),
+            Form::SaveAs => Some(FileRequest::save(WRITES)),
+            Form::New | Form::Depth | Form::Close => None,
         }
     }
 
     fn accept(self) -> &'static str {
         match self {
             Form::Open => "Open",
-            Form::SaveAs => "Save",
+            Form::SaveAs | Form::Depth => "Save",
             Form::New | Form::Close => "OK",
         }
     }
@@ -203,7 +210,13 @@ pub fn chosen_format(open: &Open) -> Result<&'static str, String> {
 }
 
 /// The forms the window holds, in the order of their pages.
-const FORMS: [Form; 4] = [Form::New, Form::SaveAs, Form::Open, Form::Close];
+const FORMS: [Form; 5] = [
+    Form::New,
+    Form::SaveAs,
+    Form::Open,
+    Form::Close,
+    Form::Depth,
+];
 
 /// **Every widget of the dialogs, by name**, for a caller to number.
 #[must_use]
@@ -296,10 +309,11 @@ mod tests {
             .chain(AUDIO)
             .filter_map(|v| v.label.strip_suffix("..."))
             .collect();
-        // the close form asks, and no verb opens it
+        // the close form asks, and no verb opens it; the depth is asked
+        // after a Save as
         let titles: Vec<&str> = FORMS
             .iter()
-            .filter(|f| **f != Form::Close)
+            .filter(|f| !matches!(**f, Form::Close | Form::Depth))
             .map(|f| f.title())
             .collect();
         assert_eq!(asks.len(), titles.len(), "{asks:?}");
@@ -315,30 +329,25 @@ mod tests {
         let pages = stack["children"].as_array().unwrap();
         assert_eq!(
             pages.len(),
-            5,
-            "no dialog, a new file, a save, an open and the close form"
+            6,
+            "the file dialogs, a new file, a save, an open, the close form and the depth"
         );
         assert_eq!(pages[1]["children"][0]["title"], "New");
-        assert_eq!(pages[2]["children"][0]["title"], "Save as");
-        assert_eq!(pages[3]["children"][0]["title"], "Open");
-        // a chooser has no caption: the dialog's title says what it chooses
-        let chooser = &pages[3]["children"][0]["children"][0]["children"][0]["children"][0];
-        assert_eq!(chooser["type"], "files", "the host's chooser");
-        assert_eq!(chooser["id"], ids["open:path"]);
-        assert_eq!(chooser["multiple"], true);
-        assert!(
-            chooser["filter"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("flac"))
-        );
-        let open = Open {
-            form: Form::SaveAs,
-            values: BTreeMap::new(),
-        };
+        assert_eq!(pages[5]["children"][0]["title"], "Bit depth");
+        // the open and the save are the host's file dialog, on page 0
+        let files = pages[0]["children"].as_array().unwrap();
+        let open = files.iter().find(|f| f["id"] == ids["open"]).unwrap();
+        assert_eq!(open["type"], "file_dialog");
+        assert_eq!(open["mode"], "open");
+        assert_eq!(open["multiple"], true);
+        assert!(open["kinds"].to_string().contains("flac"));
+        let save = files.iter().find(|f| f["id"] == ids["file"]).unwrap();
+        assert_eq!(save["mode"], "save");
+        assert_eq!(save["kinds"], json!([["WAV", ["wav", "wave"]]]));
+        let open = Open::new(Form::Depth, BTreeMap::new());
         assert_eq!(
             open.shown(&ids).last(),
-            Some(&(ids["stack"], json!({"index": 2})))
+            Some(&(ids["stack"], json!({"index": 5})))
         );
     }
 
@@ -351,7 +360,7 @@ mod tests {
             Form::New.fields().iter().map(|f| f.0).collect::<Vec<_>>(),
             ["rate", "channels", "format"]
         );
-        // the bit depth is chosen, as it is for a Save as
+        // the bit depth is chosen, as it is after a Save as
         let depths = Some(
             &[
                 "64-bit float",
@@ -363,11 +372,8 @@ mod tests {
             ][..],
         );
         assert_eq!(Form::New.options("format"), depths);
-        assert_eq!(Form::SaveAs.options("format"), depths);
-        let mut open = Open {
-            form: Form::New,
-            values: new_of(2, 44_100.0, "int24"),
-        };
+        assert_eq!(Form::Depth.options("format"), depths);
+        let mut open = Open::new(Form::New, new_of(2, 44_100.0, "int24"));
         assert_eq!(new_shape(&open), Ok((2, 44_100.0, "int24")));
         // any whole rate, and only a whole one: a file states it in hertz
         open.values.insert("rate".into(), "551".into());

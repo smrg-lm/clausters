@@ -1179,6 +1179,21 @@ fn said(name: &str, report: &str) -> Event {
     }
 }
 
+/// What the host's file dialog of the form `prefix` chose: `path`.
+fn chosen(prefix: &str, path: &str) -> Event {
+    Event {
+        addr: "/gui_event".into(),
+        args: vec![
+            json!(named()[prefix]),
+            json!(5),
+            json!(1),
+            json!("chosen"),
+            json!("MEI"),
+            json!(path),
+        ],
+    }
+}
+
 fn with_dialogs() -> ScoreEditor {
     let mut editor = ScoreEditor::new(shared(), 1);
     editor.window(
@@ -1485,22 +1500,14 @@ fn a_save_names_the_scores_file_and_asks_for_one_where_it_has_none() {
         let out = editor.event(&ask, 1);
         assert_eq!(out.save, None);
         let shown = corrections_of(&out);
-        assert!(
-            shown
-                .iter()
-                .any(|c| c.widget == i64::from(ids["file"])
-                    && c.props == json!({"title": "Save as"}))
-        );
-        assert_eq!(
-            shown.last().map(|c| (c.widget, c.props.clone())),
-            Some((i64::from(ids["stack"]), json!({"index": 4})))
-        );
-        editor.event(&said("file:cancel", "click"), 1);
+        assert!(shown.iter().any(|c| c.widget == i64::from(ids["file"])
+            && c.props["title"] == "Save as"
+            && c.props["open"] == 1));
+        editor.event(&said("file", "cancel"), 1);
     }
     // a path typed and accepted is the file, written now and from now on
     editor.event(&pick("save", None), 1);
-    editor.event(&said("file:name", "/tmp/a score.mei"), 1);
-    let out = editor.event(&said("file:ok", "click"), 1);
+    let out = editor.event(&chosen("file", "/tmp/a score.mei"), 1);
     assert_eq!(out.save.as_deref(), Some("/tmp/a score.mei"));
     assert!(!out.changed && out.record.is_none(), "a save is no edit");
     // the file is the score's once its holder confirmed the write
@@ -1517,10 +1524,9 @@ fn a_save_names_the_scores_file_and_asks_for_one_where_it_has_none() {
         editor.event(&pick("save", None), 1).save.as_deref(),
         Some("/tmp/other.mei")
     );
-    // an empty path names nothing
+    // a dialog that chose nothing names nothing
     editor.event(&pick("save_as", None), 1);
-    editor.event(&said("file:name", "  "), 1);
-    let out = editor.event(&said("file:ok", "click"), 1);
+    let out = editor.event(&said("file", "chosen"), 1);
     assert!(out.save.is_none());
     assert!(serde_json::to_value(&out.answer).unwrap()["reason"].is_string());
 }
@@ -1530,8 +1536,7 @@ fn a_file_is_named_for_the_holder_and_a_document_handed_over_is_one_entry() {
     let mut editor = with_dialogs();
     // the form names the file; reading it is whoever drives the editor's
     editor.event(&pick("open_file", None), 1);
-    editor.event(&said("open:path", "/tmp/two.mei"), 1);
-    let out = editor.event(&said("open:ok", "click"), 1);
+    let out = editor.event(&chosen("open", "/tmp/two.mei"), 1);
     assert_eq!(
         out.file,
         Some(crate::closing::FileChange::Open("/tmp/two.mei".into()))
@@ -1825,10 +1830,9 @@ fn an_export_names_its_file_and_its_format_and_edits_nothing() {
         assert!(
             corrections_of(&out)
                 .iter()
-                .any(|c| c.widget == i64::from(ids["file"]) && c.props == json!({"title": title}))
+                .any(|c| c.widget == i64::from(ids["file"]) && c.props["title"] == title)
         );
-        editor.event(&said("file:name", "/tmp/a.mid"), 1);
-        let out = editor.event(&said("file:ok", "click"), 1);
+        let out = editor.event(&chosen("file", path), 1);
         assert_eq!(out.export, Some(json!({"path": path, "format": format})));
         assert!(
             !out.changed && out.save.is_none(),
@@ -1936,14 +1940,12 @@ fn close_asks_first_only_when_there_is_something_to_lose() {
     editor.event(&stamped(pick("close", None), 2), 2);
     let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
     assert!(!out.close && out.save.is_none());
-    assert_eq!(
+    assert!(
         corrections_of(&out)
-            .last()
-            .map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 4})))
+            .iter()
+            .any(|c| c.widget == i64::from(ids["file"]) && c.props["open"] == 1)
     );
-    editor.event(&stamped(said("file:name", "/tmp/kept.mei"), 2), 2);
-    let out = editor.event(&stamped(said("file:ok", "click"), 2), 2);
+    let out = editor.event(&stamped(chosen("file", "/tmp/kept.mei"), 2), 2);
     assert_eq!(out.save.as_deref(), Some("/tmp/kept.mei"));
     assert!(out.close);
     call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/kept.mei"}"#);
@@ -2061,8 +2063,7 @@ fn new_and_open_change_the_document_and_ask_as_a_close_asks() {
     // Open asks the same, and the form's Save names a file and waits
     call_json(&mut editor, r#"{"verb": "sync", "path": "/tmp/a.mei"}"#);
     editor.event(&stamped(pick("open_file", None), 2), 2);
-    editor.event(&stamped(said("open:path", "/tmp/b.mei"), 2), 2);
-    let out = editor.event(&stamped(said("open:ok", "click"), 2), 2);
+    let out = editor.event(&stamped(chosen("open", "/tmp/b.mei"), 2), 2);
     assert!(out.file.is_none());
     let out = editor.event(&stamped(said("close:ok", "click"), 2), 2);
     assert_eq!(out.save.as_deref(), Some("/tmp/a.mei"));
@@ -2162,8 +2163,7 @@ fn close_file_asks_first_and_leaves_the_window() {
 fn an_opened_file_is_the_scores_and_holds_it() {
     let mut editor = with_dialogs();
     editor.event(&pick("open_file", None), 1);
-    editor.event(&said("open:path", "/tmp/two.mei"), 1);
-    editor.event(&said("open:ok", "click"), 1);
+    editor.event(&chosen("open", "/tmp/two.mei"), 1);
     let data = sheet_to_mei(&Sheet::default()).unwrap();
     assert!(
         editor

@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::app::Msg;
-use crate::platform::{self, EnvInfo, Language, Offers, Platform, Purpose, Read};
+use crate::platform::{self, EnvInfo, Language, Offers, Platform, Read};
 use session::Session;
 
 /// The desktop's platform, telling the application on `tx`.
@@ -118,10 +118,6 @@ impl Platform for Native {
 
     fn home(&self) -> PathBuf {
         dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
-    }
-
-    fn choose(&self, purpose: Purpose, start: Option<PathBuf>) {
-        desktop::choose(&self.tx, purpose, start);
     }
 
     fn follow_color_scheme(&self) {
