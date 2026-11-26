@@ -696,6 +696,36 @@ fn the_call_is_followed_and_noted() {
     assert!(!v.help.calling, "an answer of none ends it");
 }
 
+/// **One floating thing at a time**: with the completions of a name being
+/// typed up, the pointer resting on a name asks nothing, and a card asked
+/// for before they opened does not cover them.
+#[test]
+fn a_rest_does_not_cover_the_completions() {
+    let m = Metrics::default();
+    let mut v = view(r#"{"language": "python"}"#);
+    let mut clip = Clip::default();
+    press(&mut v, &mut clip, Mods::default(), &typed("x = p")).unwrap();
+    v.set(
+        "completions",
+        &Value::from(r#"[{"name": "print", "kind": "function", "typed": 1}]"#),
+    );
+    assert!(v.completions_shown(), "the list is up");
+    let g = v.geometry(RECT, 1.0, &m);
+    let over = (
+        f64::from(g.text.x + 0.5 * g.cell),
+        f64::from(g.text.y + 0.5 * g.row_h),
+    );
+    assert!(v.rest(Some(over), &input(&m, 1)).is_none(), "nothing asked");
+    // a card already held: the list is what shows
+    v.help.resting = Some((0, 1, None));
+    v.set(
+        "inspected",
+        &Value::from(r#"{"name": "x", "kind": "instance", "signature": "x: int"}"#),
+    );
+    let own = v.own_popups(RECT, 1.0, &m).unwrap();
+    assert!(own.list.is_some() && own.note.is_none());
+}
+
 /// **Ctrl+D asks for help on the name at the caret**, and the pointer
 /// resting on a name asks what it is, noted until it moves on.
 #[test]

@@ -425,6 +425,11 @@ impl CodeView {
         ])
     }
 
+    /// Whether the completions' list is up.
+    fn completions_shown(&self) -> bool {
+        self.help.completing.as_ref().is_some_and(|c| c.showing())
+    }
+
     /// **The call the caret is in asked of the owner**, as `"signatures"
     /// source line column`; with a selection, or in a string, the call is
     /// no longer followed.
@@ -1575,23 +1580,26 @@ impl Element for CodeView {
                     card: false,
                 })
             }
-            (_, Some((a, b, Some(info)))) => self.word_spot(*a, *b, &g).map(|anchor| Note {
-                anchor,
-                head: vec![(
-                    if info.signature.is_empty() {
-                        info.name.clone()
-                    } else {
-                        info.signature.clone()
-                    },
-                    false,
-                )],
-                aside: info.kind.clone(),
-                doc: info.doc.clone(),
-                doc_lines: 0,
-                code_size: note_size,
-                text_size: note_size,
-                card: true,
-            }),
+            // a card asked for before the completions opened does not cover them
+            (_, Some((a, b, Some(info)))) if list.is_none() => {
+                self.word_spot(*a, *b, &g).map(|anchor| Note {
+                    anchor,
+                    head: vec![(
+                        if info.signature.is_empty() {
+                            info.name.clone()
+                        } else {
+                            info.signature.clone()
+                        },
+                        false,
+                    )],
+                    aside: info.kind.clone(),
+                    doc: info.doc.clone(),
+                    doc_lines: 0,
+                    code_size: note_size,
+                    text_size: note_size,
+                    card: true,
+                })
+            }
             _ => None,
         };
         (list.is_some() || note.is_some()).then_some(Own { list, note })
@@ -1615,6 +1623,11 @@ impl Element for CodeView {
         let Some(at) = at else {
             return self.help.resting.take().map(|_| Events::none());
         };
+        // **one floating thing at a time**: while the completions are open
+        // the pointer resting on a name asks nothing, so no card covers them
+        if self.completions_shown() {
+            return None;
+        }
         let g = self.geometry(input.rect, input.scale, input.metrics);
         if !g.text.contains(at.0, at.1) {
             return None;
