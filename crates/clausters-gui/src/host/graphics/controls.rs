@@ -909,19 +909,21 @@ pub struct ThumbGrip {
 
 impl ScrollBar {
     /// The bar along `track` of a view `seen` long over content it scrolls
-    /// by up to `span`, at `offset`, its thumb no shorter than `least`; `None`
-    /// when there is nothing to scroll.
+    /// by up to `span`, at `offset`; `None` when there is nothing to scroll.
+    /// **Every bar's thumb is no shorter than a grip a hand can take**
+    /// ([`Metrics::handle_grip`]), whatever it scrolls.
     pub fn new(
         vertical: bool,
         track: Rect,
         seen: f32,
         span: f32,
         offset: f32,
-        least: f32,
+        m: &Metrics,
     ) -> Option<Self> {
         if span <= 0.5 {
             return None;
         }
+        let least = m.handle_grip;
         let len = if vertical { track.h } else { track.w };
         let size = (len * seen / (seen + span)).max(least.min(len)).min(len);
         let at = (len - size) * (offset / span).clamp(0.0, 1.0);
@@ -1898,9 +1900,10 @@ mod tests {
     fn a_scroll_bar_is_dragged_by_its_thumb() {
         let track = Rect::new(90.0, 0.0, 10.0, 100.0);
         // a quarter seen: the thumb is 25 long, 75 of travel over 300
-        let bar = ScrollBar::new(true, track, 100.0, 300.0, 0.0, 4.0).expect("a bar");
+        let bar =
+            ScrollBar::new(true, track, 100.0, 300.0, 0.0, &Metrics::default()).expect("a bar");
         assert_eq!((bar.thumb.y, bar.thumb.h), (0.0, 25.0));
-        assert!(ScrollBar::new(true, track, 100.0, 0.0, 0.0, 4.0).is_none());
+        assert!(ScrollBar::new(true, track, 100.0, 0.0, 0.0, &Metrics::default()).is_none());
         let (grip, offset) = bar.press((95.0, 10.0), 0.0).expect("on the thumb");
         assert_eq!(offset, 0.0, "a press on the thumb keeps the view");
         assert!((bar.drag(grip, (95.0, 35.0)) - 100.0).abs() < 1e-3);

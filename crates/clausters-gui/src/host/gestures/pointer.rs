@@ -212,6 +212,10 @@ fn element_pointer(
         if !el.hit_area(input).hit(x, y, input.metrics.hit_slop) {
             return None;
         }
+        // **over any bar, the arrow**, answered here once for every element
+        if el.bars(input).iter().any(|b| b.track.contains(x, y)) {
+            return Some(Pointer::Default);
+        }
         el.pointer((x, y), input)
     })
     .flatten()

@@ -38,6 +38,32 @@ fn a_text_field_shows_the_i_beam_and_a_button_the_arrow() {
     assert_eq!(g.pointer(), Pointer::Default, "off the window");
 }
 
+/// **Over every bar, the arrow**: the host answers it for each element
+/// from the bars the element shows ([`Element::bars`]), whatever the element
+/// answers over its text -- the code's I-beam stops at its bar.
+///
+/// [`Element::bars`]: crate::host::widget::element::Element::bars
+#[test]
+fn every_scroll_bar_shows_the_arrow() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"code","weight":1,"text":"line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\nline 31\nline 32\nline 33\nline 34\nline 35\nline 36\nline 37\nline 38\nline 39\nline 40\nline 41\nline 42\nline 43\nline 44\nline 45\nline 46\nline 47\nline 48\nline 49\nline 50\nline 51\nline 52\nline 53\nline 54\nline 55\nline 56\nline 57\nline 58\nline 59\nline 60\nline 61\nline 62\nline 63\nline 64\nline 65\nline 66\nline 67\nline 68\nline 69\nline 70\nline 71\nline 72\nline 73\nline 74\nline 75\nline 76\nline 77\nline 78\nline 79\nline 80\nline 81\nline 82\nline 83\nline 84\nline 85\nline 86\nline 87\nline 88\nline 89\nline 90\nline 91\nline 92\nline 93\nline 94\nline 95\nline 96\nline 97\nline 98\nline 99\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110\nline 111\nline 112\nline 113\nline 114\nline 115\nline 116\nline 117\nline 118\nline 119\nline 120\nline 121\nline 122\nline 123\nline 124\nline 125\nline 126\nline 127\nline 128\nline 129\nline 130\nline 131\nline 132\nline 133\nline 134\nline 135\nline 136\nline 137\nline 138\nline 139\nline 140\nline 141\nline 142\nline 143\nline 144\nline 145\nline 146\nline 147\nline 148\nline 149\nline 150\nline 151\nline 152\nline 153\nline 154\nline 155\nline 156\nline 157\nline 158\nline 159\nline 160\nline 161\nline 162\nline 163\nline 164\nline 165\nline 166\nline 167\nline 168\nline 169\nline 170\nline 171\nline 172\nline 173\nline 174\nline 175\nline 176\nline 177\nline 178\nline 179\nline 180\nline 181\nline 182\nline 183\nline 184\nline 185\nline 186\nline 187\nline 188\nline 189\nline 190\nline 191\nline 192\nline 193\nline 194\nline 195\nline 196\nline 197\nline 198\nline 199"}]}"#,
+    );
+    let ctx = GestureCtx::new(1, 400, 200);
+    let mut g = Gestures::default();
+    let r = placed_rect(&host, &ctx, 9);
+    let text = ((r.x + r.w * 0.4) as f64, (r.y + r.h * 0.5) as f64);
+    g.motion(&mut host, &ctx, text.0, text.1);
+    assert_eq!(g.pointer(), Pointer::Text);
+    let m = clausters_gui_draw::metrics::Metrics::default();
+    let bar = (
+        (r.x + r.w - m.scrollbar_w * 0.5) as f64,
+        (r.y + r.h * 0.3) as f64,
+    );
+    g.motion(&mut host, &ctx, bar.0, bar.1);
+    assert_eq!(g.pointer(), Pointer::Default, "the arrow over its bar");
+}
+
 /// **The code element's text is an I-beam and its line numbers an arrow**,
 /// and a selection swept from the text keeps the I-beam over the numbers
 /// until the release.

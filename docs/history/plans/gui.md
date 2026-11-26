@@ -10435,3 +10435,35 @@ module of its own.
   the folder listed only its subfolders, and the keys had no file to
   select. The chooser reads a string that is a JSON list as that list, and
   the editor applies its whole correction again.)*
+
+- ✅ **A scroll bar is written four times, and behaves four ways**
+  (2026-11-26, the user, asking why the bars of different elements do not
+  behave alike). The host has one thumb painter (`controls::scroll_thumb`)
+  but its geometry and its hand are implemented apart:
+  - `controls::ScrollBar` (geometry, press, drag), used by the code, the
+    documentation's page and its code blocks, the table and file chooser,
+    and the hover card -- each element still deciding its own track, its
+    shortest thumb and its own pointer over the bar;
+  - `chrome::Bar` with its press and drag in `gestures/chrome.rs`, the
+    same arithmetic rewritten for a scrolling plane;
+  - the post window's own `thumb_rect`/`scroll_to`: a half-width thumb, a
+    press that jumps the view to the pointer with no grip, at least 5% of
+    the track;
+  - a popup list (a menu, the completions) scrolls by wheel and keys and
+    draws no bar at all.
+  The shortest thumb differs per caller (`handle_grip`, `pad * 2`, a row,
+  a character cell, a line), so is the track's thickness in the card and
+  the post window, and the arrow over a bar is answered element by
+  element (the card answered the I-beam until 2026-11-26). The fix is one
+  bar: `controls::ScrollBar` as the only geometry and hand, built by the
+  plane, the post window and the lists alike, with one shortest thumb
+  (`handle_grip`) and one track thickness (`scrollbar_w`) from the
+  metrics, and the pointer over any bar answered once.
+  *(Fixed 2026-11-26: `controls::ScrollBar` is the only geometry and hand.
+  Its shortest thumb is `handle_grip` for every caller; a plane's bar is
+  one (`chrome::Bar` is its alias, the plane's drag holds its grip); the
+  post window's half-width thumb and jump-to-line press are gone; a popup
+  list, the completions included, shows it with room of its own, takes
+  its drag and the wheel (`Element::scroll_own`), and drops its arrows;
+  the pointer over any bar is the host's (`Element::bars`). The rule is in
+  `docs/app-behavior.md`, "Every scroll bar is the host's one bar".)*

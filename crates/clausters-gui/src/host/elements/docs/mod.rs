@@ -804,7 +804,7 @@ impl DocsView {
         let w = m.scrollbar_w;
         let track = Rect::new(g.page.x + g.page.w - w, g.page.y, w, g.page.h);
         let span = (laid.height - g.text.h * 0.5).max(0.0);
-        controls::ScrollBar::new(true, track, g.text.h, span, scroll, m.pad * 2.0)
+        controls::ScrollBar::new(true, track, g.text.h, span, scroll, m)
     }
 
     /// **The page's rows read as one text** ([`Flow`]), from `laid`.
@@ -1508,10 +1508,23 @@ impl Element for DocsView {
         self.find_focus
     }
 
+    /// The page's bar, and the bar of each code block wider than the page.
+    fn bars(&self, input: &Input) -> Vec<controls::ScrollBar> {
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+        let (scroll, laid) = self.settle(&g);
+        let origin = (g.text.x, g.text.y - scroll);
+        let blocks = (0..laid.pans.len())
+            .filter_map(|i| laid.pan_bar(i, origin, self.pan_of(i), input.metrics));
+        self.bar(&g, input.metrics)
+            .into_iter()
+            .chain(blocks)
+            .collect()
+    }
+
     /// **The hand over a link**, which a press follows, and the I-beam over
     /// the page's text and the find field, where a press selects; the arrow
-    /// over the header's buttons, a code block's copy button, the scroll bar
-    /// and the page's empty space.
+    /// over the header's buttons, a code block's copy button and the page's
+    /// empty space (over its bars the host answers it, [`Element::bars`]).
     fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         if let Some(&(part, _)) = g.parts.iter().find(|(_, r)| r.contains(at.0, at.1)) {
@@ -1521,11 +1534,7 @@ impl Element for DocsView {
                 Pointer::Default
             });
         }
-        if !g.page.contains(at.0, at.1)
-            || self
-                .bar(&g, input.metrics)
-                .is_some_and(|b| b.track.contains(at.0, at.1))
-        {
+        if !g.page.contains(at.0, at.1) {
             return Some(Pointer::Default);
         }
         let (scroll, laid) = self.settle(&g);

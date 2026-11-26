@@ -1737,27 +1737,3 @@ finished work, where a pending item reads as done.
   redefine, a view switch no longer redraws from a fresh download, so a stale
   picture, if it happens again, stays until the owner's `reload` and is
   worth a capture of the exact steps.)*
-
-- ⬜ **A scroll bar is written four times, and behaves four ways**
-  (2026-11-26, the user, asking why the bars of different elements do not
-  behave alike). The host has one thumb painter (`controls::scroll_thumb`)
-  but its geometry and its hand are implemented apart:
-  - `controls::ScrollBar` (geometry, press, drag), used by the code, the
-    documentation's page and its code blocks, the table and file chooser,
-    and the hover card -- each element still deciding its own track, its
-    shortest thumb and its own pointer over the bar;
-  - `chrome::Bar` with its press and drag in `gestures/chrome.rs`, the
-    same arithmetic rewritten for a scrolling plane;
-  - the post window's own `thumb_rect`/`scroll_to`: a half-width thumb, a
-    press that jumps the view to the pointer with no grip, at least 5% of
-    the track;
-  - a popup list (a menu, the completions) scrolls by wheel and keys and
-    draws no bar at all.
-  The shortest thumb differs per caller (`handle_grip`, `pad * 2`, a row,
-  a character cell, a line), so is the track's thickness in the card and
-  the post window, and the arrow over a bar is answered element by
-  element (the card answered the I-beam until 2026-11-26). The fix is one
-  bar: `controls::ScrollBar` as the only geometry and hand, built by the
-  plane, the post window and the lists alike, with one shortest thumb
-  (`handle_grip`) and one track thickness (`scrollbar_w`) from the
-  metrics, and the pointer over any bar answered once.

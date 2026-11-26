@@ -31,6 +31,9 @@ pub struct OwnList {
     pub text_size: f32,
     /// The most rows it shows.
     pub rows: usize,
+    /// **How far a hand scrolled it**, by its bar or the wheel; `None` while
+    /// it follows the row the keys are on.
+    pub scroll: Option<f32>,
 }
 
 /// **A note over the text**: a head line in the code's face with parts of it

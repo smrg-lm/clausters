@@ -57,18 +57,15 @@ pub(super) struct Split {
     pub least: f32,
 }
 
-/// What a scroll-bar drag holds from its press.
+/// What a scroll-bar drag holds from its press: the plane, its area, and
+/// the bar with its thumb in hand, as every bar is held
+/// ([`ScrollBar::press`](crate::host::graphics::controls::ScrollBar::press)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct BarDrag {
     pub id: i32,
     pub area: Rect,
-    pub vertical: bool,
-    /// Where the pointer was at the press, along the bar.
-    pub origin: f64,
-    /// Where the view stood at the press, on the bar's axis.
-    pub start: f64,
-    /// Content units one pixel of travel is worth.
-    pub per_px: f64,
+    pub bar: chrome::Bar,
+    pub grip: crate::host::graphics::controls::ThumbGrip,
 }
 
 /// The sizes a split strip's children have after the divider travelled
@@ -310,28 +307,18 @@ impl Gestures {
                 true
             }
             Some(Found::Bar(id, area, bar, start)) => {
-                let at = if bar.vertical { cy } else { cx };
-                let (thumb_at, thumb_len) = if bar.vertical {
-                    (bar.thumb.y as f64, bar.thumb.h as f64)
-                } else {
-                    (bar.thumb.x as f64, bar.thumb.w as f64)
-                };
                 // On the groove, off the thumb: the thumb comes to the pointer,
                 // and the drag carries on from there.
-                let start = if at < thumb_at || at > thumb_at + thumb_len {
-                    start + (at - (thumb_at + thumb_len * 0.5)) * bar.per_px
-                } else {
-                    start
+                let Some((grip, _)) = bar.press((cx, cy), start as f32) else {
+                    return false;
                 };
                 let held = BarDrag {
                     id,
                     area,
-                    vertical: bar.vertical,
-                    origin: at,
-                    start,
-                    per_px: bar.per_px,
+                    bar,
+                    grip,
                 };
-                self.bar_to(host, ctx, &held, at, out);
+                self.bar_to(host, ctx, &held, (cx, cy), out);
                 self.drag = Some(Drag::Bar(held));
                 out.push(GestureEffect::Redraw(def_id));
                 true
@@ -350,15 +337,15 @@ impl Gestures {
         host: &mut Host,
         ctx: &GestureCtx,
         bar: &BarDrag,
-        at: f64,
+        at: (f64, f64),
         out: &mut Vec<GestureEffect>,
     ) {
         let Some(view) = scroll_view(host, ctx.def_id, bar.id) else {
             return;
         };
-        let to = bar.start + (at - bar.origin) * bar.per_px;
+        let to = f64::from(bar.bar.drag(bar.grip, at));
         let zoom = view.zoom(host.metrics_for(ctx.def_id));
-        let next = if bar.vertical {
+        let next = if bar.bar.vertical {
             (view.view_x, to, zoom)
         } else {
             (to, view.view_y, zoom)

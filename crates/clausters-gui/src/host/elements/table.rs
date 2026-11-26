@@ -424,7 +424,13 @@ impl Rows {
         let w = m.scrollbar_w.min(g.list.w);
         let track = Rect::new(g.list.x + g.list.w - w, g.list.y, w, g.list.h);
         let scroll = self.scroll.get().clamp(0.0, g.max_scroll());
-        controls::ScrollBar::new(true, track, g.list.h, g.max_scroll(), scroll, g.row_h)
+        controls::ScrollBar::new(true, track, g.list.h, g.max_scroll(), scroll, m)
+    }
+
+    /// Its scroll bar, laid out in `input`, where it holds more rows than fit.
+    pub(crate) fn bars(&self, input: &Input) -> Vec<controls::ScrollBar> {
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        self.bar(&g, input.metrics).into_iter().collect()
     }
 
     /// **A press on the scroll bar**, which takes its thumb (bringing it to
@@ -592,6 +598,10 @@ impl Element for Table {
 
     fn hit_area(&self, input: &Input) -> HitArea {
         self.rows.hit_area(&self.placed(input))
+    }
+
+    fn bars(&self, input: &Input) -> Vec<controls::ScrollBar> {
+        self.rows.bars(&self.placed(input))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

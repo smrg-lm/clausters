@@ -1424,6 +1424,36 @@ fn the_key_sheet_scrolls_by_the_arrows_and_the_ends() {
     assert!(host.popup(1).is_some(), "walking it never takes it down");
 }
 
+/// **A list that scrolls has the host's one bar**: a thumb no shorter than
+/// a grip, room of its own beside the rows, and a drag of its thumb scrolls
+/// the list as far as the thumb moves, picking nothing and closing nothing.
+#[test]
+fn a_list_that_scrolls_is_dragged_by_its_bar() {
+    let mut host = host_from(&scoped(
+        r#"{"type":"window","margin":0,"flow":"col","keys":["score","note_entry"],
+            "children":[{"id":6,"type":"label","text":"x","weight":1}]}"#,
+    ));
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 600, 240);
+    g.press_key(&mut host, &ctx, Key::F(1), None);
+    let placed = |host: &Host| host.popup_placed(1, ctx.fb_w, ctx.fb_h).unwrap()[0].clone();
+    let m = *host.metrics_for(1);
+    let list = placed(&host);
+    let bar = list.bar(&m).expect("a list that scrolls has a bar");
+    assert!(bar.thumb.h >= m.handle_grip.min(bar.track.h));
+    assert!(
+        list.rows.iter().all(|r| r.x + r.w <= bar.track.x + 0.5),
+        "the rows stop short of the bar"
+    );
+    let thumb = (f64::from(bar.thumb.x + 1.0), f64::from(bar.thumb.y + 2.0));
+    g.press(&mut host, &ctx, thumb.0, thumb.1);
+    assert!(g.dragging(), "the thumb is held");
+    g.drag_to(&mut host, &ctx, thumb.0, thumb.1 + 40.0);
+    g.release(&mut host, &ctx, thumb.0, thumb.1 + 40.0);
+    assert!(placed(&host).scroll > 0.0, "it scrolled");
+    assert!(host.popup(1).is_some(), "and the list stays");
+}
+
 /// **A window whose owner asks first is not closed by its close mark**: the
 /// window reports `close` -- its bar's entry, where it has one -- and stays
 /// until the owner frees it. A second request the owner has not answered

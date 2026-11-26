@@ -1547,6 +1547,11 @@ pub(crate) fn draw_stack(
             .get(i + 1)
             .and_then(|next| next.path.last().copied());
         draw_list(over, level, at, stack.text_size, open, raised, m, theme);
+        // where it holds more rows than are seen, the host's one bar
+        if let Some(bar) = at.bar(m) {
+            over.set_clip(Some(at.rect));
+            controls::scroll_thumb(over, bar.thumb, m, theme);
+        }
         if let Some(entrance) = entrance {
             let t = entrance.progress(&motion::Part::List(stack.owner.clone(), level.path.clone()));
             over.move_since(mark, motion::motion(t, at.rect, from, m.motion_slide));
@@ -1562,7 +1567,7 @@ pub(crate) fn draw_stack(
 /// left gutter, the label, its aside quieter after it, the key at the right
 /// in the small size spaced wide, and a submenu's chevron; a disabled row
 /// at half strength; a separator across the whole list. A list cut to its
-/// place says so at the edge it was cut on.
+/// place shows the host's one scroll bar, drawn by the stack.
 #[allow(clippy::too_many_arguments)] // one list's parts, and the stack's state of it
 fn draw_list(
     over: &mut Mesh,
@@ -1691,18 +1696,7 @@ fn draw_list(
             font::text(over, &chevron.to_string(), cx, ty, size, ink);
         }
     }
-    // More above, more below: a list cut to its place says so at the edge it
-    // was cut on.
-    let s = (glyph * 0.3).max(2.0);
-    let x = body.x + body.w * 0.5;
-    if at.scroll > 0.5 {
-        let y = body.y + m.pad * 0.5;
-        over.tri([x - s, y + s], [x + s, y + s], [x, y], theme.text_dim);
-    }
-    if at.scroll < at.max_scroll - 0.5 {
-        let y = body.y + body.h - m.pad * 0.5;
-        over.tri([x - s, y - s], [x + s, y - s], [x, y], theme.text_dim);
-    }
+    // more above or below is the bar's to say, as on every view that scrolls
     over.set_clip(None);
     over.round_border(rect, m.divider_w, radius, with_alpha(theme.text, 0.1));
 }

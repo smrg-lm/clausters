@@ -401,6 +401,23 @@ impl Gestures {
             let placed = host
                 .popup_placed(def_id, ctx.fb_w, ctx.fb_h)
                 .unwrap_or_default();
+            // **a list's scroll bar**: its thumb in hand, the deepest list
+            // first, as the press finds rows
+            let m = *host.metrics_for(def_id);
+            if let Some((level, grip, to)) = placed.iter().enumerate().rev().find_map(|(i, p)| {
+                let (grip, to) = p.bar(&m)?.press((cx, cy), p.scroll)?;
+                Some((i, grip, to))
+            }) {
+                let stack = host.popup_mut(def_id).expect("the stack is open");
+                stack.levels[level].scroll = to;
+                stack.levels[level].reveal = false;
+                self.drag = Some(super::Drag::ListBar {
+                    level,
+                    own: None,
+                    grip,
+                });
+                return true;
+            }
             // **The key sheet goes by its close mark alone**: a press
             // anywhere else is swallowed, on it or off it.
             if open == Owner::Keys {
@@ -463,29 +480,29 @@ impl Gestures {
         cy: f64,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
-        let work = host.popup_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
         let m = *host.metrics_for(ctx.def_id);
-        let hit = {
-            let Some(placed) = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h) else {
-                return false;
-            };
-            placed.iter().find_map(|p| {
-                let id = p.widget.id?;
-                let list = p
-                    .widget
-                    .kind
-                    .as_element()?
-                    .own_popups(p.rect, p.scale, &p.metrics)?
-                    .list?;
-                let stack = list.stack(id);
-                let lists = popup::layout(&stack, None, work, &m);
-                let (_, row) = popup::hit(&stack, &lists, cx, cy)?;
-                Some((element::At::widget(id, p.rect, p.scale, p.indent), id, row))
-            })
-        };
-        let Some((at, id, row)) = hit else {
+        // its scroll bar: its thumb in hand, the list kept where it goes
+        if let Some((at, id, list)) = own_list(host, ctx, |_, list| list.rect.contains(cx, cy))
+            && let Some((grip, to)) = list.bar(&m).and_then(|b| b.press((cx, cy), list.scroll))
+        {
+            element::with(host, ctx, at, |el, _| el.scroll_own(to));
+            self.drag = Some(super::Drag::ListBar {
+                level: 0,
+                own: Some(id),
+                grip,
+            });
+            out.push(GestureEffect::Redraw(ctx.def_id));
+            return true;
+        }
+        let Some((at, id, list)) = own_list(host, ctx, |_, list| list.rect.contains(cx, cy)) else {
             return false;
         };
+        // the row under the press, one scrolled out of the list aside
+        let body = list.body();
+        let row = list
+            .rows
+            .iter()
+            .position(|r| r.contains(cx, cy) && body.contains(cx, cy));
         out.push(GestureEffect::Redraw(ctx.def_id));
         if let Some(row) = row
             && let Some(Some(events)) = element::with(host, ctx, at, |el, _| el.pick_own(row))
@@ -589,6 +606,67 @@ impl Gestures {
 
     /// The wheel over an open stack: the list under the pointer scrolls (the
     /// deepest one, off them all), a notch a row. `None` when nothing is open.
+    /// **A list's scroll bar dragged to `at`**: the list follows its thumb,
+    /// as every bar's view does.
+    pub(super) fn list_bar_drag(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        level: usize,
+        own: Option<i32>,
+        grip: crate::host::graphics::controls::ThumbGrip,
+        at: (f64, f64),
+    ) -> Vec<GestureEffect> {
+        let def_id = ctx.def_id;
+        let m = *host.metrics_for(def_id);
+        if let Some(id) = own {
+            let Some((spot, _, list)) = own_list(host, ctx, |found, _| found == id) else {
+                return Vec::new();
+            };
+            let Some(bar) = list.bar(&m) else {
+                return Vec::new();
+            };
+            let to = bar.drag(grip, at);
+            element::with(host, ctx, spot, |el, _| el.scroll_own(to));
+            return vec![GestureEffect::Redraw(def_id)];
+        }
+        let placed = host
+            .popup_placed(def_id, ctx.fb_w, ctx.fb_h)
+            .unwrap_or_default();
+        let Some(bar) = placed.get(level).and_then(|p| p.bar(&m)) else {
+            return Vec::new();
+        };
+        let to = bar.drag(grip, at);
+        if let Some(stack) = host.popup_mut(def_id)
+            && let Some(l) = stack.levels.get_mut(level)
+        {
+            l.scroll = to;
+            l.reveal = false;
+        }
+        vec![GestureEffect::Redraw(def_id)]
+    }
+
+    /// **The wheel over a list an element shows of its own accord** (the
+    /// completions) scrolls it, as over a menu; `None` off every such list.
+    pub(super) fn own_wheel(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        cy: f64,
+        steps: f64,
+    ) -> Option<Vec<GestureEffect>> {
+        let (spot, _, list) = own_list(host, ctx, |_, list| list.rect.contains(cx, cy))?;
+        let row = list.rows.first().map_or(1.0, |r| r.h);
+        let to = (list.scroll - steps as f32 * row).clamp(0.0, list.max_scroll);
+        let moved = element::with(host, ctx, spot, |el, _| el.scroll_own(to)).unwrap_or(false);
+        Some(if moved {
+            vec![GestureEffect::Redraw(ctx.def_id)]
+        } else {
+            Vec::new()
+        })
+    }
+
     pub(super) fn popup_wheel(
         &mut self,
         host: &mut Host,
@@ -762,4 +840,35 @@ impl Gestures {
         out.push(GestureEffect::Redraw(ctx.def_id));
         true
     }
+}
+
+/// **The list an element shows of its own accord** (a code editor's
+/// completions) that `pick` chooses, by the element's id and the list as
+/// placed: where the element is, its id, and the list.
+fn own_list(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    pick: impl Fn(i32, &popup::Placed) -> bool,
+) -> Option<(element::At, i32, popup::Placed)> {
+    let work = host.popup_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
+    let m = *host.metrics_for(ctx.def_id);
+    let placed = host.layout_window(ctx.def_id, ctx.fb_w, ctx.fb_h)?;
+    placed.iter().find_map(|p| {
+        let id = p.widget.id?;
+        let list = p
+            .widget
+            .kind
+            .as_element()?
+            .own_popups(p.rect, p.scale, &p.metrics)?
+            .list?;
+        let lists = popup::layout(&list.stack(id), None, work, &m);
+        let first = lists.into_iter().next()?;
+        pick(id, &first).then(|| {
+            (
+                element::At::widget(id, p.rect, p.scale, p.indent),
+                id,
+                first,
+            )
+        })
+    })
 }

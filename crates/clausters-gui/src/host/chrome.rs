@@ -321,19 +321,10 @@ pub fn split(a: f32, b: f32, travel: f32, least: f32) -> (f32, f32) {
     (to, total - to)
 }
 
-/// One scroll bar of a plane.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Bar {
-    /// Whether it runs down the plane's right edge (and scrolls `view_y`).
-    pub vertical: bool,
-    /// The groove the thumb travels in.
-    pub track: Rect,
-    /// The thumb: where the view stands in the content, and how much of it the
-    /// view shows.
-    pub thumb: Rect,
-    /// Content units one pixel of thumb travel is worth.
-    pub per_px: f64,
-}
+/// One scroll bar of a plane: **the host's one bar**
+/// ([`ScrollBar`](super::graphics::controls::ScrollBar)), over the plane's
+/// content in its own units.
+pub type Bar = super::graphics::controls::ScrollBar;
 
 /// The scroll bars of plane `p`: one along each axis it pans on which the
 /// content is larger than the view. Empty for a plane without `bars`.
@@ -354,40 +345,29 @@ pub fn bars(p: &Placed, metrics: &Metrics) -> Vec<Bar> {
     let (seen_w, seen_h) = (area.w as f64 / zoom, area.h as f64 / zoom);
     let wants_x = !matches!(view.axis, Axis::Y) && content_w as f64 > seen_w + 0.5;
     let wants_y = !matches!(view.axis, Axis::X) && content_h as f64 > seen_h + 0.5;
-    let mut out = Vec::new();
-    // The thumb's place along a track: its start and its length, as fractions
-    // of the content, never shorter than a grip a hand can take.
-    let thumb = |start: f64, seen: f64, content: f64, len: f32| {
-        let size = ((seen / content) as f32 * len)
-            .max(metrics.handle_grip.min(len))
-            .min(len);
-        let travel = (len - size).max(0.0);
-        let span = (content - seen).max(f64::MIN_POSITIVE);
-        let at = (start / span).clamp(0.0, 1.0) as f32 * travel;
-        (at, size, span / travel.max(1.0) as f64)
+    // the view's offset and how far it goes, in the content's units
+    let bar = |vertical: bool, track: Rect, seen: f64, content: f32, at: f64| {
+        let span = (f64::from(content) - seen).max(0.0);
+        Bar::new(
+            vertical,
+            track,
+            seen as f32,
+            span as f32,
+            at as f32,
+            metrics,
+        )
     };
+    let mut out = Vec::new();
     if wants_y {
         // The corner both bars would meet in is left to neither.
         let len = area.h - if wants_x { thick } else { 0.0 };
         let track = Rect::new(area.x + area.w - thick, area.y, thick, len);
-        let (at, size, per_px) = thumb(vy, seen_h, content_h as f64, len);
-        out.push(Bar {
-            vertical: true,
-            track,
-            thumb: Rect::new(track.x, track.y + at, thick, size),
-            per_px,
-        });
+        out.extend(bar(true, track, seen_h, content_h, vy));
     }
     if wants_x {
         let len = area.w - if wants_y { thick } else { 0.0 };
         let track = Rect::new(area.x, area.y + area.h - thick, len, thick);
-        let (at, size, per_px) = thumb(vx, seen_w, content_w as f64, len);
-        out.push(Bar {
-            vertical: false,
-            track,
-            thumb: Rect::new(track.x + at, track.y, size, thick),
-            per_px,
-        });
+        out.extend(bar(false, track, seen_w, content_w, vx));
     }
     out
 }
@@ -556,8 +536,11 @@ mod tests {
         assert_eq!(b[0].thumb.y, b[0].track.y, "the view starts at the top");
         assert!((b[0].thumb.h - 300.0 * 300.0 / 1200.0).abs() < 1.0);
         // The thumb's whole travel is the content the view cannot see.
-        let travel = (b[0].track.h - b[0].thumb.h) as f64;
-        assert!((b[0].per_px * travel - 900.0).abs() < 1.0);
+        let travel = f64::from(b[0].track.h - b[0].thumb.h);
+        let x = f64::from(b[0].track.x + 1.0);
+        let top = f64::from(b[0].thumb.y + 1.0);
+        let (grip, _) = b[0].press((x, top), 0.0).expect("on the thumb");
+        assert!((b[0].drag(grip, (x, top + travel)) - 900.0).abs() < 1.0);
         assert!(bar_at(&placed, &m, 398.0, 100.0).is_some());
         assert!(bar_at(&placed, &m, 200.0, 100.0).is_none());
     }

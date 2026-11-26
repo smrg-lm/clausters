@@ -342,6 +342,10 @@ impl Element for Files {
         self.rows.hit_area(&self.placed(input))
     }
 
+    fn bars(&self, input: &Input) -> Vec<crate::host::graphics::controls::ScrollBar> {
+        self.rows.bars(input)
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let input = &self.placed(input);
         if self.rows.press_bar(at, input) {

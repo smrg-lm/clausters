@@ -189,7 +189,7 @@ impl Laid {
             block.rect.w,
             block.most(),
             pan.clamp(0.0, block.most()),
-            m.pad * 2.0,
+            m,
         )
     }
 

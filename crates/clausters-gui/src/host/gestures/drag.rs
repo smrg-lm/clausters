@@ -97,6 +97,9 @@ impl Gestures {
             Drag::Card { owner, thumb, pan } => {
                 return self.card_drag(host, ctx, owner, (thumb, pan), cx, cy);
             }
+            Drag::ListBar { level, own, grip } => {
+                return self.list_bar_drag(host, ctx, level, own, grip, (cx, cy));
+            }
             // **The marquee, wherever a hand sweeps one over a plane**: the
             // machine holds the anchor and the frame draws the rectangle; the
             // element only says what fell inside it.
@@ -156,10 +159,7 @@ impl Gestures {
                 let at = if split.row { cx } else { cy };
                 self.split_to(host, ctx, &split, at, &mut out);
             }
-            Drag::Bar(bar) => {
-                let at = if bar.vertical { cy } else { cx };
-                self.bar_to(host, ctx, &bar, at, &mut out);
-            }
+            Drag::Bar(bar) => self.bar_to(host, ctx, &bar, (cx, cy), &mut out),
             Drag::ScrollPan {
                 id,
                 area,

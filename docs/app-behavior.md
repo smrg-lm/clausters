@@ -258,6 +258,17 @@ code that keeps it lives.
   too. A view that is not drawn (a window closed, a canvas off screen) asks
   for nothing.
 
+- **Every scroll bar is the host's one bar.** Whatever scrolls -- a plane,
+  the code, the post window, the documentation's page and its code blocks,
+  a table, a list, a hover card -- shows `controls::ScrollBar`: its thumb is
+  no shorter than a grip (`handle_grip`), its track is `scrollbar_w` thick,
+  a press on the thumb holds it where it was taken, a press on the track
+  brings the thumb's middle there first, and a drag moves the view as far as
+  the thumb moves. The pointer over any bar is the arrow, answered by the
+  host from the bars an element shows (`Element::bars`), never by the
+  element. A list that scrolls makes room for its bar beside its rows, and
+  says it holds more with the bar, not with an arrow of its own.
+
 ## The time axis
 
 - **A take bounds its axis.** A group that holds a view of stored samples (a

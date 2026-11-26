@@ -64,8 +64,8 @@ pub struct PostView {
     sel: Option<(Pos, Pos)>,
     /// What a press selected and by what unit, while a drag grows it.
     held: Option<((Pos, Pos), Unit)>,
-    /// Whether a press holds the scroll bar's thumb.
-    thumb: bool,
+    /// The scroll bar's thumb a press holds.
+    thumb: Option<controls::ThumbGrip>,
     /// Whether a press holds the clear tool, drawn held until the release.
     clearing: bool,
     /// The rows of the lines measured, at the width and size they were.
@@ -123,7 +123,7 @@ impl PostView {
             top: (0, 0),
             sel: None,
             held: None,
-            thumb: false,
+            thumb: None,
             clearing: false,
             rows: RefCell::default(),
         };
@@ -365,27 +365,26 @@ impl PostView {
         self.rows.borrow_mut().lines.clear();
     }
 
-    /// The thumb of the scroll bar, when there is more than is seen.
-    fn thumb_rect(&self, g: &Geometry) -> Option<Rect> {
-        let total = self.post.len() as f32;
-        let seen = Self::seen(g) as f32;
+    /// **The scroll bar**, down the right edge, where there is more than is
+    /// seen: the host's one bar, over the lines (the first one shown is the
+    /// view's offset, the one following would show last is the most it
+    /// goes to, and as many lines as are seen is what it shows).
+    fn bar(&self, g: &Geometry, m: &Metrics) -> Option<controls::ScrollBar> {
+        let first = self.post.first();
         let (top, _) = self.top_now(g);
-        let visible: f32 = {
-            let rows = self.visible(g);
-            let lines = rows.last().map_or(0, |r| r.0 + 1) - rows.first().map_or(0, |r| r.0);
-            lines as f32
-        };
-        if total <= visible && top == self.post.first() && total <= seen {
-            return None;
-        }
-        let share = (visible / total.max(1.0)).clamp(0.05, 1.0);
-        let h = (g.bar.h * share).max(g.row_h);
-        let at = (top - self.post.first()) as f32 / total.max(1.0);
-        let y = g.bar.y + (g.bar.h - h) * (at / (1.0 - share).max(1e-6)).min(1.0);
-        Some(Rect::new(g.bar.x + g.bar.w * 0.25, y, g.bar.w * 0.5, h))
+        let (end, _) = self.top_now_following(g);
+        let rows = self.visible(g);
+        let seen = rows.last().map_or(0, |r| r.0 + 1) - rows.first().map_or(0, |r| r.0);
+        controls::ScrollBar::new(
+            true,
+            g.bar,
+            seen.max(1) as f32,
+            end.saturating_sub(first) as f32,
+            top.saturating_sub(first) as f32,
+            m,
+        )
     }
 
-    /// The scroll bar pressed or dragged at `y`: the line there at the top.
     /// Autoscroll turned the other way, and the owner told
     /// (`"autoscroll" <0|1>`), so it keeps what the reader chose.
     fn toggle_autoscroll(&mut self) -> Events {
@@ -397,9 +396,11 @@ impl PostView {
         ])
     }
 
-    fn scroll_to(&mut self, y: f64, g: &Geometry) {
-        let frac = ((y as f32 - g.bar.y) / g.bar.h.max(1.0)).clamp(0.0, 1.0);
-        let n = self.post.first() + (frac * self.post.len() as f32) as u64;
+    /// **The scroll bar moved the view to `offset`**, lines past the first:
+    /// that line at the top, and at the end the post follows again, as
+    /// autoscroll says.
+    fn scroll_to(&mut self, offset: f32, g: &Geometry) {
+        let n = self.post.first() + offset.max(0.0).round() as u64;
         self.top = (n, 0);
         self.follow = false;
         let end = self.top_now_following(g);
@@ -523,8 +524,8 @@ impl PostView {
                 );
             }
         }
-        if let Some(thumb) = self.thumb_rect(&g) {
-            controls::scroll_thumb(mesh, thumb, ctx.metrics, theme);
+        if let Some(bar) = self.bar(&g, ctx.metrics) {
+            controls::scroll_thumb(mesh, bar.thumb, ctx.metrics, theme);
         }
         mesh.set_clip(kept);
     }
@@ -639,12 +640,17 @@ impl Element for PostView {
     /// One click places nothing but clears the selection, two select a
     /// word, three a line; Shift extends; the bar scrolls.
     /// **The I-beam over the lines**, which a press selects; the arrow over
-    /// the strip's buttons and the scroll bar.
+    /// the strip's buttons (and, as over every bar, over its scroll bar:
+    /// the host answers that, [`Element::bars`]).
+    fn bars(&self, input: &Input) -> Vec<controls::ScrollBar> {
+        let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
+        self.bar(&g, input.metrics).into_iter().collect()
+    }
+
     fn pointer(&self, at: (f64, f64), input: &Input) -> Option<Pointer> {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
         let on_strip = g.strip.is_some_and(|s| s.rect.contains(at.0, at.1));
-        let on_bar = g.bar.contains(at.0, at.1) && self.thumb_rect(&g).is_some();
-        Some(if on_strip || on_bar {
+        Some(if on_strip {
             Pointer::Default
         } else {
             Pointer::Text
@@ -666,10 +672,15 @@ impl Element for PostView {
                 return Claim::take();
             }
         }
-        if g.bar.contains(at.0, at.1) && self.thumb_rect(&g).is_some() {
-            self.thumb = true;
-            self.scroll_to(at.1, &g);
-            return Claim::take();
+        // the scroll bar: its thumb in hand, brought to the pointer first
+        // when the press was off it
+        if let Some(bar) = self.bar(&g, input.metrics) {
+            let offset = self.top_now(&g).0.saturating_sub(self.post.first()) as f32;
+            if let Some((grip, to)) = bar.press(at, offset) {
+                self.thumb = Some(grip);
+                self.scroll_to(to, &g);
+                return Claim::take();
+            }
         }
         let p = self.pos_at(at, &g);
         if input.mods.shift
@@ -689,8 +700,10 @@ impl Element for PostView {
 
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let g = self.geometry(input.rect, input.scale, input.metrics, input.header);
-        if self.thumb {
-            self.scroll_to(at.1, &g);
+        if let Some(grip) = self.thumb {
+            if let Some(bar) = self.bar(&g, input.metrics) {
+                self.scroll_to(bar.drag(grip, at), &g);
+            }
             return Events::none();
         }
         let Some((held, unit)) = self.held else {
@@ -709,7 +722,7 @@ impl Element for PostView {
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.held = None;
-        self.thumb = false;
+        self.thumb = None;
         self.clearing = false;
         Events::none()
     }

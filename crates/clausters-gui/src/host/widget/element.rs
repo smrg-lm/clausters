@@ -1948,6 +1948,15 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **The scroll bars it shows**, laid out in `input`: the host's one bar
+    /// ([`ScrollBar`](crate::host::graphics::controls::ScrollBar)) for each
+    /// view it scrolls itself. The host answers the pointer over any of them
+    /// (the arrow, as over every bar) before it asks
+    /// [`pointer`](Element::pointer), so an element never answers it itself.
+    fn bars(&self, _input: &Input) -> Vec<crate::host::graphics::controls::ScrollBar> {
+        Vec::new()
+    }
+
     /// **The pointer while this element holds the press**, asked at every
     /// step of the drag: `None` keeps the one the press began with, which is
     /// what a selection that keeps its I-beam wherever the hand goes needs.
@@ -2282,6 +2291,14 @@ pub trait Element: fmt::Debug {
     /// shows**: what picking it does, reported as a key's answer is.
     fn pick_own(&mut self, _row: usize) -> Option<Events> {
         None
+    }
+
+    /// **The list [`own_popups`](Element::own_popups) shows, scrolled by a
+    /// hand to `scroll`** (its bar, the wheel over it): kept, and handed back
+    /// as [`OwnList::scroll`](super::own::OwnList::scroll), so it stays where
+    /// the hand put it. Answers whether it moved.
+    fn scroll_own(&mut self, _scroll: f32) -> bool {
+        false
     }
 
     /// What this element draws **from what moves**: the line a clock sweeps,

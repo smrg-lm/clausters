@@ -90,6 +90,42 @@ fn reading_up_stops_following_and_the_end_resumes_it() {
     assert_eq!(seen(&v, &m).last().unwrap(), "line 100");
 }
 
+/// **The scroll bar is the host's one bar**: a press on its thumb holds it
+/// where it was taken and leaves the view, a drag up reads back and stops
+/// following, a drag back to the end follows again, and the thumb is no
+/// shorter than a hand's grip.
+#[test]
+fn the_scroll_bar_is_held_by_its_thumb_and_the_end_follows() {
+    let m = Metrics::default();
+    let mut v = view(r#"{}"#);
+    for i in 0..500 {
+        write(&mut v, "out", &format!("line {i}\n"));
+    }
+    let inp = input(&m, 1, false);
+    let g = geometry(&v, &m);
+    let bar = v.bar(&g, &m).expect("more than is seen");
+    assert!(
+        bar.thumb.h >= m.handle_grip.min(bar.track.h),
+        "a grip a hand can take"
+    );
+    assert_eq!(
+        bar.thumb.y + bar.thumb.h,
+        bar.track.y + bar.track.h,
+        "following: at the end"
+    );
+    let on = (f64::from(bar.thumb.x + 1.0), f64::from(bar.thumb.y + 2.0));
+    let before = seen(&v, &m);
+    v.press(on, &inp);
+    assert_eq!(seen(&v, &m), before, "a press on the thumb keeps the view");
+    v.drag((on.0, on.1 - 60.0), &inp);
+    assert!(!v.follow, "read back");
+    assert_ne!(seen(&v, &m), before);
+    v.drag((on.0, on.1 + 400.0), &inp);
+    v.release((on.0, on.1 + 400.0), true, &inp);
+    assert!(v.follow, "back at the end, it follows");
+    assert_eq!(seen(&v, &m), before);
+}
+
 /// **A press and a drag select, and a copy is exactly that text**: across
 /// lines, by character; two clicks take a word.
 #[test]

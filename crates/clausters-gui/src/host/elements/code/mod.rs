@@ -288,15 +288,15 @@ impl CodeView {
 
     /// **The scroll bars**, where there is more than is seen: down the
     /// right edge of `area`, and along the text's bottom.
-    fn bars(&self, area: Rect, g: &Geometry) -> [Option<ScrollBar>; 2] {
+    fn scroll_bars(&self, area: Rect, g: &Geometry, m: &Metrics) -> [Option<ScrollBar>; 2] {
         let (sx, sy) = self.settle(g);
         let span_y = (self.code.lines() as f32 * g.row_h - g.text.h + g.row_h).max(0.0);
         let span_x = (self.widest() as f32 * g.cell + 2.0 * g.cell - g.text.w).max(0.0);
         let down = Rect::new(area.x + area.w - g.thumb, g.text.y, g.thumb, g.text.h);
         let across = Rect::new(g.text.x, g.text.y + g.text.h, g.text.w, g.thumb);
         [
-            ScrollBar::new(true, down, g.text.h, span_y, sy, g.row_h),
-            ScrollBar::new(false, across, g.text.w, span_x, sx, g.cell),
+            ScrollBar::new(true, down, g.text.h, span_y, sy, m),
+            ScrollBar::new(false, across, g.text.w, span_x, sx, m),
         ]
     }
 
@@ -1013,7 +1013,11 @@ impl CodeView {
         }
         // the scroll bars, where there is more than is seen
         mesh.set_clip(Some(clip(area)));
-        for bar in self.bars(area, &g).into_iter().flatten() {
+        for bar in self
+            .scroll_bars(area, &g, ctx.metrics)
+            .into_iter()
+            .flatten()
+        {
             crate::host::graphics::controls::scroll_thumb(mesh, bar.thumb, ctx.metrics, theme);
         }
         mesh.set_clip(kept);
@@ -1279,12 +1283,7 @@ impl Element for CodeView {
             });
         }
         let g = self.geometry(input.rect, input.scale, input.metrics);
-        let on_bar = self
-            .bars(input.rect, &g)
-            .into_iter()
-            .flatten()
-            .any(|b| b.track.contains(at.0, at.1));
-        if on_bar || (self.line_numbers && g.gutter.contains(at.0, at.1)) {
+        if self.line_numbers && g.gutter.contains(at.0, at.1) {
             return Some(Pointer::Default);
         }
         Some(Pointer::Text)
@@ -1309,7 +1308,11 @@ impl Element for CodeView {
         let g = self.geometry(input.rect, input.scale, input.metrics);
         // a scroll bar's: its thumb in hand
         let (sx, sy) = self.settle(&g);
-        for bar in self.bars(input.rect, &g).into_iter().flatten() {
+        for bar in self
+            .scroll_bars(input.rect, &g, input.metrics)
+            .into_iter()
+            .flatten()
+        {
             let offset = if bar.vertical { sy } else { sx };
             if let Some((grip, offset)) = bar.press(at, offset) {
                 self.thumb = Some(grip);
@@ -1359,7 +1362,7 @@ impl Element for CodeView {
         if let Some(grip) = self.thumb {
             let (sx, sy) = self.settle(&g);
             let held = self
-                .bars(input.rect, &g)
+                .scroll_bars(input.rect, &g, input.metrics)
                 .into_iter()
                 .flatten()
                 .find(|b| b.vertical == grip.vertical());
@@ -1563,6 +1566,7 @@ impl Element for CodeView {
                     anchor: self.spot(c.from?, &g)?,
                     text_size: g.size,
                     rows: LIST_ROWS,
+                    scroll: c.scroll,
                 })
             });
         let note_size = (g.size * 0.9).max(1.0);
@@ -1603,6 +1607,24 @@ impl Element for CodeView {
             _ => None,
         };
         (list.is_some() || note.is_some()).then_some(Own { list, note })
+    }
+
+    /// The completions scrolled by a hand: they stay where it put them.
+    fn scroll_own(&mut self, scroll: f32) -> bool {
+        let Some(c) = self.help.completing.as_mut() else {
+            return false;
+        };
+        let changed = c.scroll != Some(scroll);
+        c.scroll = Some(scroll);
+        changed
+    }
+
+    fn bars(&self, input: &Input) -> Vec<ScrollBar> {
+        let g = self.geometry(input.rect, input.scale, input.metrics);
+        self.scroll_bars(input.rect, &g, input.metrics)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// A completion pressed is taken.

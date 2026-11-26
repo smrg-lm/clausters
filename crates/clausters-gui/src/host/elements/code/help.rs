@@ -43,6 +43,8 @@ pub(super) struct Completing {
     pub shown: Vec<usize>,
     /// The row the keys are on.
     pub hover: usize,
+    /// How far a hand scrolled the list; `None` while it follows `hover`.
+    pub scroll: Option<f32>,
 }
 
 /// The call the caret is in, as the owner read it.
@@ -157,6 +159,8 @@ impl Completing {
         if n > 0 {
             self.hover = (self.hover as isize + by).rem_euclid(n) as usize;
         }
+        // the keys bring the list back to the row they are on
+        self.scroll = None;
     }
 }
 
@@ -218,6 +222,7 @@ impl Help {
         c.offers = offers.into_iter().map(|(o, _)| o).collect();
         c.from = Some(from);
         c.hover = 0;
+        c.scroll = None;
         c.filter(code);
         if c.shown.is_empty() {
             self.completing = None;

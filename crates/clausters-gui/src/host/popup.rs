@@ -443,7 +443,12 @@ impl OwnList {
         );
         stack.max_rows = Some(self.rows);
         stack.levels[0].hover = self.hover;
-        stack.levels[0].reveal = true;
+        // scrolled by hand, it stays where the hand put it; else it follows
+        // the row the keys are on
+        match self.scroll {
+            Some(scroll) => stack.levels[0].scroll = scroll,
+            None => stack.levels[0].reveal = true,
+        }
         stack
     }
 }
@@ -566,16 +571,9 @@ impl NotePlace {
     /// **The documentation's scroll bar**, in the card's right inset beside
     /// it, with it scrolled by `scroll`; `None` when all of it is seen.
     pub fn bar(&self, scroll: f32, m: &Metrics) -> Option<ScrollBar> {
-        let w = m.scrollbar_w.min(m.card_x);
+        let w = m.scrollbar_w;
         let track = Rect::new(self.rect.x + self.rect.w - w, self.doc.y, w, self.doc.h);
-        ScrollBar::new(
-            true,
-            track,
-            self.doc.h,
-            self.max_scroll(),
-            scroll,
-            self.line_h,
-        )
+        ScrollBar::new(true, track, self.doc.h, self.max_scroll(), scroll, m)
     }
 
     /// **The code block of the documentation at `(x, y)` that scrolls
@@ -1324,6 +1322,20 @@ pub struct Placed {
 }
 
 impl Placed {
+    /// **The list's scroll bar**, down its right edge inside its inset,
+    /// where it holds more rows than are seen: the host's one bar.
+    pub fn bar(&self, m: &Metrics) -> Option<ScrollBar> {
+        let body = self.body();
+        let w = m.scrollbar_w;
+        let track = Rect::new(
+            body.x + body.w - m.menu_inset - w,
+            body.y + m.menu_inset,
+            w,
+            (body.h - 2.0 * m.menu_inset).max(0.0),
+        );
+        ScrollBar::new(true, track, body.h, self.max_scroll, self.scroll, m)
+    }
+
     /// Where the rows are seen: the list under its title strip.
     pub fn body(&self) -> Rect {
         match self.strip {
@@ -1479,7 +1491,11 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
             (0, _) => stack.min_w.max(m.menu_w),
             _ => m.submenu_w,
         };
-        let want = (w.max(least), shown + strip_h);
+        // **a list that scrolls has room for its bar**, so the bar never
+        // covers a row's keys at its right end
+        let scrolls = shown < h - 0.5 || shown + strip_h > work.h;
+        let bar_w = if scrolls { m.scrollbar_w } else { 0.0 };
+        let want = (w.max(least) + bar_w, shown + strip_h);
         let rect = match (i, anchor) {
             (0, Anchor::Below(a)) => place_below(
                 Rect::new(a.x + shift.0, a.y + shift.1, a.w, a.h),
@@ -1525,9 +1541,10 @@ pub fn layout(stack: &Stack, owner: Option<Rect>, work: Rect, m: &Metrics) -> Ve
         }
         // the rows inside the list's inset
         let mut y = rect.y + strip_h + m.menu_inset - scroll;
+        let bar_w = if max_scroll > 0.0 { m.scrollbar_w } else { 0.0 };
         let (x, w) = (
             rect.x + m.menu_inset,
-            (rect.w - 2.0 * m.menu_inset).max(0.0),
+            (rect.w - 2.0 * m.menu_inset - bar_w).max(0.0),
         );
         let rows = level
             .entries

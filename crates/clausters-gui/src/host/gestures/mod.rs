@@ -313,6 +313,14 @@ enum Drag {
     /// Dragging a plane's scroll bar: the view follows the thumb, absolutely
     /// from the press ([`chrome`]).
     Bar(chrome::BarDrag),
+    /// **Dragging a list's scroll bar**: list `level` of the open stack, or
+    /// the list element `own` shows of its own accord (a code editor's
+    /// completions), with its thumb in hand.
+    ListBar {
+        level: usize,
+        own: Option<i32>,
+        grip: crate::host::graphics::controls::ThumbGrip,
+    },
 }
 
 /// **Where a press landed on a time axis**, kept until the button comes up.
