@@ -307,15 +307,16 @@ const UP: i32 = 14;
 const BAR: i32 = 15;
 const PATH: i32 = 16;
 const PLACE: i32 = 17;
-/// The button that gives the path to the field, and its chord.
-const TYPE_PATH: i32 = 18;
+/// The chord that gives the path to the field, as a double click on the
+/// bar does.
 const TYPE_PATH_CHORD: &str = "Ctrl+L";
 /// Where its nodes with no role are numbered from.
 const SPARE: i32 = 24;
 
-/// How large the chooser is drawn, in logical pixels.
-const CHOOSER_W: f64 = 520.0;
-const CHOOSER_H: f64 = 300.0;
+/// The least the chooser is drawn, in logical pixels: the dialog is
+/// `large`, as large as the window lets it, and the chooser takes what its
+/// other parts leave.
+const CHOOSER_MIN_H: f64 = 120.0;
 /// Between a caption and its field, the fields, and the footer's buttons:
 /// the specification's gaps.
 const CAPTION_GAP: f64 = 8.0;
@@ -703,9 +704,8 @@ impl Drawn {
         answer
     }
 
-    /// **The row over the chooser**: back, forward, up, where the folder is
-    /// (its bar, or the field its path is typed in), and the button that
-    /// gives the path to the field.
+    /// **The row over the chooser**: back, forward, up, and where the folder
+    /// is (its bar, or the field its path is typed in).
     fn nav(&self) -> Value {
         let way = |id: i32, icon: &str, tip: &str, enabled: bool| {
             json!({"id": self.at(id), "type": "button", "icon": icon, "tip": tip,
@@ -716,39 +716,33 @@ impl Drawn {
             field["select"] = json!([0, self.typed_dir.chars().count()]);
         }
         json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
-            "gap": NAV_GAP, "w": CHOOSER_W, "children": [
+            "gap": NAV_GAP, "children": [
             way(BACK, "arrow-left", "Back", !self.back.is_empty()),
             way(FORWARD, "arrow-right", "Forward", !self.forward.is_empty()),
             way(UP, "chevron-up", "Up", files::parent(&self.dir).is_some()),
             {"type": "layout", "id": self.at(PLACE), "flow": "stack", "weight": 1, "margin": 0,
                 "index": i32::from(self.editing), "children": [
-                {"type": "path_bar", "id": self.at(BAR), "path": self.dir, "root": root_name()},
+                {"type": "path_bar", "id": self.at(BAR), "path": self.dir, "root": root_name(),
+                    "chord": TYPE_PATH_CHORD},
                 field,
             ]},
-            {"id": self.at(TYPE_PATH), "type": "button", "label": "Type a path",
-                "variant": "ghost", "size": "sm", "chord": TYPE_PATH_CHORD,
-                "tip": TYPE_PATH_CHORD},
         ]})
     }
 
     /// **The dialog's widgets**, as it stands now.
     fn dialog(&self) -> Value {
-        let row = |caption: &str, field: Value, w: Option<f64>| {
+        let row = |caption: &str, field: Value| {
             let mut children = Vec::new();
             if !caption.is_empty() {
                 children.push(json!({"type": "label", "text": caption, "variant": "caption"}));
             }
             children.push(field);
-            let mut row = json!({"type": "layout", "flow": "col", "hug": true, "margin": 0,
-                "gap": CAPTION_GAP, "children": children});
-            if let (Some(w), Some(map)) = (w, row.as_object_mut()) {
-                map.insert("w".into(), json!(w));
-            }
-            row
+            json!({"type": "layout", "flow": "col", "hug": true, "margin": 0,
+                "gap": CAPTION_GAP, "children": children})
         };
         let files = json!({"type": "files", "id": self.at(FILES), "path": self.dir,
             "filter": self.filter(), "multiple": self.request.multiple, "weight": 1,
-            "h": CHOOSER_H, "bind": ["widget", self.at(NAME), "value"]});
+            "min_h": CHOOSER_MIN_H, "bind": ["widget", self.at(NAME), "value"]});
         let tools: Vec<Value> = Tool::ALL
             .into_iter()
             .filter(|tool| tool.shown())
@@ -767,16 +761,16 @@ impl Drawn {
         };
         let mut rows = vec![
             self.nav(),
-            row("", files, Some(CHOOSER_W)),
+            files,
             json!({"type": "layout", "flow": "row", "pack": 1, "hug": 1, "margin": 0,
                 "gap": 4, "children": tools}),
-            row(caption, name, None),
+            row(caption, name),
         ];
         if self.request.mode != Mode::Folder {
             let labels: Vec<String> = self.request.offers().into_iter().map(|o| o.label).collect();
             let kinds = json!({"type": "choice", "id": self.at(TYPE), "options": labels,
                 "index": self.kind});
-            rows.push(row("File type", kinds, Some(CHOOSER_W)));
+            rows.push(row("File type", kinds));
         }
         rows.push(
             json!({"type": "label", "id": self.at(SAYS), "text": self.storage.says,
@@ -794,9 +788,9 @@ impl Drawn {
             {"type": "button", "id": self.at(ACCEPT), "label": accept,
                 "default": true, "variant": "default"},
         ]});
-        json!({"type": "layout", "id": self.at(DIALOG), "modal": true, "hug": true,
+        json!({"type": "layout", "id": self.at(DIALOG), "modal": true, "large": true,
         "title": self.request.title, "flow": "col", "children": [
-            {"type": "layout", "flow": "col", "hug": true, "margin": 0, "gap": BODY_GAP,
+            {"type": "layout", "flow": "col", "weight": 1, "margin": 0, "gap": BODY_GAP,
                 "children": rows},
             footer,
         ]})
@@ -966,7 +960,6 @@ impl Presenter for Drawn {
                 }
                 answer
             }
-            TYPE_PATH if tag == "click" => self.edit(!self.editing),
             BAR => match (tag, paths(args).into_iter().next()) {
                 (GO, Some(to)) => {
                     let mut answer = Answer::default();

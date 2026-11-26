@@ -248,7 +248,8 @@ fn place_all<'a>(
     // the whole dock, for a pane of one (`over`) -- centred in it, and it is
     // placed last so that it is the last thing drawn and the first thing hit.
     // Its size is the one it declares, else what its content wants up to the
-    // widest a dialog grows ([`Widget::card_h`]), else half the area.
+    // widest a dialog grows ([`Widget::card_h`]), else half the area; a
+    // `large` one takes the window less a margin, up to its most.
     let over = over.unwrap_or(area);
     let mut next = 0;
     while next < modals.len() {
@@ -256,23 +257,19 @@ fn place_all<'a>(
         next += 1;
         let (want_w, _) = widget.hug_size(&space.metrics, space.unit);
         let (floor_w, floor_h) = widget.min_size(&space.metrics, space.unit);
-        let w = widget
-            .place
-            .w
-            .map(|w| space.px(w))
-            .or(want_w)
-            .unwrap_or(over.w * 0.5)
-            .min(over.w)
-            .max(floor_w);
-        // its height once its width is known, since its description wraps
-        let h = widget
-            .place
-            .h
-            .map(|h| space.px(h))
-            .or_else(|| widget.card_h(w, &space.metrics, space.unit))
-            .unwrap_or(over.h * 0.5)
-            .min(over.h)
-            .max(floor_h);
+        // a large dialog (a file dialog) takes what the window gives it, up
+        // to its most, and its content shares that
+        let large = matches!(&widget.kind, WidgetKind::Panel { group, .. } if group.large);
+        let (w, h) = if large {
+            let m = &space.metrics;
+            let edge = 2.0 * m.dialog_margin;
+            (
+                (over.w - edge).min(m.dialog_large_w).max(floor_w),
+                (over.h - edge).min(m.dialog_large_h).max(floor_h),
+            )
+        } else {
+            modal_size(widget, over, space, want_w, (floor_w, floor_h))
+        };
         let rect = Rect::new(
             (over.x + (over.w - w) * 0.5).round(),
             (over.y + (over.h - h) * 0.5).round(),
@@ -292,6 +289,36 @@ fn place_all<'a>(
         );
     }
     out
+}
+
+/// **How large a dialog is** over `over`: the size it declares, else what
+/// its content wants (its height at the width it gets, since its
+/// description wraps), else half the area; never more than the area, never
+/// less than its floor.
+fn modal_size(
+    widget: &Widget,
+    over: Rect,
+    space: Space,
+    want_w: Option<f32>,
+    (floor_w, floor_h): (f32, f32),
+) -> (f32, f32) {
+    let w = widget
+        .place
+        .w
+        .map(|w| space.px(w))
+        .or(want_w)
+        .unwrap_or(over.w * 0.5)
+        .min(over.w)
+        .max(floor_w);
+    let h = widget
+        .place
+        .h
+        .map(|h| space.px(h))
+        .or_else(|| widget.card_h(w, &space.metrics, space.unit))
+        .unwrap_or(over.h * 0.5)
+        .min(over.h)
+        .max(floor_h);
+    (w, h)
 }
 
 /// The children a container's flow arranges: every one but its dialogs, which

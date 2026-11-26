@@ -326,7 +326,7 @@ fn back_forward_and_up_walk_where_the_hand_went() {
 #[test]
 fn a_path_typed_goes_with_enter_and_escape_gives_the_bar_back() {
     let mut d = drawn(json!({"path": "/takes"}));
-    let typing = d.event(1000 + TYPE_PATH, "click", &[]);
+    let typing = d.event(1000 + BAR, EDIT, &[]);
     assert_eq!(set_on(&typing, 1000 + PLACE)["index"], json!(1));
     assert_eq!(set_on(&typing, 1000 + PATH)["select"], json!([0, 6]));
     d.event(1000 + PATH, "/scores/old", &[]);

@@ -76,7 +76,14 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Panel { group, flow, .. }
             if matches!(
                 key,
-                "title" | "frame" | "collapsed" | "modal" | "description" | "alert" | "wide"
+                "title"
+                    | "frame"
+                    | "collapsed"
+                    | "modal"
+                    | "description"
+                    | "alert"
+                    | "wide"
+                    | "large"
             ) =>
         {
             let applied = group.apply(key, v);

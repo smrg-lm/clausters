@@ -1788,6 +1788,40 @@ fn a_dialog_is_a_card_with_a_header_and_an_alert_has_no_close_button() {
     assert_eq!(head.title.expect("titled").h, m.line_lg);
 }
 
+/// **A large dialog takes what the window gives it**, a margin round it,
+/// up to its most; what in it has a weight shares the height it gets, so a
+/// smaller window shortens its list instead of cutting the dialog.
+#[test]
+fn a_large_dialog_follows_the_window() {
+    let host = host_from(
+        r#"{"type":"window","margin":0,"status":false,"children":[
+            {"id":5,"type":"layout","modal":1,"large":1,"title":"Open","children":[
+                {"id":6,"type":"layout","weight":1,"min_h":40},
+                {"id":7,"type":"button","label":"Open"}]}]}"#,
+    );
+    let m = *host.metrics_for(1);
+    for (w, h) in [(600, 400), (2400, 1600)] {
+        let ctx = GestureCtx::new(1, w, h);
+        let card = rect_of(&host, &ctx, 5);
+        let (w, h) = (w as f32, h as f32);
+        assert_eq!(
+            card.w,
+            (w - 2.0 * m.dialog_margin).min(m.dialog_large_w).round()
+        );
+        assert_eq!(
+            card.h,
+            (h - 2.0 * m.dialog_margin).min(m.dialog_large_h).round()
+        );
+        let body = rect_of(&host, &ctx, 6);
+        let button = rect_of(&host, &ctx, 7);
+        assert!(
+            button.y + button.h <= card.y + card.h,
+            "the dialog holds it all"
+        );
+        assert!(body.h > 40.0, "the weighted part takes the rest");
+    }
+}
+
 /// **A press on the scrim asks a dialog to go**, as Escape does; an alert
 /// dialog stays, answered by its buttons alone. Either way nothing behind it
 /// hears the press.
@@ -1892,18 +1926,20 @@ fn enter_in_a_dialogs_field_presses_its_default_button() {
     }
 }
 
-/// **A dialog's chord presses its button**, whichever of its widgets has the
-/// keys, while it is up; a chord the focused field edits with stays the
-/// field's, and outside a dialog the chord is the window's key table's.
+/// **A dialog's chord presses what carries it** (a button, a path bar),
+/// whichever of its widgets has the keys, while it is up; a chord the
+/// focused field edits with stays the field's, and outside a dialog the
+/// chord is the window's key table's.
 #[test]
-fn a_dialogs_chord_presses_its_button() {
+fn a_dialogs_chord_presses_what_carries_it() {
     let tree = |modal: i32| {
         format!(
             r#"{{"type":"window","margin":0,"status":false,"children":[
                 {{"id":10,"type":"layout","modal":{modal},"w":300,"h":200,"children":[
                     {{"id":11,"type":"text","value":"abc"}},
                     {{"id":12,"type":"button","label":"Select","chord":"Ctrl+A"}},
-                    {{"id":13,"type":"button","label":"Type a path","chord":"Ctrl+L"}}]}}]}}"#
+                    {{"id":13,"type":"path_bar","path":"/a/b","chord":"Ctrl+L"}},
+                    {{"id":14,"type":"button","label":"Keep","chord":"Ctrl+K"}}]}}]}}"#
         )
     };
     for (modal, pressed) in [(1, true), (0, false)] {
@@ -1924,6 +1960,10 @@ fn a_dialogs_chord_presses_its_button() {
             .press_key(&mut host, &ctrl, Key::Char('l'), None)
             .unwrap_or_default();
         assert_eq!(!emitted(&e, 13).is_empty(), pressed, "modal {modal}");
+        let e = g
+            .press_key(&mut host, &ctrl, Key::Char('k'), None)
+            .unwrap_or_default();
+        assert_eq!(!emitted(&e, 14).is_empty(), pressed, "modal {modal}");
         let e = g
             .press_key(&mut host, &ctrl, Key::Char('a'), None)
             .unwrap_or_default();

@@ -1932,19 +1932,20 @@ def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: fl
     return node("files", id=id, **extra, **props)
 
 
-def path_bar(path: str = "/", *, root: str | None = None, id: int | None = None,
-             **props) -> View:
+def path_bar(path: str = "/", *, root: str | None = None, chord: str | None = None,
+             id: int | None = None, **props) -> View:
     """**Where a folder is**: a ``path_bar``, one button per folder of
     ``path`` from the root to it, as a platform's file dialog shows the folder
     it lists. ``root`` is what the root is called (``"/"`` by default).
 
-    A press on a folder reports ``("go", path)``, the path up to it, and a
-    press past the last one ``("edit",)``, for whoever owns the bar to give
-    the path to a field. It goes nowhere itself: set its ``path`` to the
+    A click on a folder reports ``("go", path)``, the path up to it, and a
+    double click anywhere on the bar ``("edit",)``, for whoever owns the bar
+    to give the path to a field; ``chord`` (``"Ctrl+L"``) reports it too
+    while the dialog the bar is in is up. It goes nowhere itself: set its ``path`` to the
     folder shown. A path wider than the bar is cut from the left behind a
     ``...`` that goes to the folder before the first shown, so the folder
     shown is always there."""
-    extra = _drop_none(path=path, root=root)
+    extra = _drop_none(path=path, root=root, chord=chord)
     return node("path_bar", id=id, **extra, **props)
 
 
@@ -2337,7 +2338,8 @@ def toolbar(*children, id: int | None = None, **props) -> View:
 
 def dialog(*children, title: str | None = None, description: str | None = None,
            alert: bool | None = None, wide: bool | None = None,
-           flow: str | None = None, id: int | None = None, **props) -> View:
+           large: bool | None = None, flow: str | None = None, id: int | None = None,
+           **props) -> View:
     """A **dialog**: a `layout` that stands over the window and takes every
     press while it exists.
 
@@ -2357,13 +2359,18 @@ def dialog(*children, title: str | None = None, description: str | None = None,
     ``("cancel",)``, and freeing it is yours. ``alert`` makes it an **alert
     dialog**, which asks before something is done: it has no close button,
     a press beside it does nothing, and only Escape and its own buttons
-    answer it."""
+    answer it. ``large`` makes it a dialog that holds a browser (a file
+    dialog's): as large as the window lets it, a margin round it, up to its
+    most, and what in it has a ``weight`` shares the height it gets, so a
+    smaller window shortens that part rather than cutting the dialog."""
     extra = _drop_none(description=description)
     if alert is not None:
         extra["alert"] = 1 if alert else 0
     if wide is not None:
         extra["wide"] = 1 if wide else 0
-    return layout(*children, title=title, flow=flow, modal=True, hug=True,
+    if large is not None:
+        extra["large"] = 1 if large else 0
+    return layout(*children, title=title, flow=flow, modal=True, hug=not large,
                   id=id, **extra, **props)
 
 

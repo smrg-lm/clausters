@@ -2589,15 +2589,26 @@ export function files(
  * the root to it, as a platform's file dialog shows the folder it lists.
  * `root` is what the root is called (`"/"` by default).
  *
- * A press on a folder reports `"go" path`, the path up to it, and a press
- * past the last one `"edit"`, for whoever owns the bar to give the path to a
- * field. It goes nowhere itself: set its `path` to the folder shown. A path
+ * A click on a folder reports `"go" path`, the path up to it, and a double
+ * click anywhere on the bar `"edit"`, for whoever owns the bar to give the
+ * path to a field; `chord` (`"Ctrl+L"`) reports it too while the dialog the
+ * bar is in is up. It goes nowhere itself: set its `path` to the folder shown. A path
  * wider than the bar is cut from the left behind a `...` that goes to the
  * folder before the first shown, so the folder shown is always there.
  */
-export function pathBar(path = "/", options: WidgetOptions & { root?: string } = {}): View {
-    const { root, ...rest } = options;
-    return node("path_bar", { ...rest, ...drop([["path", path], ["root", root]]) });
+export function pathBar(
+    path = "/",
+    options: WidgetOptions & { root?: string; chord?: string } = {},
+): View {
+    const { root, chord, ...rest } = options;
+    return node("path_bar", {
+        ...rest,
+        ...drop([
+            ["path", path],
+            ["root", root],
+            ["chord", chord],
+        ]),
+    });
 }
 
 /**
@@ -3089,6 +3100,11 @@ export interface DialogOptions extends GroupOptions {
     alert?: boolean;
     /** A dialog of settings, which is wider. */
     wide?: boolean;
+    /**
+     * A dialog that holds a browser (a file dialog's): as large as the
+     * window lets it, and what in it has a `weight` shares the height it gets.
+     */
+    large?: boolean;
 }
 
 /**
@@ -3109,16 +3125,21 @@ export interface DialogOptions extends GroupOptions {
  * beside it ask it to go: the dialog reports `"cancel"`, and freeing it is
  * yours. `alert` makes it an **alert dialog**, which asks before something is
  * done: it has no close button, a press beside it does nothing, and only
- * Escape and its own buttons answer it.
+ * Escape and its own buttons answer it. `large` makes it a dialog that holds
+ * a browser (a file dialog's): as large as the window lets it, a margin round
+ * it, up to its most, and what in it has a `weight` shares the height it
+ * gets, so a smaller window shortens that part rather than cutting the
+ * dialog.
  */
 export function dialog(options: DialogOptions = {}, ...children: GuiNode[]): View {
-    const { description, alert, wide, ...rest } = options;
+    const { description, alert, wide, large, ...rest } = options;
     const own = drop([
         ["description", description],
         ["alert", flag(alert)],
         ["wide", flag(wide)],
+        ["large", flag(large)],
     ]);
-    return layout({ ...rest, ...own, modal: true, hug: true }, ...children);
+    return layout({ ...rest, ...own, modal: true, hug: !large }, ...children);
 }
 
 // ---- the heavy views ----

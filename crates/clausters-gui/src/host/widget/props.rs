@@ -894,6 +894,9 @@ pub struct Group {
     /// A dialog's `wide` prop: a dialog of settings, which grows wider than
     /// one that asks a question.
     pub wide: bool,
+    /// A dialog's `large` prop: one that holds a browser (a file dialog),
+    /// as large as the window lets it, its content sharing what it gets.
+    pub large: bool,
 }
 
 impl Group {
@@ -912,6 +915,7 @@ impl Group {
                 .map(str::to_string),
             alert: props.get("alert").and_then(truthy).unwrap_or(false),
             wide: props.get("wide").and_then(truthy).unwrap_or(false),
+            large: props.get("large").and_then(truthy).unwrap_or(false),
         }
     }
 
@@ -934,6 +938,7 @@ impl Group {
             }
             "alert" => truthy(v).map(|b| self.alert = b).is_some(),
             "wide" => truthy(v).map(|b| self.wide = b).is_some(),
+            "large" => truthy(v).map(|b| self.large = b).is_some(),
             _ => false,
         }
     }

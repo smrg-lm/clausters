@@ -1595,9 +1595,11 @@ without any application, client or wire changing.
 - ✅ **G48 — Where you are: the path bar, and the save that asks first.**
   *(Done 2026-11-26. Decided with the code: the bar is an element of its
   own, `path_bar`, which owns its room (it cuts from the left behind a
-  `...`) and only reports `"go"` and `"edit"`; `Ctrl+L` is a button's new
-  `chord` prop, a dialog's own keys, pressed while the dialog is up ahead of
-  the window's key table; the field's selection is `text`'s new `select`,
+  `...`) and only reports `"go"` and `"edit"` (a double click on it);
+  `Ctrl+L` is its `chord`, a prop a button has too, a dialog's own keys,
+  pressed while the dialog is up ahead of the window's key table. The
+  dialog is `large`, a new dialog prop: as large as the window lets it, its
+  chooser taking the height left, never a fixed size a small window cuts; the field's selection is `text`'s new `select`,
   carried out once. The presenter hears its chooser's listings (a new
   `Presenter::listed`), which give the folder as it resolved and the names
   a save asks about; a save to a folder not shown goes there first and is
@@ -1606,7 +1608,7 @@ without any application, client or wire changing.
   Over
   the chooser, the folder shown as a button per segment (a press goes
   there), cut from the left so the current one always shows; `Ctrl+L`, or a
-  press past the last segment, turns it into a field holding the path, where
+  double click on it, turns it into a field holding the path, where
   Enter goes and Escape gives the buttons back; back, forward and up beside
   it. A save over a file that exists asks before it replaces it, and opens
   with the name's stem selected, so what is typed replaces it (the `text`

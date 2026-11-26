@@ -743,6 +743,8 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
                         description="The take is not saved.", alert=True, wide=False)
     assert (ask["description"], ask["alert"], ask["wide"]) == ("The take is not saved.", 1, 0)
     assert ask["children"][0]["default"] == 1
+    browse = guidef.dialog(guidef.label("x"), title="Open", large=True)
+    assert (browse["large"], browse.get("hug")) == (1, 0)
     kit = guidef.button(label="Delete", variant="destructive", size="sm")
     assert (kit["variant"], kit["size"]) == ("destructive", "sm")
     assert guidef.label("Name", variant="caption")["variant"] == "caption"
@@ -779,8 +781,8 @@ def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
     assert guidef.file_dialog(all_files=False, multiple=True) == {
         "type": "file_dialog", "path": ".", "mode": "open", "all_files": 0, "multiple": 1}
     # Where a folder is, a dialog's own keys, and a selection given.
-    assert guidef.path_bar("/takes", root="Storage") == {
-        "type": "path_bar", "path": "/takes", "root": "Storage"}
+    assert guidef.path_bar("/takes", root="Storage", chord="Ctrl+L") == {
+        "type": "path_bar", "path": "/takes", "root": "Storage", "chord": "Ctrl+L"}
     assert guidef.button(label="Type a path", chord="Ctrl+L")["chord"] == "Ctrl+L"
     assert guidef.text(value="take.wav", select=(0, 4))["select"] == [0, 4]
     assert guidef.text(select=3)["select"] == 3

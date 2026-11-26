@@ -357,6 +357,12 @@ metrics_roles! {
     dialog_w: grid,
     /// The width a dialog of settings takes.
     dialog_wide_w: grid,
+    /// The most a large dialog takes, one that holds a browser (a file
+    /// dialog's), across and down: less where the window is smaller.
+    dialog_large_w: grid,
+    dialog_large_h: grid,
+    /// What a large dialog leaves of the window round it.
+    dialog_margin: grid,
     /// The width an alert dialog takes.
     alert_w: grid,
     /// Between a dialog's title and its description.
@@ -551,6 +557,9 @@ impl Metrics {
             dialog_gap: spec(24.0),
             dialog_w: spec(448.0),
             dialog_wide_w: spec(576.0),
+            dialog_large_w: spec(880.0),
+            dialog_large_h: spec(640.0),
+            dialog_margin: spec(24.0),
             alert_w: spec(512.0),
             dialog_title_gap: spec(8.0),
             alert_title_gap: spec(6.0),

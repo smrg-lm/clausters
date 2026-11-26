@@ -1,9 +1,10 @@
 //! `path_bar` -- where a folder is: one button per folder of its path, from
 //! the root to it, as a platform's file dialog shows the folder it lists.
 //!
-//! A press on a folder reports `"go" <path>`, the path up to it; a press past
-//! the last one reports `"edit"`, which a dialog answers by giving the path
-//! to a field to type in. The bar lists nothing and goes nowhere itself: its
+//! A click on a folder reports `"go" <path>`, the path up to it; a double
+//! click anywhere on it, or its `chord` while the dialog it is in is up,
+//! reports `"edit"`, which a dialog answers by giving the path to a field to
+//! type in. The bar lists nothing and goes nowhere itself: its
 //! `path` is set by whoever shows a folder (a file dialog, beside its
 //! chooser), and the root is named by its `root` prop (`/` by default; a
 //! page's storage in a tab).
@@ -17,7 +18,9 @@ use serde_json::{Map, Value};
 
 use clausters_core::osc::OscType;
 
+use super::button::chord_of;
 use crate::host::graphics::controls;
+use crate::host::keymap::Chord;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
 use crate::host::widget::size::Natural;
 use clausters_gui_draw::draw::Draw;
@@ -25,7 +28,7 @@ use clausters_gui_draw::font::{self, Family};
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 
-/// What a press on a folder reports, and a press past the last one.
+/// What a click on a folder reports, and a double click.
 pub const GO: &str = "go";
 pub const EDIT: &str = "edit";
 
@@ -125,6 +128,9 @@ fn fit(widths: &[f32], cut: f32, between: f32, room: f32) -> (usize, Vec<(f32, f
 pub struct PathBar {
     pub path: String,
     pub root: String,
+    /// The `chord` prop: the keys that ask for the path to be typed while
+    /// the dialog it is in is up.
+    pub chord: Option<Chord>,
     /// The button the hand holds, among those placed, while it does.
     held: Option<usize>,
 }
@@ -145,6 +151,7 @@ pub(super) fn build(
             .filter(|r| !r.is_empty())
             .unwrap_or("/")
             .into(),
+        chord: chord_of(props.get("chord")),
         held: None,
     }))
 }
@@ -206,6 +213,15 @@ impl PathBar {
     }
 }
 
+/// What the bar reports: `args`, as the interface hears them.
+fn tell(args: Vec<&str>) -> Events {
+    Events::none().and_interface(
+        args.into_iter()
+            .map(|a| OscType::String(a.into()))
+            .collect(),
+    )
+}
+
 /// The arrow drawn between two folders.
 fn arrow_glyph() -> char {
     controls::icon("chevron-right", '>')
@@ -225,8 +241,21 @@ impl Element for PathBar {
                 .as_str()
                 .map(|r| self.root = if r.is_empty() { "/".into() } else { r.into() })
                 .is_some(),
+            "chord" => {
+                self.chord = chord_of(Some(v));
+                true
+            }
             _ => false,
         }
+    }
+
+    fn chord(&self) -> Option<&Chord> {
+        self.chord.as_ref()
+    }
+
+    /// Its chord asks for the path to be typed.
+    fn activate(&mut self, _input: &Input) -> Option<Events> {
+        Some(tell(vec![EDIT]))
     }
 
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
@@ -288,23 +317,18 @@ impl Element for PathBar {
         Claim::take()
     }
 
-    /// **A click goes**: to the folder of the button let go on, or, past the
-    /// last one, to the field the path is typed in.
+    /// **A click goes** to the folder of the button let go on; a double
+    /// click, anywhere on the bar, to the field the path is typed in.
     fn release(&mut self, at: (f64, f64), inside: bool, input: &Input) -> Events {
         let held = self.held.take();
         if !inside {
             return Events::none();
         }
-        let tell = |args: Vec<&str>| {
-            Events::none().and_interface(
-                args.into_iter()
-                    .map(|a| OscType::String(a.into()))
-                    .collect(),
-            )
-        };
+        if input.clicks >= 2 {
+            return tell(vec![EDIT]);
+        }
         match (held, self.hit(at, input)) {
             (Some(i), Some((j, seg))) if i == j => tell(vec![GO, &seg.path]),
-            (None, None) => tell(vec![EDIT]),
             _ => Events::none(),
         }
     }
@@ -323,6 +347,71 @@ impl Element for PathBar {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::widget::element::Mods;
+
+    fn input(m: &Metrics, clicks: u32) -> Input<'_> {
+        Input {
+            metrics: m,
+            indent: 0.0,
+            rect: Rect::new(0.0, 0.0, 600.0, 30.0),
+            scale: 1.0,
+            mods: Mods::default(),
+            viewport: (600.0, 30.0),
+            clicks,
+            time: None,
+            header: None,
+        }
+    }
+
+    /// What a release reported to the interface, as strings.
+    fn told(mut events: Events) -> Vec<Vec<String>> {
+        events
+            .take_interface()
+            .into_iter()
+            .map(|args| {
+                args.into_iter()
+                    .filter_map(|a| match a {
+                        OscType::String(s) => Some(s),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// **A click goes to a folder; a double click, its chord too, asks for
+    /// the path to be typed**; a click on no folder does nothing.
+    #[test]
+    fn a_click_goes_and_a_double_click_edits() {
+        let m = Metrics::default();
+        let props: Map<String, Value> =
+            serde_json::from_str(r#"{"path": "/home/ana", "chord": "Ctrl+L"}"#).unwrap();
+        let mut bar = build(&props, &[]).unwrap();
+        let once = input(&m, 1);
+        let home = bar_hit(&props, &once, 1);
+        bar.press(home, &once);
+        assert_eq!(told(bar.release(home, true, &once)), [["go", "/home"]]);
+        let past = (590.0, 15.0);
+        bar.press(past, &once);
+        assert!(told(bar.release(past, true, &once)).is_empty());
+        let twice = input(&m, 2);
+        bar.press(past, &twice);
+        assert_eq!(told(bar.release(past, true, &twice)), [["edit"]]);
+        assert!(bar.chord().is_some());
+        assert_eq!(told(bar.activate(&once).unwrap()), [["edit"]]);
+    }
+
+    /// The middle of the `i`th button placed.
+    fn bar_hit(props: &Map<String, Value>, input: &Input, i: usize) -> (f64, f64) {
+        let bar = PathBar {
+            path: props["path"].as_str().unwrap().into(),
+            root: "/".into(),
+            chord: None,
+            held: None,
+        };
+        let r = bar.place(input.rect, input.metrics).buttons[i].1;
+        (f64::from(r.x + r.w / 2.0), f64::from(r.y + r.h / 2.0))
+    }
 
     fn labels(path: &str, root: &str) -> Vec<String> {
         segments(path, root).into_iter().map(|s| s.label).collect()

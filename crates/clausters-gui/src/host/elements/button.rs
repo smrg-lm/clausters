@@ -119,13 +119,14 @@ pub struct Button {
     held: bool,
 }
 
-/// A `chord` prop: a chord as the key table spells it, or none.
-fn chord_of(v: Option<&Value>) -> Option<Chord> {
+/// A `chord` prop: a chord as the key table spells it, or none -- a
+/// button's, and a path bar's.
+pub(super) fn chord_of(v: Option<&Value>) -> Option<Chord> {
     let text = v.and_then(Value::as_str).filter(|s| !s.is_empty())?;
     match Chord::parse(text) {
         Ok(chord) => Some(chord),
         Err(why) => {
-            crate::host::diag::warn!("button: chord {why}");
+            crate::host::diag::warn!("chord {why}");
             None
         }
     }
