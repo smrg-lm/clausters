@@ -84,6 +84,9 @@ fn from_props(props: &Map<String, Value>) -> Files {
     files
 }
 
+/// **The extensions a `filter` names**: a list, or one extension alone --
+/// and a list rides `/gui_set` as its JSON, OSC having no list argument, so
+/// a string that is a JSON list is that list.
 fn filter_of(v: Option<&Value>) -> Vec<String> {
     match v {
         Some(Value::Array(items)) => items
@@ -91,7 +94,10 @@ fn filter_of(v: Option<&Value>) -> Vec<String> {
             .filter_map(Value::as_str)
             .map(str::to_string)
             .collect(),
-        Some(Value::String(one)) => vec![one.clone()],
+        Some(Value::String(one)) => match serde_json::from_str::<Value>(one) {
+            Ok(list @ Value::Array(_)) => filter_of(Some(&list)),
+            _ => vec![one.clone()],
+        },
         _ => Vec::new(),
     }
 }
@@ -631,6 +637,22 @@ mod tests {
         let fresh = f.wants_listing().expect("asked afresh");
         assert!(f.listed(fresh.ticket, Ok(listing())));
         assert_eq!(f.value(), None);
+    }
+
+    /// **A filter set over the wire is the list it carries**: `/gui_set`
+    /// rides a list as its JSON, and taking that text for one extension
+    /// let no file through.
+    #[test]
+    fn a_filter_carried_as_json_is_its_list() {
+        let mut f = chooser(r#"{"path":"takes"}"#);
+        assert!(f.set("filter", &Value::from(r#"["wav","flac"]"#)));
+        assert_eq!(
+            filter_of(Some(&Value::from(r#"["wav","flac"]"#))),
+            ["wav", "flac"]
+        );
+        assert_eq!(filter_of(Some(&Value::from("wav"))), ["wav"]);
+        assert!(answer(&mut f, Ok(listing())));
+        assert!(f.chooser.shown().iter().any(|e| !e.dir), "a file passes");
     }
 
     #[test]

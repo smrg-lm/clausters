@@ -10416,3 +10416,22 @@ module of its own.
   --future-incompat-report` and the editor's build both say 0 -- so
   there is nothing for this release to raise. A future lint that flags
   them again arrives with the pin, through the weekly newest-stable job.)*
+
+- ✅ **A `files` chooser just defined and given its `path` again stops
+  reporting what the keys select** (2026-11-25, the editor page's e2e). The
+  code editor defined its Open dialog with the chooser at `/sketches` and
+  then set the same `path` (with `focus` and `filter`), as an application
+  does to a dialog already in its window: after a New folder there, Down
+  over `..`, `kept/` and `one.mjs` reported `select` with no path for every
+  row, and the name field it binds stayed empty. Without the second `path`
+  the same keys select `one.mjs`. The editor now sets only the focus, which
+  is what its freshly drawn dialog lacked; the chooser itself is to be
+  looked at, in `G47` (two listings of one folder in flight, the second answered
+  against the first's rows, is the first suspect), with a host test that
+  defines a chooser, sets its path, changes the storage and selects by key.
+  *(Fixed 2026-11-26. The path was not the cause: the editor's correction
+  carried `filter` too, and `/gui_set` rides a list as its JSON, which the
+  chooser took for one extension, `["mjs","js"]`, that no file has -- so
+  the folder listed only its subfolders, and the keys had no file to
+  select. The chooser reads a string that is a JSON list as that list, and
+  the editor applies its whole correction again.)*

@@ -1130,15 +1130,7 @@ impl App {
         if let Some(stack) = self.dialogs.stack(&filedialog::forms(types)) {
             self.show_dialog(stack, filedialog::SPARE);
         }
-        // the stack is drawn with the form up, its fields holding what they
-        // hold, so of what shows it only the keyboard is still to give: a
-        // chooser just defined and given its path again stops reporting
-        // the files the keys select in it (the host's, in its plan)
-        let focus = shown
-            .into_iter()
-            .filter_map(|(id, props)| Some((id, json!({"focus": props.get("focus")?}))))
-            .collect();
-        self.correct(focus);
+        self.correct(shown);
     }
 
     /// The dialogs' widgets corrected with what the forms answered.

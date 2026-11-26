@@ -1577,9 +1577,7 @@ without any application, client or wire changing.
   (the folder, the selection, the typed name, the kind, the storage's tools
   and the line they speak in) and answers the chooser, the field, the kind
   and the tools itself; `"chosen"` named as the kind chosen (a save's
-  extension added, every file's name as typed). The chooser given its path
-  again stops losing what the keys select (the "Found by use" entry, closed
-  here with a host test). Acceptance: a host test opens one of each mode,
+  extension added, every file's name as typed). Acceptance: a host test opens one of each mode,
   walks it by key and by report, and reads one `"chosen"`; the protocol's
   reference and both clients' builders (`file_dialog()` / `fileDialog()`,
   the same signature) name it.
@@ -1696,19 +1694,6 @@ open, and that file is where a search for a fixed one ends.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
-
-- ⬜ **A `files` chooser just defined and given its `path` again stops
-  reporting what the keys select** (2026-11-25, the editor page's e2e). The
-  code editor defined its Open dialog with the chooser at `/sketches` and
-  then set the same `path` (with `focus` and `filter`), as an application
-  does to a dialog already in its window: after a New folder there, Down
-  over `..`, `kept/` and `one.mjs` reported `select` with no path for every
-  row, and the name field it binds stayed empty. Without the second `path`
-  the same keys select `one.mjs`. The editor now sets only the focus, which
-  is what its freshly drawn dialog lacked; the chooser itself is to be
-  looked at, in `G47` (two listings of one folder in flight, the second answered
-  against the first's rows, is the first suspect), with a host test that
-  defines a chooser, sets its path, changes the storage and selects by key.
 
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** (2026-10-21, the user, browser). Playback was
