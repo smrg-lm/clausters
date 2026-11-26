@@ -48,6 +48,61 @@ pub(super) fn on_card(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> bool {
         .is_some_and(|(_, _, place)| place.rect.contains(x, y))
 }
 
+/// **The pointer over a hover card**, as over the documentation's page: the
+/// I-beam over its text, where a press selects, and the arrow over its
+/// scroll bars, a code block's copy button and its empty space. `None` off
+/// every card.
+pub(super) fn pointer_on(
+    host: &Host,
+    ctx: &GestureCtx,
+    x: f64,
+    y: f64,
+) -> Option<crate::host::pointer::Pointer> {
+    use crate::host::pointer::Pointer;
+    let (owner, note, place) = host
+        .card_place(ctx.def_id, ctx.fb_w, ctx.fb_h)
+        .filter(|(_, _, place)| place.rect.contains(x, y))?;
+    let m = *host.metrics_for(ctx.def_id);
+    let card: crate::host::popup::Card = host
+        .popups(ctx.def_id)
+        .and_then(|p| p.card.clone())
+        .filter(|c| c.owner == owner)
+        .unwrap_or_default();
+    let scroll = card.scroll.min(place.max_scroll());
+    let on = |r: clausters_gui_draw::rect::Rect| r.contains(x, y);
+    if place.bar(scroll, &m).is_some_and(|b| on(b.track)) {
+        return Some(Pointer::Default);
+    }
+    if let Some(laid) = &place.laid {
+        let origin = (place.doc.x, place.doc.y - scroll);
+        let (px, py) = (x as f32 - origin.0, y as f32 - origin.1);
+        if (0..laid.pans.len()).any(|i| {
+            laid.pan_bar(i, origin, card.pan(i), &m)
+                .is_some_and(|b| on(b.track))
+        }) || (place.doc.contains(x, y) && laid.copy_index_at(px, py).is_some())
+        {
+            return Some(Pointer::Default);
+        }
+    }
+    let (fx, fy) = (x as f32, y as f32);
+    let on_text = (0..place.count()).any(|i| {
+        let (top, h) = place.line_top(i, scroll);
+        let in_view =
+            i < place.heads.len() || (fy >= place.doc.y && fy < place.doc.y + place.doc.h);
+        let len = place.line(i).map_or(0, |(l, _)| l.text.len());
+        let (x0, x1) = (
+            place.head.x + note.x_of(&place, &card.pans, i, 0),
+            place.head.x + note.x_of(&place, &card.pans, i, len),
+        );
+        in_view && fy >= top && fy < top + h && fx >= x0 && fx <= x1
+    });
+    Some(if on_text {
+        Pointer::Text
+    } else {
+        Pointer::Default
+    })
+}
+
 impl Gestures {
     /// **A press on the card**: a selection of its text starts there, and
     /// nothing under it hears the press. Returns whether it was on one.

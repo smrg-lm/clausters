@@ -69,9 +69,10 @@ impl Gestures {
     /// take the press rather than taking it.
     pub(super) fn pointer_at(&self, host: &mut Host, ctx: &GestureCtx, x: f64, y: f64) -> Pointer {
         let def_id = ctx.def_id;
-        // a hover card's text is selected by a press on it
-        if card::on_card(host, ctx, x, y) {
-            return Pointer::Text;
+        // a hover card's text is selected by a press on it; its bars and
+        // buttons are pressed
+        if let Some(pointer) = card::pointer_on(host, ctx, x, y) {
+            return pointer;
         }
         // an open list, or a dialog's scrim: a press there picks or dismisses
         if host.popup(def_id).is_some() || self.behind_dialog(host, ctx, x, y) {

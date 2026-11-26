@@ -1721,6 +1721,31 @@ fn a_hover_card_s_scroll_bar_is_dragged() {
     assert!(card.select.is_none(), "and nothing selected");
 }
 
+/// **The pointer over a hover card is the page's**: the arrow over its
+/// scroll bar, as over every other bar, and the I-beam over its text.
+#[test]
+fn a_hover_card_shows_the_arrow_over_its_bar_and_the_beam_over_its_text() {
+    use crate::host::pointer::Pointer;
+    let mut host = host_from(CODE);
+    let mut g = Gestures::default();
+    let mut ctx = ctx();
+    let doc: String = (0..80)
+        .map(|i| format!("Line {i} of the help.\n"))
+        .collect();
+    rest_on_a_name(&mut g, &mut host, &mut ctx, &doc);
+    let (_, _, place) = host.card_place(1, ctx.fb_w, ctx.fb_h).expect("a card");
+    let m = *host.metrics_for(1);
+    let thumb = mid(place.bar(0.0, &m).expect("a bar").thumb);
+    g.motion(&mut host, &ctx, thumb.0, thumb.1);
+    assert_eq!(g.pointer(), Pointer::Default, "the arrow over the bar");
+    let text = (
+        f64::from(place.head.x) + 2.0,
+        f64::from(place.head.y + place.head.h * 0.5),
+    );
+    g.motion(&mut host, &ctx, text.0, text.1);
+    assert_eq!(g.pointer(), Pointer::Text, "the beam over the text");
+}
+
 /// **A hover card's code block is used with the mouse as the page's is**:
 /// its bar's thumb dragged moves it across and selects nothing, its copy
 /// button pressed copies its code and is drawn held until the release, and
