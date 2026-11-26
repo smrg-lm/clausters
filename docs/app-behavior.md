@@ -686,7 +686,9 @@ code that keeps it lives.
   opens as one chosen. **Under the name is the file type**, as file dialogs
   have had it for decades (`forms::FileType`): a save offers the kinds it
   writes, and a name typed with none of the chosen kind's extensions, or
-  with another's, is saved with the kind's added; an open offers every kind
+  with another's, is saved with the kind's added; an application that
+  writes any name (the code editor, whose sources are text) offers All
+  files among them, which saves the name as typed; an open offers every kind
   it reads at once, each of them, and All files (`*.*`), so a file saved
   with no extension can be chosen, and opening one the application does not
   read says so. The kind chosen is the chooser's filter. **The dialog manages the storage it shows**: under
@@ -701,7 +703,11 @@ code that keeps it lives.
   page's, the code editor used the desktop's dialog, and the multitrack
   said "session"; found 2026-11-23: only the code editor's dialog had the
   storage's tools, so in a page an application's document could not be
-  taken to the disk nor a file brought from it).
+  taken to the disk nor a file brought from it; found 2026-11-25: the code
+  editor's dialog was a second state machine beside `forms::Dialogs`,
+  only drawn with the same pieces, and its Save As had no All files. The
+  code editor is an application like the others, and its Open and Save
+  As are now two forms of the same mechanism).
 - **A step tells the window where it left the context once it has landed.**
   Undo or redo from one window of a shared order may restore a file another
   window holds; the asking window learns the new version only after that walk

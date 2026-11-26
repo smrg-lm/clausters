@@ -1,420 +1,222 @@
-//! **The editor's file dialog**, over the platform's storage: what it opens
-//! and saves with, natively and in a page alike.
+//! **The editor's file dialogs**: its Open and its Save as, two forms of
+//! the mechanism every application's dialogs are ([`clausters_apps::forms`]).
 //!
-//! It is the protocol's file dialog: the host's `files` chooser, which
-//! lists the disk in a window and the page's storage in a tab, a field
-//! bound to what it selects, and the buttons. Since it is where the
-//! storage's files are seen, the storage's tools are here too -- a new
-//! folder, a rename, a delete, and in a page an upload and a download --
-//! every application's ([`clausters_apps::forms::storage`]), which the
-//! chooser carries out (its `change`) and answers (`"changed"`).
-//!
-//! This is the dialog's state and its tree; the application shows it in its
-//! dialog place and hands it what the hand did.
+//! The code editor is an application like the others, so its files are
+//! chosen the way theirs are: the host's `files` chooser over the platform's
+//! storage (the disk in a window, the page's storage in a tab), the
+//! storage's tools under it, the name it fills, the file type and the
+//! buttons, read by [`forms::Dialogs`]. This module says only what is the
+//! editor's: which forms it has, the kinds of file its language's sources
+//! are, and where its widgets are numbered. The application shows the
+//! dialogs in its dialog place and carries out what they answer.
 
-use std::path::{Path, PathBuf};
-
-use clausters_apps::forms::storage::{self, Storage, Tool};
-use clausters_apps::forms::{Chooser, FileType};
+use clausters_apps::forms::{self, Chooser, FileType, Ids, Spec};
+use clausters_core::osc::OscType;
 use serde_json::{Value, json};
 
-use crate::platform::Purpose;
-
-/// Where the dialog's ids start: below the editor's own, above every id a
+/// Where the dialogs' ids start: below the editor's own, above every id a
 /// client allocates or a script picks.
 const BASE: i32 = (1 << 24) - 100_000;
-const DIALOG: i32 = BASE;
-const FILES: i32 = BASE + 1;
-const NAME: i32 = BASE + 2;
-const UPLOAD: i32 = BASE + 3;
-const NEW_FOLDER: i32 = BASE + 4;
-const RENAME: i32 = BASE + 5;
-const DOWNLOAD: i32 = BASE + 6;
-const DELETE: i32 = BASE + 7;
-const CANCEL: i32 = BASE + 8;
-const ACCEPT: i32 = BASE + 9;
-const SAYS: i32 = BASE + 10;
-const TYPE: i32 = BASE + 11;
-/// Where its nodes with no role of their own are numbered from.
-pub const SPARE: i32 = BASE + 20;
-/// Past the dialog's ids.
-const END: i32 = BASE + 100;
+/// Where their nodes with no role of their own are numbered from: past
+/// every widget [`forms::names`] lists.
+pub const SPARE: i32 = BASE + 100;
+/// Past the dialogs' ids.
+const END: i32 = BASE + 1000;
 
-/// The id of a tool's button.
-fn tool_id(tool: Tool) -> i32 {
-    match tool {
-        Tool::Upload => UPLOAD,
-        Tool::Download => DOWNLOAD,
-        Tool::NewFolder => NEW_FOLDER,
-        Tool::Rename => RENAME,
-        Tool::Delete => DELETE,
+/// **One of the editor's file forms**, over the kinds of file its
+/// language's sources are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// A file to open in a tab.
+    Open(&'static [FileType]),
+    /// Where a tab is written.
+    SaveAs(&'static [FileType]),
+}
+
+/// The field each form chooses its file in.
+pub const PATH: &str = "path";
+
+impl Spec for Form {
+    fn prefix(self) -> &'static str {
+        match self {
+            Form::Open(_) => "open",
+            Form::SaveAs(_) => "file",
+        }
+    }
+
+    fn page(self) -> i32 {
+        match self {
+            Form::Open(_) => 1,
+            Form::SaveAs(_) => 2,
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Form::Open(_) => "Open",
+            Form::SaveAs(_) => "Save as",
+        }
+    }
+
+    fn fields(self) -> Vec<(&'static str, &'static str)> {
+        vec![(PATH, ""), (forms::NAME, "Name")]
+    }
+
+    fn chooser(self, name: &str) -> Option<Chooser> {
+        match (self, name) {
+            (Form::Open(types), PATH) => Some(Chooser::open(types, false)),
+            (Form::SaveAs(types), PATH) => Some(Chooser::save(types)),
+            _ => None,
+        }
+    }
+
+    fn accept(self) -> &'static str {
+        match self {
+            Form::Open(_) => "Open",
+            Form::SaveAs(_) => "Save",
+        }
     }
 }
 
-/// What the hand did in the dialog, for the application to carry out.
-#[derive(Debug, PartialEq)]
-pub enum Does {
-    /// Nothing the application has to do.
-    Nothing,
-    /// The dialog is drawn again as it is now.
-    Redraw,
-    /// Widgets of the dialog set, the dialog standing as it is: the chooser
-    /// asked for a change of the storage or sent to a folder, the name field
-    /// cleared, the line the tools speak in. Drawing the dialog again would
-    /// build its chooser afresh, and with it the change it was asked for.
-    Set(Vec<(i32, Value)>),
-    /// The path was chosen, or nothing (`None`): the dialog goes.
-    Chosen(Option<PathBuf>),
+/// **The forms the dialog place holds**, in the order of their pages, over
+/// the kinds of file `types`.
+#[must_use]
+pub fn forms(types: &'static [FileType]) -> [Form; 2] {
+    [Form::Open(types), Form::SaveAs(types)]
 }
 
-/// **The dialog that is up**: what it was opened for, the folder its
-/// chooser shows, the file it selects, the path typed, the kind of file
-/// chosen in its file-type field, and its tools.
-pub struct FileDialog {
-    pub purpose: Purpose,
-    dir: PathBuf,
-    selected: Option<PathBuf>,
-    typed: String,
-    /// The kinds of file the language's sources are.
-    types: &'static [FileType],
-    /// The words of the kind chosen.
-    kind: String,
-    storage: Storage,
+/// **Every widget of the dialogs, numbered** from the editor's range.
+#[must_use]
+pub fn ids() -> Ids {
+    forms::names(&forms(&[])).into_iter().zip(BASE..).collect()
 }
 
-impl FileDialog {
-    /// The dialog for `purpose`, in the folder of `start` with its name
-    /// typed when it names a file, or at the storage's root, over files of
-    /// `types` -- the first chosen.
-    pub fn new(purpose: Purpose, start: Option<&Path>, types: &'static [FileType]) -> Self {
-        let file = start.filter(|p| p.extension().is_some());
-        let dir = match (file, start) {
-            (Some(f), _) => f.parent().map(Path::to_path_buf),
-            (None, dir) => dir.map(Path::to_path_buf),
-        }
-        .filter(|d| !d.as_os_str().is_empty())
-        .unwrap_or_else(|| PathBuf::from("/"));
-        Self {
-            purpose,
-            dir,
-            selected: None,
-            typed: file
-                .map(|f| f.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            types,
-            kind: String::new(),
-            storage: Storage::default(),
-        }
-    }
+/// **The editor's dialogs**, nothing up, their widgets numbered.
+#[must_use]
+pub fn dialogs() -> forms::Dialogs<Form> {
+    let mut dialogs = forms::Dialogs::default();
+    dialogs.ids = ids();
+    dialogs
+}
 
-    /// **The chooser it is**: one that saves a file of the language's
-    /// kinds, or one that opens them, every file besides. A file to open is
-    /// chosen or typed alike, so either fills the field.
-    fn chooser(&self) -> Chooser {
-        match self.purpose {
-            Purpose::SaveAs { .. } => Chooser::save(self.types),
-            Purpose::Open | Purpose::DocsFolder => Chooser::open(self.types, false),
-        }
-    }
+/// Whether `id` is one of the dialogs'.
+#[must_use]
+pub fn owns(id: i32) -> bool {
+    (BASE..END).contains(&id)
+}
 
-    /// Whether widget `id` reports a value of text: the field, and the
-    /// chooser's file selected.
-    pub fn valued(id: i32) -> bool {
-        id == NAME || id == FILES
-    }
-
-    /// Whether `id` is one of the dialog's.
-    pub fn owns(id: i32) -> bool {
-        (BASE..END).contains(&id)
-    }
-
-    /// The path the field names: from the root when it starts with one,
-    /// else in the folder shown.
-    fn path(&self) -> Option<PathBuf> {
-        let typed = self.typed.trim();
-        if typed.is_empty() {
-            return None;
-        }
-        Some(if typed.starts_with('/') {
-            PathBuf::from(typed)
-        } else {
-            self.dir.join(typed)
-        })
-    }
-
-    /// **The path the dialog answers**: a save's named as a file of the
-    /// kind chosen, its extension added to a name with none of the kind's
-    /// ([`clausters_apps::forms::TypeChoice::named`]); an open's as typed.
-    fn chosen(&self) -> Option<PathBuf> {
-        let path = self.path()?;
-        Some(match self.purpose {
-            Purpose::SaveAs { .. } => PathBuf::from(
-                self.chooser()
-                    .choice(&self.kind)
-                    .named(&path.to_string_lossy()),
-            ),
-            Purpose::Open | Purpose::DocsFolder => path,
-        })
-    }
-
-    /// **What an event in the dialog does**: its tag, and its first
-    /// argument as text -- or, for a value (a field's text, the file the
-    /// chooser selects), no tag and the value.
-    pub fn on(&mut self, id: i32, tag: &str, text: String) -> Does {
-        match (id, tag) {
-            (NAME, "") => {
-                self.typed = text;
-                Does::Nothing
-            }
-            // the chooser's value: the file selected
-            (FILES, "") => {
-                self.selected = (!text.is_empty()).then(|| PathBuf::from(&text));
-                self.typed = text;
-                Does::Nothing
-            }
-            (FILES, "path") => {
-                self.dir = PathBuf::from(text);
-                self.selected = None;
-                Does::Nothing
-            }
-            // what is selected, reported whether or not the field is bound
-            (FILES, "select") => {
-                self.selected = (!text.is_empty()).then(|| PathBuf::from(&text));
-                if !text.is_empty() {
-                    self.typed = text;
-                }
-                Does::Nothing
-            }
-            (FILES, "pick") => match self.purpose {
-                // a file picked to save over is named as the kind chosen
-                Purpose::SaveAs { .. } => {
-                    self.typed = text;
-                    Does::Chosen(self.chosen())
-                }
-                Purpose::Open | Purpose::DocsFolder => Does::Chosen(Some(PathBuf::from(text))),
-            },
-            // **a kind chosen lists its files**: the chooser filtered to its
-            // extensions, every file for every file
-            (TYPE, index) => {
-                let at = index.parse::<f64>().ok().or_else(|| text.parse().ok());
-                let chooser = self.chooser();
-                let Some(choice) = at.and_then(|i| chooser.choices().into_iter().nth(i as usize))
-                else {
-                    return Does::Nothing;
-                };
-                self.kind = choice.label;
-                Does::Set(vec![(FILES, json!({"filter": choice.extensions}))])
-            }
-            // the chooser carried a change out: what went wrong, if anything
-            (FILES, "changed") => {
-                self.storage.changed(&text);
-                self.selected = None;
-                Does::Set(vec![(SAYS, storage::says_props(&self.storage.says))])
-            }
-            (DIALOG, "cancel") | (CANCEL, "click") => Does::Chosen(None),
-            (ACCEPT, "click") => match self.chosen() {
-                Some(path) => Does::Chosen(Some(path)),
-                None => {
-                    self.storage.says = "Type a file's name first.".into();
-                    Does::Set(vec![(SAYS, storage::says_props(&self.storage.says))])
-                }
-            },
-            (id, "click") => match Tool::ALL.into_iter().find(|t| tool_id(*t) == id) {
-                Some(tool) => self.tool(tool),
-                None => Does::Nothing,
-            },
-            _ => Does::Nothing,
-        }
-    }
-
-    /// **A tool pressed**: the change the chooser is asked for, or what the
-    /// tools say instead.
-    fn tool(&mut self, tool: Tool) -> Does {
-        let text = |p: &Path| p.to_string_lossy().into_owned();
-        let (dir, selected, typed) = (
-            text(&self.dir),
-            self.selected.as_deref().map(text),
-            self.path().as_deref().map(text),
-        );
-        let pressed = self
-            .storage
-            .press(tool, &dir, selected.as_deref(), typed.as_deref());
-        let mut set = Vec::new();
-        if let Some(to) = pressed.go {
-            self.dir = PathBuf::from(&to);
-            set.push((FILES, json!({"path": to})));
-        }
-        if let Some(change) = pressed.change {
-            self.selected = None;
-            set.push((FILES, json!({"change": change})));
-        }
-        if pressed.clear_name {
-            self.typed.clear();
-            set.push((NAME, json!({"value": ""})));
-        }
-        set.push((SAYS, storage::says_props(&self.storage.says)));
-        Does::Set(set)
-    }
-
-    /// **The dialog's tree**, as it is now: every application's file dialog
-    /// ([`clausters_apps::forms`]) -- the chooser, the storage's tools under
-    /// it, the name it fills, the line the tools speak in, the buttons.
-    pub fn tree(&self) -> Value {
-        use clausters_apps::forms::{chooser_widget, field_row, footer};
-        let (title, accept) = match self.purpose {
-            Purpose::SaveAs { .. } => ("Save as", "Save"),
-            Purpose::Open | Purpose::DocsFolder => ("Open", "Open"),
-        };
-        // a file to open is chosen or typed alike, so the chooser fills the
-        // field either way
-        let chooser = self.chooser();
-        let files = chooser_widget(
-            Some(FILES),
-            &self.dir.to_string_lossy(),
-            &chooser,
-            &self.kind,
-            Some(NAME),
-        );
-        let name = json!({"id": NAME, "type": "text", "value": self.typed});
-        let options: Vec<String> = chooser.choices().into_iter().map(|c| c.label).collect();
-        let index = options.iter().position(|o| *o == self.kind).unwrap_or(0);
-        let kinds = json!({"id": TYPE, "type": "choice", "options": options, "index": index});
-        json!({
-            "id": DIALOG, "type": "layout", "modal": 1, "hug": 1, "title": title, "flow": "col",
-            "children": [
-                field_row("", None, files, Some(chooser.w)),
-                storage::tools_row(|tool| Some(tool_id(tool))),
-                field_row("Name", None, name, None),
-                field_row("File type", None, kinds, Some(chooser.w)),
-                storage::says_line(Some(SAYS), &self.storage.says),
-                footer(Some(CANCEL), Some(ACCEPT), accept),
-            ]
-        })
+/// **An event's tag and what follows it, as the forms read them**: the
+/// arguments as values, and a choice's index, which arrives as a number
+/// alone, as its tag.
+#[must_use]
+pub fn report(tag: &str, args: &[OscType]) -> (String, Vec<Value>) {
+    let value = |a: &OscType| match a {
+        OscType::String(s) => json!(s),
+        OscType::Int(v) => json!(v),
+        OscType::Long(v) => json!(v),
+        OscType::Float(v) => json!(v),
+        OscType::Double(v) => json!(v),
+        OscType::Bool(v) => json!(v),
+        _ => Value::Null,
+    };
+    let values: Vec<Value> = args.iter().map(value).collect();
+    match values.first() {
+        Some(Value::Number(n)) if tag.is_empty() => (n.to_string(), values[1..].to_vec()),
+        _ => (tag.to_string(), values),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::{JAVASCRIPT, PYTHON};
+    use clausters_apps::forms::{Dialogs, Said, TYPE};
+    use std::collections::BTreeMap;
 
-    /// A save starts in its file's folder with its path typed, and the path
-    /// typed is where it saves, from the folder shown when it is a name.
+    /// Every widget is numbered in the editor's range, before its spare
+    /// nodes.
     #[test]
-    fn a_save_is_where_its_field_says() {
-        let mut d = FileDialog::new(
-            Purpose::SaveAs { win: 1 },
-            Some(Path::new("/sketches/a.mjs")),
-            crate::platform::JAVASCRIPT.types,
-        );
-        assert_eq!(d.tree()["children"][0]["children"][0]["path"], "/sketches");
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/sketches/a.mjs".into()))
-        );
-        d.on(NAME, "", "b.mjs".into());
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/sketches/b.mjs".into()))
-        );
-        // **a save writes the kind chosen**: a name with none of its
-        // extensions, or another's, is given the kind's
-        d.on(NAME, "", "c".into());
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/sketches/c.mjs".into()))
-        );
-        d.on(NAME, "", "c.txt".into());
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/sketches/c.txt.mjs".into()))
-        );
-        d.on(NAME, "", "c.JS".into());
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/sketches/c.JS".into()))
-        );
+    fn the_dialogs_are_numbered_in_the_editor_s_range() {
+        let ids = ids();
+        assert!(dialogs().numbered(&forms(PYTHON.types)));
+        assert!(ids.values().all(|id| owns(*id) && *id < SPARE));
     }
 
-    /// What the chooser selects is the field's, and a pick is chosen.
+    /// **A save writes the kind chosen, or any name**: a name with none of
+    /// the language's extensions is given its first, and with every file
+    /// chosen it is written as typed.
     #[test]
-    fn the_chooser_chooses() {
-        let mut d = FileDialog::new(Purpose::Open, None, crate::platform::PYTHON.types);
-        d.on(FILES, "path", "/lib".into());
-        d.on(FILES, "", "/lib/a.mjs".into());
-        assert_eq!(
-            d.on(ACCEPT, "click", String::new()),
-            Does::Chosen(Some("/lib/a.mjs".into()))
-        );
-        assert_eq!(
-            d.on(FILES, "pick", "/lib/b.mjs".into()),
-            Does::Chosen(Some("/lib/b.mjs".into()))
-        );
-    }
-
-    /// **The tools are every dialog's**: a delete asks once and then asks
-    /// the chooser to remove the file selected, a rename moves it to the
-    /// path typed, and the chooser's answer is said.
-    #[test]
-    fn the_tools_ask_the_chooser_and_say_its_answer() {
-        let says = |text: &str| (SAYS, storage::says_props(text));
-        let mut d = FileDialog::new(Purpose::Open, None, crate::platform::PYTHON.types);
-        d.on(FILES, "", "/a.mjs".into());
-        let Does::Set(asked) = d.on(DELETE, "click", String::new()) else {
-            panic!("a delete asks");
+    fn a_save_writes_the_kind_chosen_or_any_name() {
+        let mut d = dialogs();
+        let form = Form::SaveAs(JAVASCRIPT.types);
+        let start = BTreeMap::from([(PATH.to_string(), "/sketches/a.mjs".to_string())]);
+        d.open(form, start);
+        let open = d.up().unwrap();
+        assert_eq!(open.value(PATH), "/sketches");
+        assert_eq!(open.save_path(PATH).as_deref(), Some("/sketches/a.mjs"));
+        let saved = |d: &mut Dialogs<Form>, name: &str| {
+            d.read("file:name", name, &[]);
+            d.up().unwrap().save_path(PATH)
         };
-        assert!(asked.iter().all(|(id, _)| *id != FILES), "not yet");
+        assert_eq!(saved(&mut d, "c").as_deref(), Some("/sketches/c.mjs"));
+        assert_eq!(saved(&mut d, "c.JS").as_deref(), Some("/sketches/c.JS"));
         assert_eq!(
-            d.on(DELETE, "click", String::new()),
-            Does::Set(vec![
-                (FILES, json!({"change": {"op": "remove", "path": "/a.mjs"}})),
-                says(""),
-            ])
+            saved(&mut d, "c.txt").as_deref(),
+            Some("/sketches/c.txt.mjs")
         );
-        d.on(FILES, "", "/a.mjs".into());
-        d.on(NAME, "", "b.mjs".into());
+        let (tag, values) = report("", &[OscType::Int(1)]);
+        d.read("file:type", &tag, &values);
+        assert_eq!(d.up().unwrap().value(TYPE), "All files (*.*)");
+        assert_eq!(saved(&mut d, "c.txt").as_deref(), Some("/sketches/c.txt"));
         assert_eq!(
-            d.on(RENAME, "click", String::new()),
-            Does::Set(vec![
-                (
-                    FILES,
-                    json!({"change": {"op": "rename", "path": "/a.mjs", "to": "/b.mjs"}})
-                ),
-                says(""),
-            ])
-        );
-        assert_eq!(
-            d.on(FILES, "changed", "/b.mjs: taken".into()),
-            Does::Set(vec![says("/b.mjs: taken")])
-        );
-        assert_eq!(d.tree()["children"][4]["text"], "/b.mjs: taken");
-        // the folder shown, with nothing selected, and never the root
-        d.on(DELETE, "click", String::new());
-        assert!(
-            d.tree()["children"][4]["text"]
-                .as_str()
-                .unwrap()
-                .contains("root")
+            saved(&mut d, "Makefile").as_deref(),
+            Some("/sketches/Makefile")
         );
     }
 
-    /// **An open lists the language's files, and every file on asking**:
-    /// its file-type field offers the language's kinds and every file, and
-    /// a kind chosen filters the chooser to its extensions.
+    /// **An open lists the language's files, and every file on asking**,
+    /// every file once.
     #[test]
     fn an_open_lists_its_kinds_and_every_file() {
-        let mut d = FileDialog::new(Purpose::Open, None, crate::platform::PYTHON.types);
-        let tree = d.tree();
-        let kinds = &tree["children"][3]["children"][1];
-        assert_eq!(kinds["id"], TYPE);
+        let mut d = dialogs();
+        let shown = d.open(Form::Open(PYTHON.types), BTreeMap::new());
+        assert!(shown.contains(&(
+            d.ids["open:type"],
+            json!({"options": ["Python (*.py, *.pyw)", "All files (*.*)"], "index": 0})
+        )));
+        let (tag, values) = report("", &[OscType::Float(1.0)]);
         assert_eq!(
-            kinds["options"],
-            json!(["Python (*.py, *.pyw)", "All files (*.*)"])
+            d.read("open:type", &tag, &values),
+            Some(Said::Corrected(vec![(
+                d.ids["open:path"],
+                json!({"filter": []})
+            )]))
         );
-        let files = &tree["children"][0]["children"][0];
-        assert_eq!(files["filter"], json!(["py", "pyw"]));
+    }
+
+    /// A save's kinds are the language's, every file last.
+    #[test]
+    fn a_save_offers_the_language_s_kinds_and_every_file() {
+        let mut d = dialogs();
+        let shown = d.open(Form::SaveAs(PYTHON.types), BTreeMap::new());
+        assert!(shown.contains(&(
+            d.ids["file:type"],
+            json!({"options": ["Python (*.py, *.pyw)", "All files (*.*)"], "index": 0})
+        )));
+    }
+
+    /// A report's tag stands, and a number alone is a choice's index.
+    #[test]
+    fn a_report_reads_as_the_forms_read_it() {
+        assert_eq!(report("a.py", &[]), ("a.py".into(), vec![]));
         assert_eq!(
-            d.on(TYPE, "1", String::new()),
-            Does::Set(vec![(FILES, json!({"filter": []}))])
+            report("path", &[OscType::String("/lib".into())]),
+            ("path".into(), vec![json!("/lib")])
+        );
+        assert_eq!(report("", &[OscType::Int(2)]), ("2".into(), vec![]));
+        assert_eq!(
+            report("focus", &[OscType::Int(1)]),
+            ("focus".into(), vec![json!(1)])
         );
     }
 }

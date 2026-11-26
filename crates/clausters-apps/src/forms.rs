@@ -236,26 +236,31 @@ impl Chooser {
     }
 
     /// **The kinds its file-type field offers**, the first chosen when it
-    /// opens. A save offers the kinds it writes. An open offers every
-    /// kind it reads at once first, where it reads several, then each of
-    /// them, then every file ([`ALL_FILES`]): as file dialogs have for
-    /// decades.
+    /// opens. A save offers the kinds it writes -- every file among them
+    /// ([`ALL_FILES`]) for an application that writes whatever name it is
+    /// given, as an editor of text does. An open offers every kind it reads
+    /// at once first, where it reads several, then each of them, then every
+    /// file, once: as file dialogs have for decades.
     #[must_use]
     pub fn choices(&self) -> Vec<TypeChoice> {
         let one = |t: &FileType| TypeChoice::of(t.name, t.extensions.to_vec());
         if self.saves {
             return self.types.iter().map(one).collect();
         }
+        let kinds: Vec<&FileType> = self
+            .types
+            .iter()
+            .filter(|t| !t.extensions.is_empty())
+            .collect();
         let mut out = Vec::new();
-        if self.types.len() > 1 {
-            let every = self
-                .types
+        if kinds.len() > 1 {
+            let every = kinds
                 .iter()
                 .flat_map(|t| t.extensions.iter().copied())
                 .collect();
             out.push(TypeChoice::of("All supported", every));
         }
-        out.extend(self.types.iter().map(one));
+        out.extend(kinds.into_iter().map(one));
         out.push(one(&ALL_FILES));
         out
     }
@@ -894,7 +899,8 @@ impl<F: Spec> Dialogs<F> {
     ///
     /// A saving chooser is given the path of the file the window writes,
     /// when it has one: it opens in that file's folder, the file's name in
-    /// the name field.
+    /// the name field. A chooser that opens may be given a folder, which it
+    /// opens in until the hand has been somewhere.
     pub fn open(&mut self, form: F, mut values: BTreeMap<String, String>) -> Vec<(i32, Value)> {
         let prefix = form.prefix();
         for (name, _) in form.fields() {
@@ -903,12 +909,16 @@ impl<F: Spec> Dialogs<F> {
             };
             let mut dir = self.dirs.get(&format!("{prefix}:{name}")).cloned();
             let given = values.get(name).filter(|p| !p.trim().is_empty()).cloned();
-            if let (true, Some(file)) = (chooser.saves, given) {
-                let (folder, file) = split_path(&file);
-                if !folder.is_empty() {
-                    dir = Some(folder);
+            match (chooser.saves, given) {
+                (true, Some(file)) => {
+                    let (folder, file) = split_path(&file);
+                    if !folder.is_empty() {
+                        dir = Some(folder);
+                    }
+                    values.insert(NAME.to_string(), file);
                 }
-                values.insert(NAME.to_string(), file);
+                (false, Some(folder)) => dir = dir.or(Some(folder)),
+                (_, None) => {}
             }
             values.insert(name.to_string(), dir.unwrap_or_else(|| START.into()));
         }
@@ -1254,6 +1264,20 @@ mod tests {
         );
         let every = Chooser::open(KINDS, false).choice("All files (*.*)");
         assert!(every.holds("/a/b") && every.named("/a/b") == "/a/b");
+        // **a save that writes any name** lists every file among its kinds,
+        // and its open lists every file once
+        const TEXT: &[FileType] = &[FileType::new("Python", &["py"]), ALL_FILES];
+        assert_eq!(
+            labels(Chooser::save(TEXT)),
+            ["Python (*.py)", "All files (*.*)"]
+        );
+        assert_eq!(
+            labels(Chooser::open(TEXT, false)),
+            ["Python (*.py)", "All files (*.*)"]
+        );
+        let any = Chooser::save(TEXT).choice("All files (*.*)");
+        assert_eq!(any.named("/a/notes.txt"), "/a/notes.txt");
+        assert_eq!(any.named("/a/Makefile"), "/a/Makefile");
     }
 
     /// **A file form has a file-type field under its name**: its kinds,
@@ -1356,6 +1380,24 @@ mod tests {
         let again = d.open(Form::Load, BTreeMap::new());
         assert!(again.contains(&(id, json!({"path": "/takes", "focus": 1, "filter": ["wav"]}))));
         assert!(d.chosen("files").is_empty());
+    }
+
+    /// **An open given a folder starts there** until the hand has been
+    /// somewhere, and where the hand went wins after.
+    #[test]
+    fn an_open_given_a_folder_starts_there_until_the_hand_moves() {
+        let mut d = dialogs();
+        let id = d.ids["load:files"];
+        let given = || BTreeMap::from([("files".to_string(), "/recent".to_string())]);
+        let shown = d.open(Form::Load, given());
+        assert!(shown.contains(&(
+            id,
+            json!({"path": "/recent", "focus": 1, "filter": ["wav"]})
+        )));
+        d.read("load:files", "path", &[json!("/takes")]);
+        d.hide();
+        let again = d.open(Form::Load, given());
+        assert!(again.contains(&(id, json!({"path": "/takes", "focus": 1, "filter": ["wav"]}))));
     }
 
     #[test]

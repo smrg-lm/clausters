@@ -120,6 +120,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Seen once under full
   load closing the playback tests' entry; rare.
 
+- ⬜ **A `files` chooser just defined and given its `path` again stops
+  reporting what the keys select** *(`crates/clausters-gui/PLAN.md`, Found by
+  use)*. Reproduced by the editor page's e2e; the editor no longer does it.
+
 - ⬜ **After Save as and undo back to the original, the page's spectrogram
   keeps an edited picture** *(`crates/clausters-gui/PLAN.md`, Found by use)*. Not
   reproduced in five sequences on a GPU; waits for the exact steps.

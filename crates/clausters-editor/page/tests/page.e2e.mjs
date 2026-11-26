@@ -274,8 +274,15 @@ const DOCS = IDS + 4;
 const BAR = IDS + 5;
 const FILE = IDS + 1000;
 const CODE = FILE + 2;
-/** The editor's file dialog, its field (filedialog.rs). */
-const NAME = IDS - 100000 + 2;
+/** The editor's file dialogs (filedialog.rs), numbered in the order the
+ *  forms name their widgets: the stack, then Open's (the form, its chooser,
+ *  its name, OK, Cancel, the file type, five tools, the line they speak
+ *  in), then Save as's the same. */
+const DIALOGS = IDS - 100000;
+const OPEN_FILES = DIALOGS + 2;
+const OPEN_NAME = DIALOGS + 3;
+const OPEN_SAYS = DIALOGS + 12;
+const SAVE_NAME = DIALOGS + 15;
 
 try {
   const page = BROWSER === "firefox" ? await firefox() : await chrome();
@@ -480,10 +487,10 @@ try {
   await host(`host.typeText(${FILE}, "// a sketch\\n1 + 1\\n")`);
   await key("s", "ctrl");
   await sleep(500);
-  await host(`host.set(${NAME}, { focus: 1 }); host.pressKey(${BAR}, "a", "ctrl"); host.typeText(${BAR}, "/sketches/one.mjs");`);
+  await host(`host.set(${SAVE_NAME}, { focus: 1 }); host.pressKey(${BAR}, "a", "ctrl"); host.typeText(${BAR}, "/sketches/one.mjs");`);
   await sleep(300);
-  // past Cancel to Save, and pressed
-  await host(`host.pressKey(${BAR}, "Tab"); host.pressKey(${BAR}, "Tab"); host.pressKey(${BAR}, "space");`);
+  // Enter in the field presses Save, the dialog's default button
+  await host(`host.pressKey(${BAR}, "Return");`);
   await sleep(1000);
   const saved = await evaluate(`(async () => {
     try {
@@ -504,8 +511,9 @@ try {
   // the disk. The chooser carries each change out and lists its folder again,
   // and says how much of the page's storage is used.
   {
-    const FILES = NAME - 1;
-    const SAYS = NAME + 8;
+    const FILES = OPEN_FILES;
+    const NAME = OPEN_NAME;
+    const SAYS = OPEN_SAYS;
     const press = (name, mods = "") => host(`host.pressKey(${BAR}, ${JSON.stringify(name)}, ${JSON.stringify(mods)})`);
     const says = async () => String((await host(`return await host.query(${SAYS})`)).props.text ?? "");
     const sketches = () =>

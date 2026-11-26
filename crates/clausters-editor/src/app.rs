@@ -19,7 +19,7 @@ use clausters_apps::{closing, quitting};
 
 use crate::arrangement;
 use crate::docs::Book;
-use crate::filedialog::{self, Does, FileDialog};
+use crate::filedialog::{self, Form, PATH};
 use crate::platform::{self, Language, MonoFamily, Offers, Platform, Purpose, Read};
 use crate::settings::{Settings, ThemePref};
 use crate::wire::{self, Link, Said};
@@ -312,8 +312,11 @@ pub struct App {
     opening: Option<usize>,
     /// Whether a file the start asked for opened.
     opened: bool,
-    /// The editor's own file dialog, while it is up.
-    file_dialog: Option<FileDialog>,
+    /// What the file dialog up was opened for.
+    file_dialog: Option<Purpose>,
+    /// **Its Open and Save as**, every application's forms
+    /// ([`clausters_apps::forms`]).
+    dialogs: clausters_apps::forms::Dialogs<Form>,
 }
 
 impl App {
@@ -352,6 +355,7 @@ impl App {
             opening: None,
             opened: false,
             file_dialog: None,
+            dialogs: filedialog::dialogs(),
         }
     }
 
@@ -565,7 +569,7 @@ impl App {
                 }
             }
             ENVS_CREATE if tag == "click" => self.envs_create(),
-            id if FileDialog::owns(id) => self.on_file_dialog(id, tag, args),
+            id if filedialog::owns(id) => self.on_file_dialog(id, tag, args),
             ENVS_CLOSE if tag == "click" => self.close_dialog(),
             id if (ENVS_ROWS..ENVS_ROWS + 500).contains(&id) && tag == "click" => self.envs_row(id),
             id if id >= FILE_BASE => self.on_file_event(id, tag, args),
@@ -1093,54 +1097,106 @@ impl App {
         self.ask_path(purpose, start);
     }
 
-    /// **A path asked for `purpose`**, in the editor's file dialog over the
-    /// platform's storage: every application's, drawn by the host, the same
-    /// natively and in a page.
+    /// **A path asked for `purpose`**, in the editor's file dialogs over
+    /// the platform's storage: every application's forms, drawn by the
+    /// host, the same natively and in a page. A save starts at the file it
+    /// writes; an open in the folder of `start`, with its name typed.
     fn ask_path(&mut self, purpose: Purpose, start: Option<PathBuf>) {
+        use clausters_apps::forms::NAME;
         if self.prefs_open || self.envs_open || self.file_dialog.is_some() {
             return;
         }
-        self.file_dialog = Some(FileDialog::new(purpose, start.as_deref(), self.lang.types));
-        self.show_file_dialog();
+        let text = |p: &Path| p.to_string_lossy().into_owned();
+        let types = self.lang.types;
+        let (form, values) = match purpose {
+            Purpose::SaveAs { .. } => {
+                let file = start.as_deref().map(text).unwrap_or_default();
+                (Form::SaveAs(types), [(PATH.to_string(), file)].into())
+            }
+            Purpose::Open | Purpose::DocsFolder => {
+                let file = start.as_deref().filter(|p| p.extension().is_some());
+                let dir = match file {
+                    Some(f) => f.parent().map(text),
+                    None => start.as_deref().map(text),
+                };
+                let mut values = std::collections::BTreeMap::new();
+                values.extend(dir.filter(|d| !d.is_empty()).map(|d| (PATH.to_string(), d)));
+                values.extend(file.map(|f| (NAME.to_string(), text(f))));
+                (Form::Open(types), values)
+            }
+        };
+        self.file_dialog = Some(purpose);
+        let shown = self.dialogs.open(form, values);
+        if let Some(stack) = self.dialogs.stack(&filedialog::forms(types)) {
+            self.show_dialog(stack, filedialog::SPARE);
+        }
+        // the stack is drawn with the form up, its fields holding what they
+        // hold, so of what shows it only the keyboard is still to give: a
+        // chooser just defined and given its path again stops reporting
+        // the files the keys select in it (the host's, in its plan)
+        let focus = shown
+            .into_iter()
+            .filter_map(|(id, props)| Some((id, json!({"focus": props.get("focus")?}))))
+            .collect();
+        self.correct(focus);
     }
 
-    /// The editor's file dialog, drawn again as it is now.
-    fn show_file_dialog(&mut self) {
-        if let Some(tree) = self.file_dialog.as_ref().map(FileDialog::tree) {
-            self.show_dialog(tree, filedialog::SPARE);
+    /// The dialogs' widgets corrected with what the forms answered.
+    fn correct(&self, list: Vec<(i32, Value)>) {
+        for (id, props) in list {
+            let props: Vec<(&str, Value)> = props
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.as_str(), v.clone()))
+                .collect();
+            self.link.set(id, &props);
         }
     }
 
-    /// What the hand did in the editor's file dialog.
+    /// **What the hand did in the file dialog up**, read by the forms: a
+    /// field, a chooser, a tool, the file type -- or the path chosen, which
+    /// takes the dialog down.
     fn on_file_dialog(&mut self, id: i32, tag: &str, args: &[OscType]) {
-        let Some(dialog) = self.file_dialog.as_mut() else {
+        use clausters_apps::forms::Said;
+        let (Some(purpose), Some(name)) = (
+            self.file_dialog.clone(),
+            self.dialogs.name(i64::from(id)).map(str::to_string),
+        ) else {
             return;
         };
-        // a field's or the chooser's value is a string alone
-        let said = match wire::typed(tag, args).filter(|_| FileDialog::valued(id)) {
-            Some(value) => dialog.on(id, "", value),
-            None => dialog.on(id, tag, wire::text(args, 0)),
+        let (tag, values) = filedialog::report(tag, args);
+        let Some(said) = self.dialogs.read(&name, &tag, &values) else {
+            return;
         };
-        match said {
-            Does::Nothing => {}
-            Does::Redraw => self.show_file_dialog(),
-            Does::Set(set) => {
-                for (id, props) in set {
-                    let props: Vec<(&str, Value)> = props
-                        .as_object()
-                        .into_iter()
-                        .flatten()
-                        .map(|(k, v)| (k.as_str(), v.clone()))
-                        .collect();
-                    self.link.set(id, &props);
-                }
-            }
-            Does::Chosen(path) => {
-                let purpose = dialog.purpose.clone();
-                self.file_dialog = None;
-                self.close_dialog();
-                self.chosen(purpose, path);
-            }
+        let Some(open) = self.dialogs.up().cloned() else {
+            return;
+        };
+        let opens = matches!(open.form, Form::Open(_));
+        let path = match said {
+            Said::Cancel | Said::Discard => None,
+            Said::Corrected(list) => return self.correct(list),
+            Said::Picked(_, paths) if opens => paths.first().map(PathBuf::from),
+            Said::Accept if opens => match self.dialogs.chosen(PATH).first() {
+                Some(path) => Some(PathBuf::from(path)),
+                None => return self.dialog_says(&open.form, "Select a file to open."),
+            },
+            Said::Accept => match open.save_path(PATH) {
+                Some(path) => Some(PathBuf::from(path)),
+                None => return self.dialog_says(&open.form, "Type a file's name first."),
+            },
+            _ => return,
+        };
+        self.close_dialog();
+        self.chosen(purpose, path);
+    }
+
+    /// The line the file dialog up speaks in, saying `says`.
+    fn dialog_says(&self, form: &Form, says: &str) {
+        use clausters_apps::forms::Spec;
+        use clausters_apps::forms::storage::{SAYS, says_props};
+        if let Some(id) = self.dialogs.ids.get(&format!("{}:{SAYS}", form.prefix())) {
+            self.correct(vec![(*id, says_props(says))]);
         }
     }
 
@@ -2187,6 +2243,7 @@ impl App {
         self.prefs_open = false;
         self.envs_open = false;
         self.file_dialog = None;
+        self.dialogs.closed();
         self.link.def(
             DIALOG_HOLD,
             &json!({"type": "layout", "w": 0, "h": 0, "margin": 0}),
