@@ -38,6 +38,7 @@ pub mod steps;
 pub mod take;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use clausters::dsp::buffer::Buffer;
@@ -124,6 +125,10 @@ pub struct AppEngine {
     /// **The take readers it plays**, as put by [`Self::install_take`]: what
     /// [`Self::fill_readers`] waits for.
     readers: Vec<std::sync::Weak<take::Pace>>,
+    /// **Where the engine's sample 0 stands in Unix seconds**, as the server
+    /// last placed it, published as the bits of an `f64` for a reader on
+    /// another thread ([`Self::unix_epoch_cell`]).
+    epoch: Arc<AtomicU64>,
     /// The audio device the engine runs on; `None` for an engine driven by
     /// hand, block by block.
     #[cfg(feature = "realtime")]
@@ -165,8 +170,9 @@ impl AppEngine {
             nominal_sample_rate: rate,
             actual_sample_rate: rate,
         };
+        let now = unix_now();
         AppEngine {
-            server: OscServer::embedded(info, handle, unix_now()),
+            server: OscServer::embedded(info, handle, now),
             sample_rate,
             channels,
             held: VecDeque::new(),
@@ -174,6 +180,7 @@ impl AppEngine {
             lanes: Default::default(),
             standings: HashMap::new(),
             readers: Vec::new(),
+            epoch: Arc::new(AtomicU64::new(now.to_bits())),
             #[cfg(feature = "realtime")]
             _backend: None,
             #[cfg(feature = "realtime")]
@@ -277,11 +284,25 @@ impl AppEngine {
         self.server.attach_ipc(IpcPeer::new(segment, Role::Server))
     }
 
-    /// **Where the engine's sample 0 stands in Unix seconds**, for a client's
-    /// wall-clocked timetags: set by a program that reads the time where this
-    /// crate cannot (a page), which an engine opened natively reads itself.
-    pub fn set_unix_epoch(&mut self, epoch: f64) {
-        self.server.set_unix_epoch(epoch);
+    /// **Where the engine's sample 0 stands in Unix seconds**, published for
+    /// a reader that cannot lock the engine (a page's worklet answering a
+    /// clock anchor): the bits of an `f64`, moved whenever the server places
+    /// sample 0 again ([`Self::follow_wall`]).
+    pub fn unix_epoch_cell(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.epoch)
+    }
+
+    /// **Keeps the Unix axis wall-clocked timetags land on with the wall
+    /// clock**, before a client's packet is served: the server's rule
+    /// (`OscServer::follow_wall`), so an engine whose audio stood still -- a
+    /// page's, until its first gesture or while the page suspends it -- does
+    /// not make a note sent "now" wait the gap out.
+    fn follow_wall(&mut self) {
+        if self.server.follow_wall(unix_now())
+            && let Some(epoch) = self.server.unix_epoch()
+        {
+            self.epoch.store(epoch.to_bits(), Ordering::Release);
+        }
     }
 
     /// **Serves one packet from a client in this process** tagged `tag`, as
@@ -290,6 +311,7 @@ impl AppEngine {
     /// (the GUI host, for its bound widgets and its queries) is its client
     /// beside a script on the ring.
     pub fn serve_local(&mut self, bytes: &[u8], tag: u32) {
+        self.follow_wall();
         self.server.serve_local(bytes, tag);
     }
 
@@ -327,6 +349,7 @@ impl AppEngine {
     /// A `/server_quit` a client sends does not end an engine an application
     /// holds.
     pub fn serve(&mut self) -> bool {
+        self.follow_wall();
         let before = self.server.ring_packets();
         let _quit = self.server.step();
         self.server.ring_packets() != before
@@ -692,6 +715,7 @@ impl AppEngine {
     /// stopped on its end mark, its lanes' spent entries), and its lanes
     /// topped up. Called on the application's turn.
     pub fn pump(&mut self) {
+        self.follow_wall();
         self.server.step();
         for handed in self.server.take_handed() {
             match handed {
@@ -763,19 +787,12 @@ pub fn serve_ring(
 }
 
 /// Unix seconds now: where the engine's sample 0 stands on a wall-clocked
-/// client's axis. A page has no system clock to ask here, and its engine
-/// anchors at zero.
+/// client's axis, and what it is kept on. `web_time` reads the page's clock
+/// on wasm32, where `std::time::SystemTime` panics.
 fn unix_now() -> f64 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0.0, |d| d.as_secs_f64())
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        0.0
-    }
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// **A playback's medium over an engine the application holds**: each op
@@ -1289,5 +1306,28 @@ mod tests {
             panic!("a message");
         };
         assert_eq!(reply.addr, "/server_status.reply");
+    }
+    /// **An engine whose audio stood still keeps its axis on the wall**: a
+    /// page's engine processes nothing until the page's first gesture, and a
+    /// timetag sent "now" afterwards waited the gap out (a note seconds
+    /// late). The next turn places sample 0 again, and publishes it.
+    #[test]
+    fn a_gap_in_the_audio_moves_sample_zero() {
+        let (mut app, _engine) = AppEngine::detached(48_000.0, 2);
+        let cell = app.unix_epoch_cell();
+        let opened = f64::from_bits(cell.load(Ordering::Acquire));
+        assert!(!app.serve(), "nothing on the ring");
+        assert_eq!(
+            f64::from_bits(cell.load(Ordering::Acquire)),
+            opened,
+            "within the slip"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        app.serve();
+        let moved = f64::from_bits(cell.load(Ordering::Acquire)) - opened;
+        assert!(
+            (0.2..2.0).contains(&moved),
+            "sample 0 moved by the gap: {moved}"
+        );
     }
 }

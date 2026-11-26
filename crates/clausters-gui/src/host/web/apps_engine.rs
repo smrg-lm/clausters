@@ -38,10 +38,11 @@ pub fn apps_engine_rate(rate: f32) {
     RATE.store(rate.to_bits(), Ordering::Release);
 }
 
-/// **Where the engine's sample 0 stands, in Unix seconds**: the page's time
-/// when the engine opened, which its server anchors a client's timetags to
-/// and a client's clock anchor reports ([`apps_engine_epoch`]).
-static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// **Where the engine's sample 0 stands, in Unix seconds**, as its server
+/// keeps it on the page's wall clock: what a client's timetags are anchored
+/// to and a client's clock anchor reports ([`apps_engine_epoch`]).
+static EPOCH: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicU64>> =
+    std::sync::OnceLock::new();
 
 /// The engine's processing half, and the block it writes.
 struct PageEngine {
@@ -53,16 +54,14 @@ struct PageEngine {
 /// half handed to the page's worklet, the handle answered.
 pub(crate) fn open() -> Result<AppEngine, String> {
     let rate = f32::from_bits(RATE.load(Ordering::Acquire));
-    let (mut app, engine) = AppEngine::detached(rate, CHANNELS);
-    // sample 0 is now, on the page's clock
-    let epoch = js_sys::Date::now() / 1000.0;
-    app.set_unix_epoch(epoch);
-    EPOCH.store(epoch.to_bits(), Ordering::Release);
+    let (app, engine) = AppEngine::detached(rate, CHANNELS);
     let page = Box::into_raw(Box::new(PageEngine {
         engine,
         out: vec![0.0; BLOCK_SIZE * CHANNELS],
     }));
     if page_engine(page as u32, rate, CHANNELS as u32) {
+        // a page holds one engine: its epoch is the one reported
+        let _ = EPOCH.set(app.unix_epoch_cell());
         return Ok(app);
     }
     // SAFETY: the page made no worklet, so nothing else holds the box.
@@ -95,7 +94,9 @@ pub fn apps_engine_clock(engine: u32) -> f64 {
 /// **Where the engine's sample 0 stands, in Unix seconds** ([`EPOCH`]).
 #[wasm_bindgen]
 pub fn apps_engine_epoch() -> f64 {
-    f64::from_bits(EPOCH.load(Ordering::Acquire))
+    EPOCH
+        .get()
+        .map_or(0.0, |epoch| f64::from_bits(epoch.load(Ordering::Acquire)))
 }
 
 /// The frames a block of the engine is ([`apps_engine_process`]).
