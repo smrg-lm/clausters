@@ -1633,6 +1633,31 @@ without any application, client or wire changing.
   of each file as columns, ordered by a press on a header; hidden files on
   asking; a name typed over the list goes to the first that starts with it.
 
+## G51 — One implementation of each thing: an audit of the tree
+
+*(Opened 2026-11-26 with the user, after `G47` landed the `file_dialog`
+element beside the applications' file forms and left its callers for
+`G49`: two dialogs, and every application drawing the old one. The rule it
+broke is in `AGENTS.md`, "What is built is adapted, never written again",
+and the clause written that day, "A replacement replaces, in the same
+change".)*
+
+- ⬜ **G51 — Find every thing written twice, and keep one.** A pass over
+  the whole repository -- the host, the shared crates, the applications,
+  the code editor, both clients and their pages -- for an element, a
+  view, a gesture, a dialog, a rule or a computation that exists in two
+  places: a replacement whose old version still has callers, a second
+  version written beside one that could have been extended, a client
+  doing what the host or the core already does. Read with the git
+  history: a commit that adds a module similar to an existing one, a plan
+  milestone that says "the callers move in a later milestone", a
+  function with the same name in two crates. Each case found is
+  resolved, by moving the callers and deleting the loser, in a commit of
+  its own; one too large for the pass becomes an entry in the "Found by
+  use" list of the plan that owns it, never left as is. Acceptance: the
+  list of what was looked at and what was found, in this milestone's
+  record, and no case left without its fix or its entry.
+
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing — the example is also how new human-visible behavior gets checked by eye; and a `docs/decisions.md` note only when a choice has non-obvious context.

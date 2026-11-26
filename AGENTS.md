@@ -221,6 +221,17 @@ is here because of that:
   transport rule or a gesture, find the one that exists and say in the
   change why it could not be reused if it was not. The `gui-widgets` skill
   says how for views.
+- **A replacement replaces, in the same change.** When something the
+  project has is written anew -- an element, a dialog, a rule, a module --
+  every caller of the old one moves to the new one and the old one is
+  deleted in the commit that lands it. A plan never splits the two, and a
+  milestone that builds the new one is not done while the old one still
+  has a caller: two implementations of one thing, even for a day, means
+  each application shows whichever it happened to call, and the newer
+  one is the one nobody sees. *(Written 2026-11-26: the host's
+  `file_dialog` element landed beside the applications' file forms, its
+  callers left for a later milestone, and every application went on
+  drawing the old dialog.)*
 
 ### The packages move together
 

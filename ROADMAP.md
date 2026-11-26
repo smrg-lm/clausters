@@ -279,6 +279,10 @@ its plan; the plan is where its acceptance is read.
   "G47–G50 — The file dialog")*. Taken now (2026-11-26); the element and its
   path bar are in.
 
+- ⬜ **`G51`: one implementation of each thing, an audit of the tree**
+  *(`crates/clausters-gui/PLAN.md`, "G51 — One implementation of each
+  thing")*. Right after `G49`, which removes the duplication that found it.
+
 - ⬜ **The transport's commands, applied where the transport is** *(`crates/clausters-server/PLAN.md`, Future directions)*. To evaluate, not scheduled: the one
   `match` has a value of its own.
 
