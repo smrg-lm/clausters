@@ -168,8 +168,8 @@ impl PageEditor {
         pump(&self.inner);
     }
 
-    /// Whether a file has changes that are not saved: what a tab asks
-    /// before it is closed.
+    /// Whether a quit would lose work -- a file with changes, or a document
+    /// of the host's applications: what a tab asks before it is closed.
     pub fn unsaved(&self) -> bool {
         self.inner
             .app

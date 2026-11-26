@@ -15,7 +15,7 @@ use std::sync::mpsc::Receiver;
 use clausters_core::osc::OscType;
 use serde_json::{Value, json};
 
-use clausters_apps::{closing, quitting};
+use clausters_apps::closing;
 
 use crate::arrangement;
 use crate::docs::Book;
@@ -234,10 +234,6 @@ enum DockFor {
     Quit,
     /// Nothing but the state.
     Look,
-    /// What the host's applications would lose, for a quit.
-    Unsaved,
-    /// The host's applications saved, for a quit.
-    SaveAll,
     /// The session's windows freed: it ended, and nothing answers for them.
     Orphans,
 }
@@ -286,9 +282,12 @@ pub struct App {
     apps: Vec<i32>,
     system_dark: bool,
     dock_calls: HashMap<i32, DockFor>,
-    /// **A quit asked**: whether the host's applications hold work it would
-    /// lose, which a Save all saves after the editor's own files.
-    quit_host: bool,
+    /// **Whether the host's applications hold work a quit would lose**, as
+    /// the host last said it.
+    host_unsaved: bool,
+    /// **The files a quit would lose work in, as the host was told**: the
+    /// editor's own share of the one question the host asks.
+    declared: Vec<String>,
     prefs_open: bool,
     envs_open: bool,
     /// The fields' values as last typed.
@@ -339,7 +338,8 @@ impl App {
             apps: Vec::new(),
             system_dark: false,
             dock_calls: HashMap::new(),
-            quit_host: false,
+            host_unsaved: false,
+            declared: Vec::new(),
             prefs_open: false,
             envs_open: false,
             fields: HashMap::new(),
@@ -364,19 +364,20 @@ impl App {
         }
     }
 
-    /// Whether a file has changes that are not saved.
+    /// **Whether a quit would lose work**: a file with changes that are
+    /// not saved, or a document of the host's applications.
     pub fn unsaved(&self) -> bool {
-        self.files.iter().any(|f| f.dirty)
+        self.host_unsaved || self.files.iter().any(|f| f.dirty)
     }
 
     /// **The editor starts**: its panels, its look, and the files of the
     /// last run and then the ones `cli` names, read before the start goes
     /// on (`started`).
     pub fn start(&mut self, cli: Vec<PathBuf>) {
-        // the dock's close is asked of the editor, once, as a quit
-        if self.offers.quit {
-            self.link.dock(&json!({"verb": "own_quit"}));
-        }
+        // **the editor is the application that quits**, on every platform:
+        // the host asks the one question over its files and the host's
+        // applications, and the end is the editor's
+        self.link.dock(&json!({"verb": "own_quit"}));
         self.apply_theme();
         if self.offers.fonts {
             self.platform.find_fonts();
@@ -498,7 +499,14 @@ impl App {
             Said::Event { id, tag, args } => self.on_event(id, &tag, &args),
             Said::Closed(id) => self.on_closed(id),
             Said::Dock { seq, reply } => self.on_dock(seq, &reply),
-            Said::DockQuit(asked) => self.quit_over(&asked),
+            Said::DockQuit(asked) => match asked["do"].as_str() {
+                Some("save") => self.save_for_quit(),
+                Some("quit") => self.quit_saved(),
+                _ => {}
+            },
+            Said::DockUnsaved(said) => {
+                self.host_unsaved = said["unsaved"].as_array().is_some_and(|l| !l.is_empty());
+            }
             // an application the bar could not open says why
             Said::App { reply } => {
                 if let Some(message) = reply["error"]["message"].as_str() {
@@ -586,6 +594,7 @@ impl App {
                     f.dirty = dirty;
                     self.link.set(win, &f.tab());
                 }
+                self.declare();
             }
             (CODE, "evaluate") => {
                 let code = wire::text(args, 0);
@@ -646,6 +655,7 @@ impl App {
             }
         }
         self.remember_files();
+        self.declare();
         self.menus();
     }
 
@@ -672,19 +682,6 @@ impl App {
         let Some(purpose) = self.dock_calls.remove(&seq) else {
             return;
         };
-        match purpose {
-            DockFor::Unsaved => return self.quit_over(&reply["ok"]),
-            DockFor::SaveAll => {
-                if reply.get("ok").is_some() {
-                    return self.quit_saved();
-                }
-                let why = reply["error"]["message"].as_str().unwrap_or("not saved");
-                self.post("info", &format!("Quit called off: {why}\n"));
-                self.link.dock(&json!({"verb": "stay"}));
-                return;
-            }
-            _ => {}
-        }
         let Some(state) = reply.get("ok") else {
             // a dock that answered nothing does not keep the editor open
             if matches!(purpose, DockFor::Quit) {
@@ -726,7 +723,7 @@ impl App {
                 self.keep_arrangement(state);
                 self.quit_now()
             }
-            DockFor::Look | DockFor::Unsaved | DockFor::SaveAll => {}
+            DockFor::Look => {}
             DockFor::Orphans => {
                 // every window not the editor's own is the session's, on
                 // whichever page, but what the bar's buttons opened
@@ -792,11 +789,14 @@ impl App {
                 }
                 self.settings.add_recent(&path.to_string_lossy());
                 self.remember_files();
+                self.declare();
                 self.menus();
                 self.saved(win);
             }
             Err(e) => {
-                self.after_save.remove(&win);
+                if self.after_save.remove(&win) == Some(Ask::Quit) {
+                    self.quit_not_saved();
+                }
                 self.post("info", &format!("Could not save {}: {e}\n", path.display()));
             }
         }
@@ -1179,8 +1179,7 @@ impl App {
             if let Purpose::SaveAs { win } = purpose
                 && self.after_save.remove(&win) == Some(Ask::Quit)
             {
-                self.after_save.retain(|_, a| *a != Ask::Quit);
-                self.link.dock(&json!({"verb": "stay"}));
+                self.quit_not_saved();
             }
             return;
         };
@@ -1236,6 +1235,7 @@ impl App {
         self.active = Some(win);
         self.link.set(win + CODE, &[("focus", json!(1))]);
         self.remember_files();
+        self.declare();
         self.menus();
     }
 
@@ -1262,33 +1262,14 @@ impl App {
             return;
         }
         match (what, choice) {
-            (Ask::Quit, closing::Choice::Cancel) => {
-                self.link.dock(&json!({"verb": "stay"}));
-            }
             (_, closing::Choice::Cancel) => {}
             (Ask::CloseTab(win), closing::Choice::Discard) => self.close_now(win),
-            (Ask::Quit, closing::Choice::Discard) => self.quit_saved(),
             (Ask::CloseTab(win), closing::Choice::Save) => {
                 self.after_save.insert(win, Ask::CloseTab(win));
                 self.save(Some(win), false);
             }
-            (Ask::Quit, closing::Choice::Save) => {
-                // every file with a place is written; one with none is
-                // asked where, and the quit waits for the last of them
-                let unsaved: Vec<i32> = self
-                    .files
-                    .iter()
-                    .filter(|f| f.dirty)
-                    .map(|f| f.win)
-                    .collect();
-                if unsaved.is_empty() {
-                    return self.quit_after_files();
-                }
-                for win in unsaved {
-                    self.after_save.insert(win, Ask::Quit);
-                    self.save(Some(win), false);
-                }
-            }
+            // the quit is asked by the host, never in a file's window
+            (Ask::Quit, _) => {}
         }
     }
 
@@ -1297,7 +1278,7 @@ impl App {
         match self.after_save.remove(&win) {
             Some(Ask::CloseTab(win)) => self.close_now(win),
             Some(Ask::Quit) if !self.after_save.values().any(|a| *a == Ask::Quit) => {
-                self.quit_after_files();
+                self.link.dock(&json!({"verb": "saved", "saved": true}));
             }
             _ => {}
         }
@@ -1305,63 +1286,55 @@ impl App {
 
     // -- quitting
 
-    /// **Quit, from the menu or a key**: what the host's applications would
-    /// lose is asked first, and the quit goes on as the dock's close does.
+    /// **Quit, from the menu or a key**: the dock's close, which the host
+    /// asks about once over the editor's files and its applications'
+    /// documents, as the window's own close does.
     fn quit(&mut self) {
         tracing::debug!("quit asked");
-        self.dock(json!({"verb": "unsaved"}), DockFor::Unsaved);
+        self.link.dock(&json!({"verb": "close"}));
     }
 
-    /// **The quit, over all the unsaved work** (`clausters_apps::quitting`):
-    /// the editor's files with changes and the documents of the host's
-    /// applications (`asked`, as the host listed them), named in one
-    /// question in the window of the first file that has changes, or the one
-    /// on screen; with nothing to lose, the editor ends at once.
-    fn quit_over(&mut self, asked: &Value) {
-        let host: Vec<String> = asked["unsaved"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|u| u["title"].as_str().map(str::to_string))
-            .collect();
-        self.quit_host = !host.is_empty();
-        let mut names: Vec<String> = self
+    /// **The host was told what the editor's files would lose**, when that
+    /// changed: the titles of the files with changes that are not saved.
+    fn declare(&mut self) {
+        let names: Vec<String> = self
             .files
             .iter()
             .filter(|f| f.dirty)
             .map(|f| f.name.clone())
             .collect();
-        names.extend(host);
-        if names.is_empty() {
-            return self.quit_saved();
+        if names != self.declared {
+            self.link
+                .dock(&json!({"verb": "own_unsaved", "unsaved": names}));
+            self.declared = names;
         }
-        let Some(win) = self
-            .files
-            .iter()
-            .find(|f| f.dirty)
-            .map(|f| f.win)
-            .or(self.active)
-            .or_else(|| self.files.first().map(|f| f.win))
-        else {
-            return self.quit_saved();
-        };
-        self.asking = Some((win, Ask::Quit));
-        self.show_file(win);
-        let ids = form(win);
-        let mut stack = quitting::stack(&ids, &quitting::says(&names), names.len());
-        stack["index"] = json!(1);
-        number(&mut stack, win + FILE_SPARE);
-        self.link.def(ids.stack, &stack);
     }
 
-    /// The editor's own files are saved: the host's applications next, if
-    /// they hold work, and then the end.
-    fn quit_after_files(&mut self) {
-        if self.quit_host {
-            self.dock(json!({"verb": "save_all"}), DockFor::SaveAll);
-        } else {
-            self.quit_saved();
+    /// **The quit's Save all, the editor's share**: every file with changes
+    /// written -- one with no place asked where -- and the host told once
+    /// the last is, or that one was not.
+    fn save_for_quit(&mut self) {
+        let unsaved: Vec<i32> = self
+            .files
+            .iter()
+            .filter(|f| f.dirty)
+            .map(|f| f.win)
+            .collect();
+        if unsaved.is_empty() {
+            self.link.dock(&json!({"verb": "saved", "saved": true}));
+            return;
         }
+        for win in unsaved {
+            self.after_save.insert(win, Ask::Quit);
+            self.save(Some(win), false);
+        }
+    }
+
+    /// A file the quit was saving was not: the host is told, which calls
+    /// the quit off, and nothing else waits for it.
+    fn quit_not_saved(&mut self) {
+        self.after_save.retain(|_, a| *a != Ask::Quit);
+        self.link.dock(&json!({"verb": "saved", "saved": false}));
     }
 
     /// Quits once the window's size and place are read, to open at them

@@ -217,3 +217,25 @@ def test_to_json_strips_names_even_without_the_host_walk():
     # A direct serialization (no GuiHost) must not leak the client-only name.
     js = guidef.to_json(window(knob(name="cutoff"), panel(button(name="b"))))
     assert "name" not in js and "cutoff" not in js
+
+
+def test_the_quit_hooks_answer_the_hosts_question():
+    """The host asks the quit; the client's hooks do its own end: `save`
+    is answered with ``saved`` on the dock, `quit` ends, `unsaved` hears what
+    the applications would lose, and `own_unsaved` declares the client's."""
+    import json
+
+    host = _host()
+    ended, told = [], []
+    host._on_quit = (lambda: ended.append(True), lambda: False, told.append)
+    host.own_unsaved(["a.py"])
+    assert host._osc.sent[-1][0] == "/gui_dock"
+    assert json.loads(host._osc.sent[-1][2]) == {"verb": "own_unsaved", "unsaved": ["a.py"]}
+    listed = [{"window": 7, "title": "Audio"}]
+    assert host.dispatch("/gui_dock_unsaved", [json.dumps({"unsaved": listed})])
+    assert told == [listed]
+    assert host.dispatch("/gui_dock_quit", ['{"do": "save"}'])
+    assert json.loads(host._osc.sent[-1][2]) == {"verb": "saved", "saved": False}
+    assert not ended
+    assert host.dispatch("/gui_dock_quit", ['{"do": "quit"}'])
+    assert ended == [True]

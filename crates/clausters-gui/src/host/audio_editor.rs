@@ -821,7 +821,7 @@ impl Host {
                     let work: Vec<(i32, String)> =
                         work.into_iter().map(|u| (u.window, u.title)).collect();
                     let mut fx = Vec::new();
-                    self.unsaved_gathered(&work, &mut fx);
+                    self.unsaved_said(work, &mut fx);
                     self.pending_effects.extend(fx);
                 }
                 FromApp::Saved(saved) => {

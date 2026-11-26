@@ -56,8 +56,9 @@ session.tell({
 });
 editor.start();
 
-// A tab cannot wait for the editor's question: the browser asks its own, when
-// a file has changes that are not saved.
+// A tab cannot wait for the host's question: the browser asks its own when a
+// quit would lose work -- a file with changes, or a document of the host's
+// applications, which the host tells the editor as it changes.
 window.addEventListener("beforeunload", (event) => {
   if (editor.unsaved()) event.preventDefault();
 });

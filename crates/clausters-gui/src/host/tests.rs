@@ -1970,11 +1970,12 @@ fn the_icons_and_the_score_editors_symbols_are_apart() {
     }
 }
 
-/// **The dock's close is one request to the client that quits the
-/// application**: once it said it does (`own_quit`), a close sends it
-/// `/gui_dock_quit` with what the host's applications would lose (none
-/// here), `stay` keeps everything, and a second close the client did not
-/// answer closes it all. A host nobody said that for closes its panes.
+/// **The dock's close is the quit of the client that said it quits the
+/// application**: with nothing to lose it is told to end (`{"do": "quit"}`),
+/// what it declares of its own documents puts the host's question up, a
+/// declaration of a client that does not quit it is refused, and a second
+/// close the client did not answer closes it all. A host nobody said that
+/// for closes its panes.
 #[test]
 fn the_dock_close_is_asked_of_the_client_that_quits() {
     let dock = |host: &mut Host, call: &str| {
@@ -1986,25 +1987,51 @@ fn the_dock_close_is_asked_of_the_client_that_quits() {
             from(),
         )
     };
+    let told = |fx: &[HostEffect], addr: &str| {
+        fx.iter().find_map(|e| match e {
+            HostEffect::Send { msg, .. } if msg.addr == addr => Some(msg.args.clone()),
+            _ => None,
+        })
+    };
     let mut host = Host::new();
     host.dock = true;
     let mut fx = Vec::new();
     assert_eq!(host.dock_close(&mut fx), DockClose::Panes);
-    dock(&mut host, r#"{"verb": "own_quit"}"#);
+    let registered = dock(&mut host, r#"{"verb": "own_quit"}"#);
+    assert_eq!(
+        told(&registered, GUI_DOCK_UNSAVED),
+        Some(vec![OscType::String(r#"{"unsaved":[]}"#.into())]),
+        "told what the applications would lose: {registered:?}"
+    );
+    // nothing to lose: told to end, and a second close ends it anyway
     let mut fx = Vec::new();
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
-    let told = fx.iter().find_map(|e| match e {
-        HostEffect::Send { msg, .. } if msg.addr == GUI_DOCK_QUIT => Some(msg.args.clone()),
-        _ => None,
-    });
     assert_eq!(
-        told,
-        Some(vec![OscType::String(r#"{"unsaved":[]}"#.into())]),
+        told(&fx, GUI_DOCK_QUIT),
+        Some(vec![OscType::String(r#"{"do":"quit"}"#.into())]),
         "{fx:?}"
     );
-    dock(&mut host, r#"{"verb": "stay"}"#);
-    assert_eq!(host.dock_close(&mut Vec::new()), DockClose::Asked);
     assert_eq!(host.dock_close(&mut Vec::new()), DockClose::All);
+    // its own work: the host asks
+    dock(&mut host, r#"{"verb": "own_unsaved", "unsaved": ["a.py"]}"#);
+    let mut fx = Vec::new();
+    assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
+    assert!(told(&fx, GUI_DOCK_QUIT).is_none(), "asked first: {fx:?}");
+    assert!(host.question.is_some(), "the host's question is up");
+    assert_eq!(host.dock_close(&mut Vec::new()), DockClose::All);
+    assert!(host.question.is_none());
+    // only the client that quits declares
+    let other = host.handle_packet(
+        OscPacket::Message(OscMessage {
+            addr: GUI_DOCK.into(),
+            args: vec![
+                OscType::Int(2),
+                OscType::String(r#"{"verb": "own_unsaved", "unsaved": []}"#.into()),
+            ],
+        }),
+        ClientId::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 9))),
+    );
+    assert!(format!("{other:?}").contains("error"), "{other:?}");
     // a script's close plays the window's
     let effects = dock(&mut host, r#"{"verb": "close"}"#);
     assert!(

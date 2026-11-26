@@ -4610,6 +4610,41 @@ first four are the order the user set; the components come after.
   both themes (the window, a menu, the find bar, the preferences and the
   environments) against the inventory above.
 
+## G52 — One quit, asked by the host
+
+*(Opened and closed 2026-11-26 with the user, who found that closing the
+code editor's native window asked nothing about the unsaved work of the
+applications open in it, and asked for every close to go through one
+abstraction, on the desktop and in a page, standalone or hosted, with
+each application adding what its own end needs, as a language's exit
+hooks do. Builds on the WS track's quit, "quitting as one act".)*
+
+- ✅ **G52 — The host asks the quit; each holder adds its own.** Before,
+  the client that said it quits the application was told what the host's
+  applications would lose and asked the one question itself: the code
+  editor put it in the window of its first file, on its own page, so with
+  an application's page shown nobody saw it and a second close quit
+  without asking; and a page left with an application's work unsaved did
+  not ask, since the page knew only the editor's files. Now the host
+  always knows what would be lost -- the applications' thread says it
+  whenever it changes, and the client that quits declares its own
+  (`own_unsaved`) -- and asks the one question itself, in its alert over
+  the dock, whatever page is shown. The client keeps only its own end, as
+  hooks: `save` its documents on Save all (answered `saved`), `quit` the
+  application, and `unsaved`, told what the applications would lose as it
+  changes, which a page asked to unload reads at once. The editor
+  registers on every platform, File > Quit is the dock's close, and its
+  question in the file window is gone; `stay` and `save_all` left the
+  protocol, and `quitting::stack` and `closing::holding` with them. The
+  dock's `select` shows a pane's page first (fixed beside it).
+  Record: host tests over a client that quits (nothing to lose, its own
+  work, a declaration refused from another client) and over the
+  applications and the client together (one question naming both, Save
+  all through both, the end told once both saved); a test of each
+  client's hooks; the editor checked headless (the question over a
+  roll's page, a close with nothing to lose ending the program); the
+  page's e2e in Chrome and Firefox.
+
 ## Future directions: the entries that were done
 
 - ✅ **A list's spectrogram kept beside its peaks** *(named 2026-10-22,

@@ -842,12 +842,17 @@ pub const GUI_DOCK: &str = "/gui_dock";
 /// same `seq`: `{"ok": state}`, the dock as it stands after the call, or
 /// `{"error": {"type", "message"}}`.
 pub const GUI_DOCK_REPLY: &str = "/gui_dock_reply";
-/// `/gui_dock_quit <json>`: **the application is asked to quit** -- the
-/// dock's window was closed -- sent to the client that said it quits it
-/// (`{"verb": "own_quit"}` on [`GUI_DOCK`]). `json` is `{"unsaved":
-/// [{"window", "title"}...]}`, what the applications this host holds would
-/// lose; the client answers by quitting, or with `{"verb": "stay"}`.
+/// `/gui_dock_quit <json>`: **what the client that quits the application
+/// does of the quit** (`{"verb": "own_quit"}` on [`GUI_DOCK`]), once the
+/// host's question is answered: `{"do": "save"}` saves its own documents
+/// and answers `{"verb": "saved", "saved": bool}`; `{"do": "quit"}` ends
+/// the application, as its own end needs ([`quit`]).
 pub const GUI_DOCK_QUIT: &str = "/gui_dock_quit";
+/// `/gui_dock_unsaved <json>`: **what the applications this host holds
+/// would lose**, told to the client that quits the application when it says
+/// so and whenever it changes: `{"unsaved": [{"window", "title"}...]}`, the
+/// documents whose window is their only holder and holds unsaved work.
+pub const GUI_DOCK_UNSAVED: &str = "/gui_dock_unsaved";
 /// `/gui_server <host:port> [shm] [i/of]`: **points a running host at an
 /// audio server** -- its client leg, the shared segment it maps (an empty
 /// string for none) and its share of the server's ids -- what `--server`,
@@ -1227,8 +1232,12 @@ pub struct Host {
     quitter: Option<ClientId>,
     /// A quit under way ([`Host::dock_close`]).
     quit: Option<quit::Quitting>,
-    /// The dock calls about quitting that wait on the applications.
-    quit_waiting: Vec<quit::Waiting>,
+    /// **What the applications would lose**, as they last said it: each
+    /// document's window and title.
+    at_risk: Vec<(i32, String)>,
+    /// **What the client that quits the application would lose**, as it
+    /// declared it: its documents' titles.
+    declared: Vec<String>,
     /// The host's own question before a quit, while it is up.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     question: Option<clausters_apps::closing::Ids>,
@@ -1412,7 +1421,8 @@ impl Host {
             dock: false,
             quitter: None,
             quit: None,
-            quit_waiting: Vec::new(),
+            at_risk: Vec::new(),
+            declared: Vec::new(),
             #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
             question: None,
             dock_opens: None,

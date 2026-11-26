@@ -257,6 +257,7 @@ by their headings:
 - K track, Part B — the general capabilities
 - WS track — the dock: the host is the application's one window
 - ST track: the look, specified from one design system
+- G52 — One quit, asked by the host
 
 ## K track — the widget API: a widget becomes an object
 

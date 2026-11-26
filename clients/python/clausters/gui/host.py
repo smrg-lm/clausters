@@ -1048,27 +1048,40 @@ class GuiHost:
         return self._app_request("/gui_dock", json.dumps(dict(call)), timeout=timeout,
                                  answers="/gui_dock_reply")
 
-    def on_quit(self, handler, timeout: float = 5.0):
+    def on_quit(self, quit, save=None, unsaved=None, timeout: float = 5.0):
         """Makes this client **the one that quits the application**: the
-        close of the dock's window, from then on, is not a close of each pane
-        but one request to it, and ``handler(unsaved)`` is called with what
-        the applications the host holds would lose -- a list of
-        ``{"window": id, "title": name}``, the documents whose window is
-        their only holder and holds unsaved work.
+        close of the dock's window, from then on, is one quit and not a close
+        of each pane, and the host asks about it once -- one question over
+        every document that would lose work, the applications' it holds and
+        the ones this client declares with `own_unsaved` -- whatever page the
+        dock shows.
 
-        The handler answers: it quits (frees the windows, `stop`), or it
-        keeps everything with ``dock_call({"verb": "stay"})``. Its own
-        documents and the host's are one question, which the handler asks;
-        ``dock_call({"verb": "save_all"})`` saves the host's through their own
-        Save and answers once nothing is left to lose (raising when the
-        saving was called off). A close the handler leaves unanswered is
-        closed anyway at the second, so a script that stopped answering does
-        not keep the dock open. ``dock_call({"verb": "unsaved"})`` asks what
-        the host's applications would lose at any other time, for a Quit of
-        the script's own.
+        The hooks are what this client's own end needs:
+
+        - ``quit()`` ends the application (frees what it opened, `stop`),
+          once nothing is left to lose or the question was answered Don't
+          save.
+        - ``save()``, called on Save all, saves this client's own documents
+          and answers whether they are saved; a false answer calls the quit
+          off. Without it, there is nothing of the client's to save.
+        - ``unsaved(documents)``, when given, is called with what the host's
+          applications would lose whenever that changes -- a list of
+          ``{"window": id, "title": name}`` -- so a client knows at once
+          (``dock_call({"verb": "unsaved"})`` asks the same).
+
+        A close the client leaves unanswered is closed anyway at the second,
+        so a script that stopped answering does not keep the dock open.
         """
-        self._on_quit = handler
+        self._on_quit = (quit, save, unsaved)
         return self.dock_call({"verb": "own_quit"}, timeout)
+
+    def own_unsaved(self, titles) -> None:
+        """Declares **this client's own documents that a quit would lose
+        work in**, by title -- the whole list, each time it changes -- for
+        the host's one question (`on_quit`). Sent without waiting, so a
+        handler may call it."""
+        call = {"verb": "own_unsaved", "unsaved": [str(t) for t in titles]}
+        self._send("/gui_dock", 0, json.dumps(call))
 
     def dock_layout(self, timeout: float = 5.0) -> dict:
         """The dock's layout as data -- splits whose leaves are groups of
@@ -1657,10 +1670,22 @@ class GuiHost:
                 func()
                 return True
         elif addr == "/gui_dock_quit":
-            func = self._on_quit
-            if func is not None:
+            hooks = self._on_quit
+            if hooks is not None:
+                quit, save, _ = hooks
                 asked = json.loads(str(args[0])) if args else {}
-                func(asked.get("unsaved", []))
+                if asked.get("do") == "save":
+                    saved = True if save is None else bool(save())
+                    call = {"verb": "saved", "saved": saved}
+                    self._send("/gui_dock", 0, json.dumps(call))
+                elif asked.get("do") == "quit":
+                    quit()
+                return True
+        elif addr == "/gui_dock_unsaved":
+            hooks = self._on_quit
+            if hooks is not None and hooks[2] is not None:
+                said = json.loads(str(args[0])) if args else {}
+                hooks[2](said.get("unsaved", []))
                 return True
         elif addr == "/gui_app_changed" and args:
             func = self._on_app_changed.get(int(args[0]))

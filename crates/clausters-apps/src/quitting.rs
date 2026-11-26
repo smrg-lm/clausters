@@ -4,22 +4,24 @@
 //! A window is closed by the rule of [`crate::closing`], each with its own
 //! form. Quitting is not a run of closes: the application's window (a dock's,
 //! or a host's last) goes with everything in it, so what would be lost is
-//! everything unsaved at once, and it is asked about **once**: one question
-//! naming every document, answered Don't save, Cancel or Save all.
+//! everything unsaved at once, and it is asked about **once**, by the GUI
+//! host, over whatever page is shown: one question naming every document,
+//! answered Don't save, Cancel or Save all.
 //!
 //! - **Only the work's only holder is asked about.** A document whose window
 //!   a client holds loses nothing by a quit (the client keeps it), so only
 //!   windows that say they ask before closing
 //!   ([`Converse::asks_to_close`](crate::turn::Converse::asks_to_close)) and
 //!   hold work their file does not are gathered ([`Editing::unsaved_work`]).
+//! - **Every holder adds its own**: an application that holds documents of
+//!   its own beside the host's applications (the code editor's files) is
+//!   asked about in the same question, and saves its own in a Save all.
 //! - **Save all goes through each document's own Save** and the application
 //!   ends once nothing is left to lose. A document with no file yet asks where
 //!   in its own window, and the quit waits for it.
 //! - **Cancel keeps everything**, the windows and the work in them.
 //!
-//! Whoever holds the application's other documents (an editor's own files,
-//! beside the host's applications) gathers them into the same question with
-//! [`says`] and asks in [`dialog`].
+//! [`says`] words the question and [`dialog`] draws it.
 //!
 //! [`Editing::unsaved_work`]: crate::editing::Editing::unsaved_work
 
@@ -69,15 +71,6 @@ pub fn dialog(
 ) -> Value {
     let save = if documents > 1 { "Save all" } else { "Save" };
     closing::asking(dialog_id, TITLE, says, save, id)
-}
-
-/// **The question held as a window holds its close form**
-/// ([`closing::stack`]), numbered with the same ids, so the window that
-/// asks to close asks to quit in the same place.
-#[must_use]
-pub fn stack(ids: &closing::Ids, says: &str, documents: usize) -> Value {
-    let form = dialog(Some(ids.dialog), says, documents, |name| ids.button(name));
-    closing::holding(ids, form)
 }
 
 #[cfg(test)]

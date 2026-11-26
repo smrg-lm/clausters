@@ -159,16 +159,26 @@ code that keeps it lives.
   busy or down) is said the same way, in a footer of the application's
   along the dock's bottom, never in a panel's title.
 - **Quitting is the application's act, asked once over all its unsaved
-  work.** The close of the dock's window is one request, never a close of
-  each pane: the client that quits the application (`own_quit`) is told
-  (`/gui_dock_quit`), or, with none, the host asks over the applications it
-  holds. One question names every document whose window is its work's only
-  holder and holds unsaved work -- a client's documents beside the host's --
-  answered Don't save, Cancel (everything stays, the panes included) or Save
-  all (each document through its own Save, and the application ends only
-  once nothing is left to lose). With nothing to lose it ends at the first
-  close; a close left unanswered ends it at the second. A pane's own close
-  (its tab, its panel's mark) stays that pane's.
+  work, by the host.** The close of the dock's window is one request, never
+  a close of each pane, and it goes one way whoever closes it: the
+  desktop's close, an application's Quit, a script's close. The host
+  always knows what would be lost -- its applications say it as it
+  changes, and the client that quits the application (`own_quit`) declares
+  its own documents (`own_unsaved`) -- so one question, in the host's own
+  alert over the dock, names every document whose window is its work's
+  only holder and holds unsaved work, whatever page is shown. It is
+  answered Don't save, Cancel (everything stays, the panes included) or
+  Save all (each document through its own Save, the client's through its
+  `save` hook, and the application ends only once nothing is left to
+  lose). With nothing to lose it ends at the first close; a close left
+  unanswered ends it at the second. The end is the client's own (`quit`:
+  what it remembers, its session) when there is one. A page cannot wait for
+  the question, so it asks the browser's whenever anything would be lost,
+  the applications' documents included. A pane's own close (its tab, its
+  panel's mark) stays that pane's. *(Found 2026-11-26: the code editor
+  asked the quit in its code window, on its own page, so with an
+  application's page shown nobody saw it and a second close quit without
+  asking; and a page left with an application's work unsaved did not ask.)*
 - **A panel has one header.** Its bar is the only strip over it: the grip
   and the panel's buttons at the ends, and in the middle the tabs of its
   documents (`dock_tab`), the strip of tools its window names (`header`), or

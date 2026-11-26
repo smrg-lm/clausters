@@ -133,10 +133,12 @@ pub enum Said {
     Dock { seq: i32, reply: Value },
     /// `/gui_app_reply seq json`: an application opened, or why not.
     App { reply: Value },
-    /// `/gui_dock_quit json`: the dock's window was closed, and the editor
-    /// is asked to quit; `json` says what the host's applications would
-    /// lose.
+    /// `/gui_dock_quit json`: what the editor does of the quit the host
+    /// asked about: `{"do": "save"}` its own files, or `{"do": "quit"}`.
     DockQuit(Value),
+    /// `/gui_dock_unsaved json`: what the host's applications would lose,
+    /// as it changed: `{"unsaved": [{"window", "title"}...]}`.
+    DockUnsaved(Value),
     /// `/gui_info id type key value ...`: what a widget is now.
     Info {
         id: i32,
@@ -194,6 +196,10 @@ impl Said {
                 Said::Dock { seq, reply }
             }
             "/gui_dock_quit" => Said::DockQuit(match m.args.first() {
+                Some(OscType::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
+                _ => Value::Null,
+            }),
+            "/gui_dock_unsaved" => Said::DockUnsaved(match m.args.first() {
                 Some(OscType::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
                 _ => Value::Null,
             }),

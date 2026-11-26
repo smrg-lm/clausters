@@ -291,7 +291,7 @@ export const INTERFACE_EVENTS: readonly string[] = ["press", "release", "click"]
  */
 const PROBE_ID = 0;
 
-/** **A document a quit would lose work in**, as {@link GuiHost.onQuit} is told it. */
+/** **A document a quit would lose work in**, as {@link GuiHost.onQuit}'s `unsaved` hook is told it. */
 export interface UnsavedDocument {
     /** The window that holds it. */
     window: number;
@@ -393,7 +393,11 @@ export class GuiHost {
      */
     private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
-    private onQuitHandler: ((unsaved: UnsavedDocument[]) => void) | null = null;
+    private quitHooks: {
+        quit: () => void;
+        save: (() => boolean | Promise<boolean>) | null;
+        unsaved: ((documents: UnsavedDocument[]) => void) | null;
+    } | null = null;
     /** What an application left each closed window as (`/gui_closed`'s second argument), until its handler takes it. */
     private readonly left = new Map<number, unknown>();
     /** The session each window let go of (`/gui_closed`'s third argument), until its handler takes it. */
@@ -1317,28 +1321,43 @@ export class GuiHost {
 
     /**
      * Makes this client **the one that quits the application**: the close of
-     * the dock's window, from then on, is not a close of each pane but one
-     * request to it, and `handler(unsaved)` is called with what the
-     * applications the host holds would lose -- the documents whose window is
-     * their only holder and holds unsaved work.
+     * the dock's window, from then on, is one quit and not a close of each
+     * pane, and the host asks about it once -- one question over every
+     * document that would lose work, the applications' it holds and the ones
+     * this client declares with {@link GuiHost.ownUnsaved} -- whatever page
+     * the dock shows.
      *
-     * The handler answers: it quits (frees the windows, `stop`), or it keeps
-     * everything with `dockCall({ verb: "stay" })`. Its own documents and the
-     * host's are one question, which the handler asks;
-     * `dockCall({ verb: "save_all" })` saves the host's through their own
-     * Save and answers once nothing is left to lose (rejecting when the
-     * saving was called off). A close the handler leaves unanswered is
-     * closed anyway at the second, so a script that stopped answering does
-     * not keep the dock open. `dockCall({ verb: "unsaved" })` asks what the
-     * host's applications would lose at any other time, for a Quit of the
-     * script's own.
+     * The hooks are what this client's own end needs:
+     *
+     * - `quit()` ends the application (frees what it opened, `stop`), once
+     *   nothing is left to lose or the question was answered Don't save.
+     * - `save()`, called on Save all, saves this client's own documents and
+     *   answers whether they are saved; a false answer calls the quit off.
+     *   Without it, there is nothing of the client's to save.
+     * - `unsaved(documents)`, when given, is called with what the host's
+     *   applications would lose whenever that changes, so a client knows at
+     *   once (`dockCall({ verb: "unsaved" })` asks the same).
+     *
+     * A close the client leaves unanswered is closed anyway at the second, so
+     * a script that stopped answering does not keep the dock open.
      */
     async onQuit(
-        handler: (unsaved: UnsavedDocument[]) => void,
+        quit: () => void,
+        save: (() => boolean | Promise<boolean>) | null = null,
+        unsaved: ((documents: UnsavedDocument[]) => void) | null = null,
         timeout = 5.0,
     ): Promise<Record<string, unknown>> {
-        this.onQuitHandler = handler;
+        this.quitHooks = { quit, save, unsaved };
         return this.dockCall({ verb: "own_quit" }, timeout);
+    }
+
+    /**
+     * Declares **this client's own documents that a quit would lose work
+     * in**, by title -- the whole list, each time it changes -- for the
+     * host's one question ({@link GuiHost.onQuit}). Sent without waiting.
+     */
+    ownUnsaved(titles: string[]): void {
+        this.send("/gui_dock", 0, JSON.stringify({ verb: "own_unsaved", unsaved: titles.map(String) }));
     }
 
     /**
@@ -1977,8 +1996,19 @@ export class GuiHost {
             const handler = this.onEventHandlers.get(wid);
             if (handler) handler(...(payload as EventArgs));
         } else if (msg.addr === "/gui_dock_quit") {
+            const hooks = this.quitHooks;
             const asked = msg.args.length > 0 ? JSON.parse(String(msg.args[0])) : {};
-            this.onQuitHandler?.((asked.unsaved ?? []) as UnsavedDocument[]);
+            if (hooks && asked.do === "save") {
+                void (async () => {
+                    const saved = hooks.save ? Boolean(await hooks.save()) : true;
+                    this.send("/gui_dock", 0, JSON.stringify({ verb: "saved", saved }));
+                })();
+            } else if (hooks && asked.do === "quit") {
+                hooks.quit();
+            }
+        } else if (msg.addr === "/gui_dock_unsaved") {
+            const said = msg.args.length > 0 ? JSON.parse(String(msg.args[0])) : {};
+            this.quitHooks?.unsaved?.((said.unsaved ?? []) as UnsavedDocument[]);
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             if (msg.args.length > 1) this.left.set(id, JSON.parse(String(msg.args[1])));

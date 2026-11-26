@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import type { Connection } from "../src/base/connection.ts";
-import { decodePacket } from "../src/base/osc.ts";
+import { decodePacket, encodeMessage, oscArg } from "../src/base/osc.ts";
 import { GuiHost, HOST_VARIABLE, namedHost } from "../src/gui/host.ts";
 
 test("the environment names the host by carrier", () => {
@@ -46,4 +46,44 @@ test("a host is pointed at a server", async () => {
             ["/gui_server", "127.0.0.1:57110", "", ""],
         ],
     );
+});
+
+test("the quit hooks answer the host's question", async () => {
+    await loadCore();
+    const sent: { addr: string; args: unknown[] }[] = [];
+    let feed: (bytes: Uint8Array) => void = () => {};
+    const connection: Connection = {
+        send: (bytes: Uint8Array) => {
+            for (const m of decodePacket(bytes)) {
+                sent.push(m);
+                // the dock answers its calls at once
+                if (m.addr === "/gui_dock" && m.args[0] !== 0) {
+                    feed(message("/gui_dock_reply", [m.args[0] as number, '{"ok": {}}']));
+                }
+            }
+        },
+        addReply: (handler: (bytes: Uint8Array) => void) => {
+            feed = handler;
+        },
+        removeReply: () => {},
+        close: () => {},
+    };
+    const message = (addr: string, args: (string | number)[]) => encodeMessage(addr, args.map(oscArg));
+    const host = new GuiHost({ connection });
+    const ended: boolean[] = [];
+    const told: unknown[] = [];
+    await host.onQuit(() => ended.push(true), async () => false, (documents) => told.push(documents));
+    host.ownUnsaved(["a.py"]);
+    const last = () => JSON.parse(String(sent[sent.length - 1].args[1]));
+    assert.deepEqual(last(), { verb: "own_unsaved", unsaved: ["a.py"] });
+    const listed = [{ window: 7, title: "Audio" }];
+    feed(message("/gui_dock_unsaved", [JSON.stringify({ unsaved: listed })]));
+    assert.deepEqual(told, [listed]);
+    feed(message("/gui_dock_quit", ['{"do": "save"}']));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(last(), { verb: "saved", saved: false });
+    assert.deepEqual(ended, []);
+    feed(message("/gui_dock_quit", ['{"do": "quit"}']));
+    assert.deepEqual(ended, [true]);
+    host.stop();
 });

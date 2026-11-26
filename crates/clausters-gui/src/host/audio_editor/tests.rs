@@ -3293,6 +3293,11 @@ fn a_quit_asks_once_over_every_application() {
             .iter()
             .all(|&w| h.window_title(w).is_some_and(|t| t.starts_with('*')))
     });
+    until(
+        &mut host,
+        "the applications never said what would be lost",
+        |h| h.at_risk.len() == 2,
+    );
     let mut fx = Vec::new();
     let question = |host: &mut Host| {
         until(host, "the question never came up", |h| h.question.is_some());
@@ -3321,7 +3326,7 @@ fn a_quit_asks_once_over_every_application() {
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
     let ids = question(&mut host);
     click(&mut host, ids.stack, ids.save);
-    assert_eq!(host.quit, Some(Quitting::Saving));
+    assert!(matches!(host.quit, Some(Quitting::Saving { .. })));
     until(&mut host, "the quit never ended", |h| h.quit.is_none());
     for &w in &windows {
         let title = host.window_title(w).unwrap();
@@ -3394,4 +3399,111 @@ fn a_programs_client_is_served_on_the_applications_thread() {
         host.engine_clock().is_some(),
         "the clock reads once it is open"
     );
+}
+
+/// **A client that quits the application is one of the holders the host's
+/// question asks about**: it is told what the applications would lose as
+/// that changes, its own documents and theirs are named in one question,
+/// Save all saves the applications' through their own Save and tells it to
+/// save its own, and once it says it did it is told to end.
+#[test]
+fn a_quit_asks_once_over_the_applications_and_the_client_that_quits() {
+    use crate::host::quit::Quitting;
+    use crate::host::{GUI_DOCK, GUI_DOCK_QUIT, GUI_DOCK_UNSAVED, OscType};
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    let mut host = host();
+    host.dock = true;
+    let client = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 57_901)));
+    let dock = |host: &mut Host, seq: i32, call: Value| {
+        door(
+            host,
+            GUI_DOCK,
+            vec![OscType::Int(seq), OscType::String(call.to_string())],
+            client,
+        )
+    };
+    let told = |fx: &[HostEffect], addr: &str| -> Option<Value> {
+        fx.iter().find_map(|e| match e {
+            HostEffect::Send { msg, .. } if msg.addr == addr => match msg.args.first() {
+                Some(OscType::String(json)) => serde_json::from_str(json).ok(),
+                _ => None,
+            },
+            _ => None,
+        })
+    };
+    dock(&mut host, 1, json!({"verb": "own_quit"}));
+    let path = take("quit-owner", 24_000);
+    let window = opened_app(&mut host, client, 2, "audio", json!({"path": path}));
+    settled(&mut host, window);
+    let widget = widget_of(&host, window);
+    let delete = host.event_message(
+        widget,
+        1,
+        vec![
+            OscType::String("delete".into()),
+            OscType::Float(0.0),
+            OscType::Float(12_000.0),
+        ],
+    );
+    assert!(host.deliver(window, &delete));
+    // told, once the edit is in
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let unsaved = loop {
+        let said = told(&host.take_effects(), GUI_DOCK_UNSAVED);
+        if let Some(said) = said.filter(|u| u["unsaved"].as_array().is_some_and(|l| !l.is_empty()))
+        {
+            break said;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "never told what would be lost"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    assert_eq!(unsaved["unsaved"][0]["window"], window);
+    dock(
+        &mut host,
+        3,
+        json!({"verb": "own_unsaved", "unsaved": ["a.py"]}),
+    );
+    // one question over both
+    let mut fx = Vec::new();
+    assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
+    let ids = host.question.expect("the question is up");
+    let says = host.window_defs[&ids.stack]
+        .find(ids.dialog)
+        .map(|w| format!("{:?}", w.kind))
+        .unwrap_or_default();
+    assert!(says.contains("a.py") && says.contains("Audio"), "{says}");
+    // Save all: the client is told to save its own, the application saves
+    let click = host.event_message(ids.save, 9, vec![OscType::String("click".into())]);
+    assert!(host.deliver(ids.stack, &click));
+    let fx = std::mem::take(&mut host.pending_effects);
+    assert_eq!(
+        told(&fx, GUI_DOCK_QUIT),
+        Some(json!({"do": "save"})),
+        "{fx:?}"
+    );
+    until(&mut host, "the application never saved", |h| {
+        !h.window_title(window).is_some_and(|t| t.starts_with('*'))
+    });
+    until(&mut host, "the application never said it saved", |h| {
+        h.quit
+            == Some(Quitting::Saving {
+                apps: false,
+                owner: true,
+            })
+    });
+    // the client saved: it is told to end
+    let fx = dock(&mut host, 4, json!({"verb": "saved", "saved": true}));
+    let mut fx = fx;
+    fx.extend(std::mem::take(&mut host.pending_effects));
+    assert_eq!(
+        told(&fx, GUI_DOCK_QUIT),
+        Some(json!({"do": "quit"})),
+        "{fx:?}"
+    );
+    assert_eq!(host.quit, Some(Quitting::Ending));
+    let _ = std::fs::remove_file(&path);
 }

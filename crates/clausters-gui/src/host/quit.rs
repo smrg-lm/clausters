@@ -1,18 +1,26 @@
-//! **Quitting is the application's act, asked once** (`clausters_apps::quitting`).
+//! **Quitting is the application's act, asked once, by the host**
+//! (`clausters_apps::quitting`).
 //!
-//! The close of the dock's window is one request, never a close per pane.
-//! Who answers it:
+//! The close of the dock's window is one request, never a close per pane,
+//! and it goes one way whoever closes it -- the desktop's close, a page left,
+//! a script's `{"verb": "close"}`, an application's File > Quit:
 //!
-//! - **A client that said it quits the application** (`{"verb":
-//!   "own_quit"}` on [`GUI_DOCK`]) is told [`GUI_DOCK_QUIT`], with what the
-//!   applications this host holds would lose, and answers by quitting, or
-//!   with `stay`. Its own documents and the host's are one question, which it
-//!   asks; `save_all` saves the host's, answered once they are saved.
-//! - **Else, the applications this host holds** are asked what they would
-//!   lose: with nothing, everything closes; with something, the host asks one
-//!   question over all of it (Don't save, Cancel, Save all) in a window of
-//!   its own along the dock's edge, whose dialog stands over the dock.
-//! - **Else** (a script's windows), the dock's panes close as each closes.
+//! - **The host always knows what would be lost.** The applications it holds
+//!   say their unsaved documents whenever that changes, and a client that
+//!   said it quits the application (`{"verb": "own_quit"}` on [`GUI_DOCK`])
+//!   declares its own (`{"verb": "own_unsaved", "unsaved": [titles]}`). That
+//!   client is told the applications' list as it changes
+//!   ([`GUI_DOCK_UNSAVED`]), so a page asked to unload knows at once.
+//! - **With nothing to lose, the application ends.** With something, the
+//!   host asks one question over all of it (Don't save, Cancel, Save all) in
+//!   a window of its own along the dock's edge, which stands over whatever
+//!   page is shown.
+//! - **Each holder does what its own end needs.** Save all saves the
+//!   applications' documents through their own Save and tells the client
+//!   `{"do": "save"}` ([`GUI_DOCK_QUIT`]), which saves its own and answers
+//!   `{"verb": "saved", "saved": bool}`; the end is the client's
+//!   `{"do": "quit"}` when there is one -- it remembers what it keeps and
+//!   ends the program -- or every window closed when there is none.
 //!
 //! As a window's `ask_close` does, a second close while the first is
 //! unanswered ends it anyway: an owner that stopped answering cannot keep
@@ -34,32 +42,17 @@ pub enum DockClose {
     Asked,
 }
 
-/// Who a quit under way is for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QuitFor {
-    /// The client that quits the application.
-    Client(ClientId),
-    /// The host, over the applications it holds.
-    Host,
-}
-
 /// **A quit under way.**
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Quitting {
-    /// What the applications would lose is being gathered.
-    Gathering(QuitFor),
-    /// The question is up, or the client was told: unanswered.
-    Asked(QuitFor),
-    /// Save all is under way.
-    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-    Saving,
-}
-
-/// A dock call waiting on the applications' answer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Waiting {
-    Unsaved(ClientId, i32),
-    SaveAll(ClientId, i32),
+    /// The question is up, unanswered.
+    Asked,
+    /// Save all is under way: whether the applications' documents and the
+    /// client's own are still being saved.
+    Saving { apps: bool, owner: bool },
+    /// The client that quits the application was told to end, and has not
+    /// yet.
+    Ending,
 }
 
 /// The structure the host's own question is numbered under.
@@ -68,40 +61,65 @@ const QUESTION: i64 = -7;
 
 impl Host {
     /// **The dock's window was asked to close** -- by the desktop, or a
-    /// script's `{"verb": "close"}`: what to do, by who said it answers.
+    /// script's `{"verb": "close"}`: what to do, by what would be lost.
     pub fn dock_close(&mut self, effects: &mut Vec<HostEffect>) -> DockClose {
-        if matches!(self.quit, Some(Quitting::Gathering(_) | Quitting::Asked(_))) {
+        if self.quit.is_some() {
             // asked once and not answered: it goes anyway
             self.quit = None;
             self.drop_question(effects);
             return DockClose::All;
         }
-        self.quit = None;
-        if let Some(client) = self.quitter {
-            self.gather(QuitFor::Client(client), effects);
-            return DockClose::Asked;
+        if self.quitter.is_none() && !self.holds_applications() {
+            return DockClose::Panes;
         }
-        if self.holds_applications() {
-            self.gather(QuitFor::Host, effects);
-            return DockClose::Asked;
+        let titles = self.would_lose();
+        if titles.is_empty() {
+            return self.end_quit(effects);
         }
-        DockClose::Panes
+        self.quit = Some(Quitting::Asked);
+        let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+        self.ask_question(&titles, effects);
+        DockClose::Asked
     }
 
-    /// **What the applications would lose, gathered for `who`**: asked of
-    /// their thread, or none at once where there are none.
-    fn gather(&mut self, who: QuitFor, effects: &mut Vec<HostEffect>) {
-        self.quit = Some(Quitting::Gathering(who));
-        #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-        if self.holds_applications()
-            && self
-                .audio_host()
-                .ask(super::audio_app::ToApp::Unsaved)
-                .is_ok()
-        {
-            return;
+    /// **Every document a quit would lose work in, by title**: the
+    /// client's own, then the applications'.
+    fn would_lose(&self) -> Vec<String> {
+        let own = self.quitter.map(|_| self.declared.iter().cloned());
+        own.into_iter()
+            .flatten()
+            .chain(self.at_risk.iter().map(|(_, title)| title.clone()))
+            .collect()
+    }
+
+    /// **The quit ends**: the client that quits the application is told to,
+    /// and ends it as its own end needs; with none, every window closes.
+    fn end_quit(&mut self, effects: &mut Vec<HostEffect>) -> DockClose {
+        match self.quitter {
+            Some(to) => {
+                self.quit = Some(Quitting::Ending);
+                effects.push(HostEffect::Send {
+                    to,
+                    msg: OscMessage {
+                        addr: GUI_DOCK_QUIT.into(),
+                        args: vec![OscType::String(json!({"do": "quit"}).to_string())],
+                    },
+                });
+                DockClose::Asked
+            }
+            None => {
+                self.quit = None;
+                DockClose::All
+            }
         }
-        self.unsaved_gathered(&[], effects);
+    }
+
+    /// The quit ended where nothing closes the dock in answer: its close
+    /// carried out as an effect.
+    fn end_quit_now(&mut self, effects: &mut Vec<HostEffect>) {
+        if self.end_quit(effects) == DockClose::All {
+            effects.push(HostEffect::DockClose(DockClose::All));
+        }
     }
 
     /// Whether this host holds an application's window.
@@ -114,127 +132,140 @@ impl Host {
         false
     }
 
+    /// **What the applications would lose, as they said it changed**: kept,
+    /// and told to the client that quits the application.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    pub(super) fn unsaved_said(&mut self, work: Vec<(i32, String)>, effects: &mut Vec<HostEffect>) {
+        self.at_risk = work;
+        self.tell_unsaved(effects);
+    }
+
+    /// The applications' unsaved documents told to the client that quits
+    /// the application ([`GUI_DOCK_UNSAVED`]).
+    fn tell_unsaved(&self, effects: &mut Vec<HostEffect>) {
+        if let Some(to) = self.quitter {
+            effects.push(HostEffect::Send {
+                to,
+                msg: OscMessage {
+                    addr: GUI_DOCK_UNSAVED.into(),
+                    args: vec![OscType::String(
+                        json!({"unsaved": self.listed()}).to_string(),
+                    )],
+                },
+            });
+        }
+    }
+
+    /// The applications' unsaved documents, as the wire lists them.
+    fn listed(&self) -> Vec<Value> {
+        self.at_risk
+            .iter()
+            .map(|(window, title)| json!({"window": window, "title": title}))
+            .collect()
+    }
+
     /// **A dock call about quitting**, answered here rather than by the
-    /// front's dock: `None` for any other verb. `Some(None)` is answered
-    /// later, once the applications have.
+    /// front's dock: `None` for any other verb.
     pub(super) fn quit_call(
         &mut self,
         call: &Value,
         from: ClientId,
-        seq: i32,
         effects: &mut Vec<HostEffect>,
-    ) -> Option<Option<Value>> {
-        match call["verb"].as_str()? {
+    ) -> Option<Result<Value, (String, String)>> {
+        let refused = |why: &str| Err(("value".to_string(), why.to_string()));
+        Some(match call["verb"].as_str()? {
             "own_quit" => {
                 self.quitter = Some(from);
-                Some(Some(json!({"own_quit": true})))
+                self.declared.clear();
+                self.tell_unsaved(effects);
+                Ok(json!({"own_quit": true}))
             }
-            "stay" => {
-                self.quit = None;
-                Some(Some(json!({"stay": true})))
+            "own_unsaved" if self.quitter != Some(from) => {
+                refused("only the client that quits the application declares its documents")
+            }
+            "own_unsaved" => match call["unsaved"].as_array() {
+                Some(titles) => {
+                    self.declared = titles
+                        .iter()
+                        .filter_map(|t| t.as_str().map(str::to_string))
+                        .collect();
+                    Ok(json!({"own_unsaved": self.declared.len()}))
+                }
+                None => refused("own_unsaved needs \"unsaved\", a list of titles"),
+            },
+            "saved" if self.quitter != Some(from) => {
+                refused("only the client that quits the application saves for it")
+            }
+            "saved" => {
+                let saved = call["saved"].as_bool().unwrap_or(false);
+                self.owner_saved(saved, effects);
+                Ok(json!({"saved": saved}))
             }
             "close" => {
                 let close = self.dock_close(effects);
                 effects.push(HostEffect::DockClose(close));
-                Some(Some(json!({"close": format!("{close:?}").to_lowercase()})))
+                Ok(json!({"close": format!("{close:?}").to_lowercase()}))
             }
-            "unsaved" => {
-                if !self.holds_applications() {
-                    return Some(Some(json!({"unsaved": []})));
-                }
-                self.quit_waiting.push(Waiting::Unsaved(from, seq));
-                #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-                let _ = self.audio_host().ask(super::audio_app::ToApp::Unsaved);
-                Some(None)
-            }
-            "save_all" => {
-                if !self.holds_applications() {
-                    return Some(Some(json!({"saved": true})));
-                }
-                self.quit_waiting.push(Waiting::SaveAll(from, seq));
-                #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-                let _ = self.audio_host().ask(super::audio_app::ToApp::SaveAll);
-                Some(None)
-            }
-            _ => None,
-        }
+            "unsaved" => Ok(json!({"unsaved": self.listed()})),
+            _ => return None,
+        })
     }
 
-    /// **What the applications would lose, as they said it**: the dock
-    /// calls that waited are answered, and a quit gathering it goes on.
-    pub(super) fn unsaved_gathered(
-        &mut self,
-        work: &[(i32, String)],
-        effects: &mut Vec<HostEffect>,
-    ) {
-        let listed: Vec<Value> = work
-            .iter()
-            .map(|(window, title)| json!({"window": window, "title": title}))
-            .collect();
-        let waiting = std::mem::take(&mut self.quit_waiting);
-        for w in waiting {
-            match w {
-                Waiting::Unsaved(to, seq) => effects.push(HostEffect::Send {
-                    to,
-                    msg: dock::call::reply(seq, Ok(json!({"unsaved": listed}))),
-                }),
-                other => self.quit_waiting.push(other),
-            }
-        }
-        match self.quit {
-            Some(Quitting::Gathering(QuitFor::Client(to))) => {
-                self.quit = Some(Quitting::Asked(QuitFor::Client(to)));
+    /// **Save all, from the question**: the applications' documents saved
+    /// through their own Save and the client told to save its own; the
+    /// quit ends once both say so.
+    #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
+    fn save_all(&mut self, effects: &mut Vec<HostEffect>) {
+        let apps = !self.at_risk.is_empty()
+            && self
+                .audio_host()
+                .ask(super::audio_app::ToApp::SaveAll)
+                .is_ok();
+        let owner = match self.quitter {
+            Some(to) if !self.declared.is_empty() => {
                 effects.push(HostEffect::Send {
                     to,
                     msg: OscMessage {
                         addr: GUI_DOCK_QUIT.into(),
-                        args: vec![OscType::String(json!({"unsaved": listed}).to_string())],
+                        args: vec![OscType::String(json!({"do": "save"}).to_string())],
                     },
                 });
+                true
             }
-            Some(Quitting::Gathering(QuitFor::Host)) if work.is_empty() => {
-                self.quit = None;
-                effects.push(HostEffect::DockClose(DockClose::All));
-            }
-            Some(Quitting::Gathering(QuitFor::Host)) => {
-                self.quit = Some(Quitting::Asked(QuitFor::Host));
-                let titles: Vec<&str> = work.iter().map(|(_, t)| t.as_str()).collect();
-                self.ask_question(&titles, effects);
-            }
-            _ => {}
+            _ => false,
+        };
+        self.quit = Some(Quitting::Saving { apps, owner });
+        self.saving_went_on(effects);
+    }
+
+    /// The quit ends when nothing is left being saved.
+    fn saving_went_on(&mut self, effects: &mut Vec<HostEffect>) {
+        if self.quit
+            == Some(Quitting::Saving {
+                apps: false,
+                owner: false,
+            })
+        {
+            self.end_quit_now(effects);
         }
     }
 
     /// **The applications' Save all ended**: `true` with nothing left to
-    /// lose. The dock calls that waited are answered, and the host's own quit
-    /// ends, or is called off.
+    /// lose; `false` calls the quit off.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
     pub(super) fn saved_all(&mut self, saved: bool, effects: &mut Vec<HostEffect>) {
-        let waiting = std::mem::take(&mut self.quit_waiting);
-        for w in waiting {
-            match w {
-                Waiting::SaveAll(to, seq) => {
-                    let answer = if saved {
-                        Ok(json!({"saved": true}))
-                    } else {
-                        Err((
-                            "runtime".to_string(),
-                            "the saving was called off: there is work left to lose".to_string(),
-                        ))
-                    };
-                    effects.push(HostEffect::Send {
-                        to,
-                        msg: dock::call::reply(seq, answer),
-                    });
-                }
-                other => self.quit_waiting.push(other),
-            }
+        if let Some(Quitting::Saving { owner, .. }) = self.quit {
+            self.quit = saved.then_some(Quitting::Saving { apps: false, owner });
+            self.saving_went_on(effects);
         }
-        if self.quit == Some(Quitting::Saving) {
-            self.quit = None;
-            if saved {
-                effects.push(HostEffect::DockClose(DockClose::All));
-            }
+    }
+
+    /// **The client saved its own documents**, or could not: `false` calls
+    /// the quit off.
+    fn owner_saved(&mut self, saved: bool, effects: &mut Vec<HostEffect>) {
+        if let Some(Quitting::Saving { apps, .. }) = self.quit {
+            self.quit = saved.then_some(Quitting::Saving { apps, owner: false });
+            self.saving_went_on(effects);
         }
     }
 
@@ -313,9 +344,8 @@ impl Host {
             let mut effects = Vec::new();
             match ids.read(widget, tag) {
                 Some(clausters_apps::closing::Choice::Discard) => {
-                    self.quit = None;
                     self.drop_question(&mut effects);
-                    effects.push(HostEffect::DockClose(DockClose::All));
+                    self.end_quit_now(&mut effects);
                 }
                 Some(clausters_apps::closing::Choice::Cancel) => {
                     self.quit = None;
@@ -323,8 +353,7 @@ impl Host {
                 }
                 Some(clausters_apps::closing::Choice::Save) => {
                     self.drop_question(&mut effects);
-                    self.quit = Some(Quitting::Saving);
-                    let _ = self.audio_host().ask(super::audio_app::ToApp::SaveAll);
+                    self.save_all(&mut effects);
                 }
                 None => {}
             }

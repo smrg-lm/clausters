@@ -269,9 +269,6 @@ pub(super) enum ToApp {
     /// window it asked to open again, held as one it opened -- asking
     /// nothing before a close where the client keeps its work (`keeps`).
     Adopt { def_id: i32, keeps: bool },
-    /// **What a quit would lose** ([`clausters_apps::quitting`]): answered
-    /// with [`FromApp::Unsaved`].
-    Unsaved,
     /// **A quit's Save all**: every document a quit would lose work in is
     /// saved through its own Save, and [`FromApp::Saved`] says so once
     /// nothing is left -- or that the saving was called off, when work
@@ -295,7 +292,9 @@ pub(super) enum ToApp {
 
 /// What the application says back to the host.
 pub(super) enum FromApp {
-    /// The documents a quit would lose work in ([`ToApp::Unsaved`]).
+    /// **The documents a quit would lose work in**, said whenever that
+    /// changes ([`clausters_apps::quitting`]), so the host knows it at once
+    /// when the dock is closed or a page is left.
     Unsaved(Vec<clausters_apps::quitting::Unsaved>),
     /// A quit's Save all ended ([`ToApp::SaveAll`]): `true` with nothing
     /// left to lose, `false` called off.
@@ -443,6 +442,8 @@ struct App {
     /// **A quit's Save all under way**: the windows it saves, until nothing
     /// is left to lose in them.
     saving_all: Option<Vec<i32>>,
+    /// What a quit would lose, as last said ([`FromApp::Unsaved`]).
+    unsaved: Vec<clausters_apps::quitting::Unsaved>,
     /// **Whether each window's transport rolled** when last looked at, so
     /// its play tool is drawn again when that changes -- a pass that ended
     /// on its own included.
@@ -582,6 +583,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         out,
         saving_all: None,
         rolled: HashMap::new(),
+        unsaved: Vec::new(),
     };
     loop {
         let mut asked = false;
@@ -589,6 +591,9 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
             match rx.try_recv() {
                 Ok(ask) => {
                     state.handle(ask);
+                    // said right behind the turn's answer, so a close that
+                    // follows an edit finds it
+                    state.unsaved();
                     asked = true;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -597,6 +602,7 @@ fn run(make: MakeEngine, rx: Receiver<ToApp>, out: Said) {
         }
         state.landed();
         state.saved_all();
+        state.unsaved();
         state.transports();
         if !asked {
             std::thread::park_timeout(if state.app.busy() { IDLE } else { REST });
@@ -758,11 +764,6 @@ impl App {
                     seq,
                 },
             ),
-            ToApp::Unsaved => {
-                self.saving_all = None;
-                let work = self.editing.unsaved_work();
-                self.out.send(self.editing.said(), FromApp::Unsaved(work));
-            }
             ToApp::SaveAll => self.save_all(),
             ToApp::Close { def_id } => {
                 if let Some(member) = self.windows.get(&def_id).map(|w| w.member) {
@@ -867,6 +868,17 @@ impl App {
             }
         }
         self.saving_all = Some(windows);
+    }
+
+    /// **What a quit would lose, said when it changed**: asked after every
+    /// turn, which is when it can change. Cheap: each document compares
+    /// versions.
+    fn unsaved(&mut self) {
+        let work = self.editing.unsaved_work();
+        if work != self.unsaved {
+            self.unsaved.clone_from(&work);
+            self.out.send(self.editing.said(), FromApp::Unsaved(work));
+        }
     }
 
     /// **Whether a quit's Save all ended**, asked after every turn while one

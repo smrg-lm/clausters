@@ -248,14 +248,6 @@ impl Ids {
 #[must_use]
 pub fn stack(ids: &Ids, says: &str) -> Value {
     let form = dialog(Some(ids.dialog), says, |name| ids.button(name));
-    holding(ids, form)
-}
-
-/// **A form held as the close form is** ([`stack`]): `form` on page 1 of a
-/// stack that takes no room -- the close form's, or a quit's question
-/// ([`crate::quitting::stack`]) numbered with the same ids.
-#[must_use]
-pub fn holding(ids: &Ids, form: Value) -> Value {
     json!({
         "type": "layout",
         "id": ids.stack,
