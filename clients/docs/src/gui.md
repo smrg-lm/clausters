@@ -735,8 +735,10 @@ element: rows of cells under `columns`, and a {{alt `row(..., depth=, open=)` ||
 row of a tree. It reports `("select", ...)`, `("activate", i)`, `("open", i,
 1|0)` and `("sort", column, direction)` — and ordering the rows is yours: the
 host moves the mark and asks. `files(path)` is a file chooser the host lists
-itself, from the disk in a window and from the page's storage in a tab (where `/` is its root), and
-`{{api file_dialog}}` puts one in a dialog with a field and two buttons.
+itself, from the disk in a window and from the page's storage in a tab (where `/` is its root).
+`{{api file_dialog}}` is the whole file dialog (to open, to save or to choose
+a folder, over the kinds of file you name), which the host draws and answers:
+what reaches you is {{alt `("chosen", kind, *paths)` || `"chosen" kind ...paths`}} or {{alt `("cancel",)` || `"cancel"`}}.
 
 {{alt `examples/panels/chrome.py` || `examples/panels/chrome.html`}} holds one of each in a single window.
 

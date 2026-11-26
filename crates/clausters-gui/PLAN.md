@@ -1571,7 +1571,18 @@ without any application, client or wire changing.
   format's kinds and whose options form comes after (the roll's "Write as
   notation" is already that form).
 
-- ⬜ **G47 — One element: `file_dialog`, drawn by the host's presenter.** The
+- ✅ **G47 — One element: `file_dialog`, drawn by the host's presenter.**
+  *(Done 2026-11-26. Decided with the code: the presenter seam is a trait
+  (`host::file_dialog::Presenter`) whose drawn side stands in the tree as a
+  stack of its own widgets, numbered from a block of the host's ids, and
+  keeps the element's id so a set, a query and a free reach it; the host
+  answers its widgets in `deliver` and sends the report as the element's
+  event (`HostEffect::Emit`); a def that opens one gives the keys to its
+  first stop after the window settles (the chooser for an open, the name
+  for a save). The storage's tools moved into the host with it; the
+  applications' copy goes with their forms in `G49`. The bug the code
+  editor's e2e found was the chooser's filter, not its path: fixed apart.)*
+  The
   element, its props and its two reports; the presenter seam with the drawn
   presenter, which holds what `forms::Dialogs` holds for a file form today
   (the folder, the selection, the typed name, the kind, the storage's tools
@@ -1586,8 +1597,10 @@ without any application, client or wire changing.
   there), cut from the left so the current one always shows; `Ctrl+L`, or a
   press past the last segment, turns it into a field holding the path, where
   Enter goes and Escape gives the buttons back; back, forward and up beside
-  it. A save over a file that exists asks before it replaces it. In a page
-  the root is the page's storage.
+  it. A save over a file that exists asks before it replaces it, and opens
+  with the name's stem selected, so what is typed replaces it (the `text`
+  field gains a selection it can be given). In a page the root is the
+  page's storage.
 - ⬜ **G49 — Every application asks through it.** The audio, multitrack,
   notes and score editors and the code editor declare their file requests and
   read one report; `clausters_apps::forms` keeps the forms of values (a new

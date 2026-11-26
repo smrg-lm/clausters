@@ -294,9 +294,10 @@ for name in ("play", "pause", "stop", "record"):
 # -- not by the pointer and not by Tab. Here `Info > About` defines one into
 # the holder, and its button frees it -- as do Escape and the close mark at the
 # end of its title strip, which ask the dialog to go as `("cancel",)`.
-# `File > Open` defines a `file_dialog` there instead: a chooser the host
-# lists, a field that follows its selection, and the two buttons; a double
-# click on a file picks it.
+# `File > Open` defines a `file_dialog` there instead, up from the start: the
+# host draws it and answers everything in it (the folders, the name, the
+# file type, the tools), and the window hears one report, what was chosen or
+# a cancel.
 
 
 # %%
@@ -315,27 +316,18 @@ def about():
 
 
 def open_file():
-    """Define the file dialog into the holder; a pick, or OK, closes it."""
+    """Define the file dialog into the holder, up; what it reports closes it."""
     box = gui.define(win["dialogs"].id,
-                     layout(file_dialog(".", title="Open a file", name="chooser"), h=0.0))
-    chosen = {"path": None}
+                     layout(file_dialog(".", title="Open a file", open=True, name="chooser"),
+                            h=0.0))
 
-    def done(path):
-        print(f"open: {path}")
+    def on_chooser(tag, *payload):
+        if tag == "chosen":
+            kind, *paths = payload
+            print(f"open: {paths} ({kind})")
         box["chooser"].free()
 
-    def on_files(tag, *payload):
-        if not payload:
-            chosen["path"] = tag            # the value: the file selected
-        elif tag == "pick":
-            done(payload[0])
-
-    box["files"].on_event(on_files)
-    box["file"].on_event(lambda value: chosen.update(path=value))
-    box["ok"].on_click(lambda: done(chosen["path"]))
-    box["cancel"].on_click(lambda: box["chooser"].free())
-    box["chooser"].on_event(
-        lambda tag, *payload: box["chooser"].free() if tag == "cancel" else None)
+    box["chooser"].on_event(on_chooser)
 
 
 def on_bar(tag, *payload):

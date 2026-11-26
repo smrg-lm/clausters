@@ -587,6 +587,7 @@ impl WebApp {
             match effect {
                 HostEffect::Reply(msg) => self.queue_to(self.asker, msg),
                 HostEffect::Send { to, msg } => self.queue_to(to, msg),
+                HostEffect::Emit { def_id, message } => self.queue_to(self.origin(def_id), message),
                 HostEffect::OpenWindow(id) => {
                     // the window's events go to the client that defined it
                     self.origins.insert(id, self.asker);

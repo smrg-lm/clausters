@@ -152,6 +152,8 @@ fn perform(
         match effect {
             HostEffect::Reply(msg) => reply(from, msg),
             HostEffect::Send { to, msg } => send_reply(socket, tcp, ws, to, msg),
+            // a headless window's events go to whoever is talking to it
+            HostEffect::Emit { message, .. } => reply(from, message),
             HostEffect::OpenWindow(id) => {
                 diag::info!("gui_def {id}: window requested (headless front: not opening a window)")
             }

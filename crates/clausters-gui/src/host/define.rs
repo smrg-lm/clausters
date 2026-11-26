@@ -92,6 +92,8 @@ impl Host {
         // node's *type* is kept as written: a query answers in the vocabulary
         // the script wrote.
         widget::flatten_tree_axes(&mut node);
+        // A file dialog stands in the tree as its presenter draws it.
+        self.present_file_dialogs(&mut node);
         // Keep the verbatim JSON: the source of truth for persistence and reload.
         self.def_json.insert(id, bytes.clone());
         // A def states what this widget now is, reconciled or not, so an edit
@@ -215,6 +217,7 @@ impl Host {
                 Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
             }
         }
+        self.focus_opened_file_dialogs(effects);
     }
 
     /// **Builds widget `id`'s tree from `node`**, the way both a window and a
@@ -354,6 +357,7 @@ impl Host {
         self.prune_monitor();
         self.prune_voices();
         self.panels_forget_gone();
+        self.file_dialogs_forget_gone();
     }
 
     /// Registers a [`Binding`] for every widget that declares an inline `bind`

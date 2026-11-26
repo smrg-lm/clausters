@@ -128,6 +128,7 @@ pub mod status;
 pub mod world;
 // What opens over a window's tree, and the tree of entries a menu is.
 pub mod chrome;
+pub mod file_dialog;
 pub mod files;
 pub mod header;
 pub mod menu;
@@ -873,6 +874,10 @@ pub enum HostEffect {
     /// packet that asked for it (an application's call answered when its
     /// render lands), or a word to whoever opened a window the host owns.
     Send { to: ClientId, msg: OscMessage },
+    /// **An event the host made itself for window `def_id`**, sent as a
+    /// gesture's is: to whoever the window's events go to. A file dialog's
+    /// report is one.
+    Emit { def_id: i32, message: OscMessage },
     /// Open the window for the GuiDef rooted at this id -- **or bring the one it
     /// already has up to this tree**, which is what most of these are: a
     /// redefine is how a structural edit reaches a window, and destroying the
@@ -1308,6 +1313,9 @@ pub struct Host {
     /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
     /// which is the side that can make a window.
     pending_effects: Vec<HostEffect>,
+    /// **The file dialogs this host presents**, by their element's id
+    /// ([`file_dialog`]).
+    file_dialogs: std::collections::BTreeMap<i32, file_dialog::Presented>,
     /// **A script's steps on each window an application holds**, released
     /// one at a time as the application answers ([`scripted`]).
     // never read in a build with no applications, which queues nothing
@@ -1418,6 +1426,7 @@ impl Host {
             entrances: HashMap::new(),
             focus_visible: false,
             pending_effects: Vec::new(),
+            file_dialogs: Default::default(),
             scripted: Default::default(),
             activity: Default::default(),
         }

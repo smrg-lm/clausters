@@ -99,7 +99,7 @@ impl Host {
     /// anything else is a client's.
     pub fn deliver(&mut self, def_id: i32, message: &OscMessage) -> bool {
         diag::debug!("deliver: window={def_id} args={:?}", message.args);
-        if self.question_event(def_id, message) {
+        if self.question_event(def_id, message) || self.file_dialog_event(message) {
             return true;
         }
         #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]

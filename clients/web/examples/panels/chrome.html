@@ -327,9 +327,10 @@ the host reports when a hand changes them -- the lines this prints.</div>
         // Tab. Here `Info > About` defines one into the holder, and its button
         // frees it -- as do Escape and the close mark at the end of its title
         // strip, which ask the dialog to go as `"cancel"`. `File > Open`
-        // defines a `fileDialog` there instead: a chooser the host lists, a
-        // field that follows its selection, and the two buttons; a double
-        // click on a file picks it.
+        // defines a `fileDialog` there instead, up from the start: the host
+        // draws it and answers everything in it (the folders, the name, the
+        // file type, the tools), and the window hears one report, what was
+        // chosen or a cancel.
         const about = () => {
           const box = host.define(win.widget("dialogs").id, gui.layout(
             { h: 0.0 },
@@ -348,25 +349,14 @@ the host reports when a hand changes them -- the lines this prints.</div>
         const openFile = () => {
           const box = host.define(win.widget("dialogs").id, gui.layout(
             { h: 0.0 },
-            gui.fileDialog(".", { title: "Open a file", name: "chooser" })));
-          let chosen = null;
+            gui.fileDialog(".", { title: "Open a file", open: true, name: "chooser" })));
 
-          const done = (path) => {
-            log(`open: ${path}`);
+          box.widget("chooser").onEvent((tag, ...payload) => {
+            if (tag === "chosen") {
+              const [kind, ...paths] = payload;
+              log(`open: ${paths} (${kind})`);
+            }
             box.widget("chooser").free();
-          };
-
-          const onFiles = (tag, ...payload) => {
-            if (payload.length === 0) chosen = tag;   // the value: the file selected
-            else if (tag === "pick") done(payload[0]);
-          };
-
-          box.widget("files").onEvent(onFiles);
-          box.widget("file").onEvent((value) => { chosen = value; });
-          box.widget("ok").onClick(() => done(chosen));
-          box.widget("cancel").onClick(() => box.widget("chooser").free());
-          box.widget("chooser").onEvent((tag) => {
-            if (tag === "cancel") box.widget("chooser").free();
           });
         };
 

@@ -761,8 +761,6 @@ def test_the_container_chrome_rides_as_flags_and_a_dialog_is_a_modal_layout():
 
 
 def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
-    import json
-
     from clausters.gui import guidef
 
     t = guidef.table(rows=[["kick.wav", "12"], guidef.row("loops", depth=0, open=False),
@@ -773,14 +771,13 @@ def test_rows_of_data_and_a_file_chooser_ride_as_plain_props():
     assert (t["multiple"], t["sort"]) == (1, [1, "down"])
     assert guidef.files("/takes", filter=["wav"]) == {
         "type": "files", "path": "/takes", "filter": ["wav"]}
-    # The dialog binds its field to the chooser by the node, resolved at open.
-    host = GuiHost("127.0.0.1", 57991)
-    host._osc = _Recorder()
-    host.open(guidef.window(guidef.file_dialog("/takes", title="Load")))
-    box = json.loads(host._osc.sent[0][2])["children"][0]
-    chooser, field = box["children"][0], box["children"][1]
-    assert (box["modal"], box["title"]) == (1, "Load")
-    assert chooser["bind"] == ["widget", field["id"], "value"]
+    # The file dialog is one element, which the host draws and answers.
+    assert guidef.file_dialog("/takes/a.wav", mode="save", kinds=[("WAV", ("wav",))],
+                              title="Save as", open=True) == {
+        "type": "file_dialog", "path": "/takes/a.wav", "mode": "save",
+        "kinds": [["WAV", ["wav"]]], "title": "Save as", "open": 1}
+    assert guidef.file_dialog(all_files=False, multiple=True) == {
+        "type": "file_dialog", "path": ".", "mode": "open", "all_files": 0, "multiple": 1}
 
 
 def test_a_number_is_never_narrowed_on_the_way_to_the_host():

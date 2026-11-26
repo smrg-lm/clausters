@@ -1918,26 +1918,34 @@ def files(path: str = ".", *, filter=None, multiple: bool = False, text_size: fl
     return node("files", id=id, **extra, **props)
 
 
-def file_dialog(path: str = ".", *, title: str = "Open", action: str = "Open",
-                filter=None, multiple: bool = False, w: float = 520.0, h: float = 360.0,
-                id: int | None = None, **props) -> View:
-    """A **dialog** to choose a file in: a `files` chooser over a field that
-    follows its selection, and the two buttons.
+def file_dialog(path: str = ".", *, mode: str = "open", kinds=None,
+                all_files: bool | None = None, multiple: bool = False,
+                title: str | None = None, accept: str | None = None,
+                open: bool = False, id: int | None = None, **props) -> View:
+    """A **file dialog**: the host's, which an application asks a file of and
+    hears one report from.
 
-    The parts are named so a handle reaches them: ``files``, ``file`` (the
-    field, bound to the chooser's value), ``cancel`` and ``ok``. What happens
-    on a pick is yours -- listen for ``("pick", path)`` on ``files`` and for a
-    click on ``ok``, read ``file``, and free the dialog to close it -- on a
-    ``("cancel",)`` from the dialog too, which Escape and its close mark send."""
-    chooser = files(path, filter=filter, multiple=multiple, weight=1.0, name="files")
-    field = text(label="file", name="file")
-    chooser["bind"] = ["widget", field, "value"]
-    return dialog(chooser, field,
-                  panel(separator(weight=1.0, line=False),
-                        button(label="Cancel", w=90.0, name="cancel"),
-                        button(label=action, w=90.0, name="ok"),
-                        flow="row", hug=True),
-                  title=title, flow="col", w=w, h=h, id=id, **props)
+    ``mode`` is what it chooses: ``"open"`` (a file, or several with
+    ``multiple=True``), ``"save"`` (the file to write) or ``"folder"``.
+    ``kinds`` are the kinds of file it reads or writes, each a name and its
+    extensions (``[("WAV", ["wav", "wave"]), ("FLAC", ["flac"])]``), the
+    first chosen; an open also offers them all at once and every file, and a
+    save offers every file only with ``all_files=True``, for what writes any
+    name. ``path`` is where it starts: a folder, or for a save the file it
+    writes, whose name is then typed.
+
+    It is up while ``open`` is true, set on it to open and close it. The host
+    draws it (the chooser with the path and the storage's tools, the name,
+    the file type, the buttons) and answers all of it, so what reaches the
+    owner is ``("chosen", kind, *paths)``, a save's path named with the kind's
+    extension, or ``("cancel",)``; either takes it down."""
+    extra = _drop_none(
+        path=path, mode=mode,
+        kinds=None if kinds is None else [[name, list(exts)] for name, exts in kinds],
+        all_files=None if all_files is None else (1 if all_files else 0),
+        multiple=1 if multiple else None, title=title, accept=accept,
+        open=1 if open else None)
+    return node("file_dialog", id=id, **extra, **props)
 
 
 #: The presentations of a `choice`.

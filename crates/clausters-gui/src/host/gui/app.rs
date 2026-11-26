@@ -524,6 +524,7 @@ impl App {
             match effect {
                 HostEffect::Reply(msg) => self.send(from, msg),
                 HostEffect::Send { to, msg } => self.send(to, msg),
+                HostEffect::Emit { def_id, message } => self.emit(def_id, message),
                 HostEffect::OpenWindow(id) => {
                     if self.resumed {
                         self.open_window(lp, id, from);

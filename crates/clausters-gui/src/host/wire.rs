@@ -576,9 +576,16 @@ impl Host {
         let Some(id) = int_arg(args, 0) else {
             return;
         };
-        let props = key_value_pairs(&args[1..]);
+        let mut props = key_value_pairs(&args[1..]);
         if props.is_empty() {
             return diag::warn!("{from}: {GUI_SET} {id}: no key/value pairs");
+        }
+        // a file dialog's open and request are its presenter's
+        if self.file_dialogs.contains_key(&id) {
+            props = self.set_file_dialog(id, props, effects);
+            if props.is_empty() {
+                return diag::info!("{from}: {GUI_SET} {id}: the file dialog");
+            }
         }
         let keys: Vec<String> = props.iter().map(|(k, _)| k.clone()).collect();
         if !self.set_props(id, props, effects) {
