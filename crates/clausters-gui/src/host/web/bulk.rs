@@ -360,8 +360,5 @@ fn slot_target(widget: &Widget) -> Option<&Widget> {
 /// Hands a loaded resource to the widget that wanted it, reaching a body when
 /// the id named its container.
 fn take_bulk(widget: &mut Widget, data: Loaded) -> bool {
-    if widget.kind.take_bulk(data) {
-        return true;
-    }
-    false
+    widget.kind.take_bulk(data)
 }
