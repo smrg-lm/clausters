@@ -1858,9 +1858,10 @@ impl App {
     }
 
     /// A question to the session; one asked while it is not running has no
-    /// answer, and the element is told so at once.
+    /// answer, and the element is told so at once -- unless the platform
+    /// answers questions apart from the session.
     fn query(&mut self, op: &str, mut request: Value, query: Query) {
-        if !self.py.alive {
+        if !self.py.alive && !self.platform.answers_without_session() {
             let empty = json!({"type": op, "data": null, "text": ""});
             return self.answered(query, &empty);
         }

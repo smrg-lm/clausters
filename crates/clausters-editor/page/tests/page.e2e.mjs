@@ -347,6 +347,8 @@ try {
   // startup code.
   check(await waitFor("starts at the first key or click", 0, 30000), "the session waits for the page's first gesture");
   let at = await run("1 + 1");
+  // the audio waits a while, as a reader's first click does
+  await sleep(3000);
   await page.click(300, 300);
   check(await waitFor("JavaScript worker ready", 0, 30000), "the session starts in a worker at the first click");
   check(await waitFor("-> 2", at, 15000), "the evaluation asked for meanwhile runs");
@@ -464,6 +466,19 @@ try {
     if (!text.includes("Session.live")) await key("Backspace");
   }
   check(text.includes("Session.live"), "completions come from the package's types");
+
+  // What the startup code defines, a document knows: `server.` completes.
+  await key("a", "ctrl");
+  await host(`host.typeText(${FILE}, 'server.sta')`);
+  text = "";
+  for (let i = 0; i < 30 && !text.includes("server.status"); i++) {
+    await key("space", "ctrl");
+    await sleep(500);
+    await key("Enter");
+    text = await host(`return String((await host.query(${CODE})).props.text)`);
+    if (!text.includes("server.status")) await key("Backspace");
+  }
+  check(text.includes("server.status"), "the startup code's names complete in a document");
 
   // A paste is one edit of the browser's text: Ctrl+V in the editor puts
   // the clipboard in whole, its line breaks kept, and none of its

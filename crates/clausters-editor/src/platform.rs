@@ -130,6 +130,12 @@ pub trait Platform {
     /// One question about code (`complete`, `signatures`, `inspect`,
     /// `help`), answered as a session's message with the request's id.
     fn ask(&self, request: &Value) -> Result<(), String>;
+    /// **Whether a question about code is answered with no session
+    /// running**: a page's are answered by a worker of their own, a
+    /// desktop's by the session's process.
+    fn answers_without_session(&self) -> bool {
+        false
+    }
     /// Asks the running code to stop.
     fn interrupt(&self) -> Result<(), String>;
     /// Ends the session and starts another.

@@ -44,12 +44,19 @@ that changes:
 ```javascript
 import { Session } from "clausters";
 const session = (await Session.live()).activate();
+const server = session.server;
 const host = await session.gui();
 ```
 
-`await new Server().attach()` reaches the same engine, and makes it the default
+**There is no server to boot**: the page's engine is up before the session
+starts, and `Session.live()` attaches to it, so `server` is already that
+engine's server (`server.status()`, `server.panic()`, a `Synth` on it). `await
+new Server().attach()` reaches the same engine, and makes it the default
 session's server if none is; `boot()` refuses, since the engine is the page's
 and already running, as a Python `boot()` refuses where a server answers.
+`host` is the page's GUI host, which the editor itself is drawn by: a window
+the session opens there is a pane of the editor's window. Names the startup
+code defines are known to completions and hover help in every document.
 
 After it, `play`, a `Synth` or a pattern sound with nothing else named, and so
 does a routine:
@@ -103,8 +110,9 @@ gives the page is used, so deleting there is how its room is freed.
 ## Completions and help
 
 Completions, signatures, hover help and `Ctrl+D` come from the TypeScript
-language service, in a worker of its own, which reads the document and the
-type declarations of the clausters package. A helper file of the page's
+language service, in a worker of its own, which reads the document, the
+startup code and the type declarations of the clausters package; they answer
+from the page's start, before the session has. A helper file of the page's
 storage it does not read.
 
 ## Serving the page

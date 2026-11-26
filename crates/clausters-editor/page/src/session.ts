@@ -176,7 +176,9 @@ async function begin(): Promise<void> {
  *  file, line}`. The startup code goes at once; the rest waits for it. */
 export async function evaluate(request: { id: number; code: string; file: string; line: number }): Promise<void> {
   const startup = request.file === "<startup code>";
-  if (!startup) await starting;
+  // what it defines, every document's code knows
+  if (startup) code.postMessage({ op: "startup", source: request.code });
+  else await starting;
   if (worker === null) throw new Error("The JavaScript session is not running");
   worker.postMessage({ ...request, op: "eval" });
 }

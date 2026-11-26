@@ -30,6 +30,7 @@ const NAME: &str = "config.json";
 #[cfg(target_arch = "wasm32")]
 const STARTUP: &str = "import { Session } from \"clausters\";\n\
     const session = (await Session.live()).activate();\n\
+    const server = session.server;\n\
     const host = await session.gui();\n";
 #[cfg(not(target_arch = "wasm32"))]
 const STARTUP: &str = "";

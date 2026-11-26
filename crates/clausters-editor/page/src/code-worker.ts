@@ -10,6 +10,7 @@
 //   page -> worker  {id, op: "inspect" | "signatures" | "complete", source, line, column, file}
 //                   {id, op: "help", expr}
 //                   {op: "packages", packages: {name: baseUrl}}
+//                   {op: "startup", source}
 //   worker -> page  {id, type: op, text, data}
 
 import ts from "typescript";
@@ -23,6 +24,9 @@ const SESSION_GLOBALS = "/__editor__/globals.d.ts";
 const SESSION_TEXT = `/** The value of the last evaluation that showed one. */
 declare var _: any;
 `;
+/** **The session's startup code**, as a module whose top-level names are
+ *  the session's globals ({@link startup}). */
+const STARTUP = "/__editor__/startup.mjs";
 /** Where an unsaved document is, for the language service. */
 const UNSAVED = "/__editor__/untitled.mjs";
 
@@ -221,6 +225,30 @@ function documentation(parts: ts.SymbolDisplayPart[] | undefined, tags: ts.JSDoc
   return [text, lines.join("\n")].filter(Boolean).join("\n\n");
 }
 
+/** **What a value is, when the name holding it says nothing**: the
+ *  documentation of its type's declaration -- a `const session` is described
+ *  by `Session`'s comment, as a hover over the class would be. */
+function typeDocumentation(file: string, start: number): string {
+  const program = service.getProgram();
+  const source = program?.getSourceFile(file);
+  if (!program || !source) return "";
+  const checker = program.getTypeChecker();
+  let node: ts.Node | undefined = source;
+  // the innermost node at the name: the identifier itself
+  for (let found = true; found; ) {
+    found = false;
+    node.forEachChild((child) => {
+      if (!found && child.getStart(source) <= start && start < child.getEnd()) {
+        node = child;
+        found = true;
+      }
+    });
+  }
+  const symbol = checker.getTypeAtLocation(node).getSymbol();
+  if (!symbol) return "";
+  return documentation(symbol.getDocumentationComment(checker), symbol.getJsDocTags(checker));
+}
+
 function describe(req: At) {
   try {
     const { file, text, pos } = open(req);
@@ -231,7 +259,7 @@ function describe(req: At) {
     const container = definition?.containerName;
     const qualname = container && !/^["']/.test(container) ? `${container}.${name}` : name;
     const signature = ts.displayPartsToString(info.displayParts).replace(/^\([^)]*\)\s*/, "");
-    const doc = documentation(info.documentation, info.tags);
+    const doc = documentation(info.documentation, info.tags) || typeDocumentation(file, info.textSpan.start);
     const help = signature + (doc ? `\n\n${doc}` : "");
     described.set(qualname, help);
     described.set(name, help);
@@ -308,6 +336,38 @@ function help(expr: string): string {
   return `No documentation found for '${expr}'.`;
 }
 
+/**
+ * **What the startup code defines is known to every document**, as it is to
+ * the session: its top-level names (`session`, `host`) become globals of the
+ * types the startup code gives them, read from it as a module that exports
+ * them.
+ */
+function startup(source: string): void {
+  const tree = ts.createSourceFile(STARTUP, source, ts.ScriptTarget.ESNext, false, ts.ScriptKind.JS);
+  const names = new Set<string>();
+  const bind = (name: ts.BindingName) => {
+    if (ts.isIdentifier(name)) names.add(name.text);
+    else for (const e of name.elements) if (!ts.isOmittedExpression(e)) bind(e.name);
+  };
+  for (const stmt of tree.statements) {
+    if (ts.isVariableStatement(stmt)) for (const d of stmt.declarationList.declarations) bind(d.name);
+    else if ((ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) && stmt.name) names.add(stmt.name.text);
+    else if (ts.isImportDeclaration(stmt) && stmt.importClause) {
+      const clause = stmt.importClause;
+      if (clause.name) names.add(clause.name.text);
+      const bound = clause.namedBindings;
+      if (bound && ts.isNamespaceImport(bound)) names.add(bound.name.text);
+      else if (bound) for (const e of bound.elements) names.add(e.name.text);
+    }
+  }
+  const exported = names.size ? `\nexport { ${[...names].join(", ")} };\n` : "\nexport {};\n";
+  const module = files.get(STARTUP);
+  files.set(STARTUP, { text: source + exported, version: (module?.version ?? 0) + 1 });
+  const globals = [...names].map((n) => `declare var ${n}: typeof import("${STARTUP}")["${n}"];\n`).join("");
+  const entry = files.get(SESSION_GLOBALS)!;
+  files.set(SESSION_GLOBALS, { text: SESSION_TEXT + globals, version: entry.version + 1 });
+}
+
 self.addEventListener("message", (event: MessageEvent) => {
   const req = event.data;
   const answer = (text: string, data?: unknown) => self.postMessage({ id: req.id, type: req.op, text, data });
@@ -319,6 +379,8 @@ self.addEventListener("message", (event: MessageEvent) => {
         service.getCompletionsAtPosition(open({ source: "", line: 1, column: 0 }).file, 0, {});
       } catch {}
       return;
+    case "startup":
+      return startup(String(req.source ?? ""));
     case "inspect":
       return answer("", describe(req));
     case "signatures":

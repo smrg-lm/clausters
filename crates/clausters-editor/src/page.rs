@@ -272,6 +272,13 @@ impl Platform for Page {
         Ok(())
     }
 
+    /// The TypeScript language service is a worker of the page's, up before
+    /// the session (which waits for the page's first gesture) and through
+    /// its restarts.
+    fn answers_without_session(&self) -> bool {
+        true
+    }
+
     fn interrupt(&self) -> Result<(), String> {
         self.session(self.js.interrupt());
         Ok(())

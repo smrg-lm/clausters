@@ -299,6 +299,21 @@ export interface UnsavedDocument {
     title: string;
 }
 
+/**
+ * **A connection to a GUI host**: the windows, widgets and applications a
+ * script opens, binds and reads, on a host this page runs (its canvas) or a
+ * `clausters-gui --ws` process.
+ *
+ * `transport` picks the carrier: the page's own host by default, or `"ws"`
+ * to a native host at `url`. `share` takes one slice of the widget-id space
+ * instead of all of it, for a host with more than one client naming widgets
+ * on it -- the same arrangement, and the same arithmetic, as a `Server`'s.
+ * `connection` supplies a carrier built by hand instead, and then
+ * `transport` is not consulted -- the same seam `Server` has.
+ *
+ * A session's host is `session.gui()`, which opens it once and wires it to
+ * the session's server.
+ */
 export class GuiHost {
     // Where this handle's host is, and its address -- the constructor's
     // `transport`/`url`, kept privately so the public surface stays the verbs.
