@@ -114,6 +114,14 @@ code that keeps it lives.
   of it in its own window focuses it. A client that asked for the file alone is answered that window
   and is its holder from then on when no client held it; one held by
   another client is refused, with the window named.
+  **A window that closed holds no file.** Whatever its kind (an audio
+  editor, a multitrack, a roll, a page of notation), a member whose window
+  is gone lets its files go by one rule, so a file saved from a tab and
+  opened again after the tab closed is not refused as open elsewhere. The
+  application frees the window itself, which no `/gui_closed` answers, so
+  the rule runs where the member is forgotten, never on the host's word.
+  *(Found 2026-11-26: a roll converted to notation, saved as MEI and
+  closed went on holding the file, and the file could not be opened.)*
   A scripted history step with a malformed or unknown member is refused
   before selecting an order or preparing I/O. It cannot use the previously
   selected order or truncate an oversized id to address another member.

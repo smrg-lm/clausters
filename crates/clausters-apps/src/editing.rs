@@ -1101,12 +1101,39 @@ impl Editing {
         self.shared.said()
     }
 
+    /// **Member `member`'s window is gone**, whatever kind of member it is:
+    /// it is in no window now, so it holds no file a later open would find
+    /// ([`Self::window_holding_file`]), and what it drew is let go. One rule
+    /// for every kind, since a window the application frees itself is never
+    /// answered by a `/gui_closed` that would tell the member.
+    pub fn window_gone(
+        &mut self,
+        member: MemberId,
+        ids: &mut clausters_core::ids::IdSpaces,
+    ) -> Vec<Freed> {
+        use crate::turn::Converse;
+        match self.member_mut(member) {
+            Some(Member::Multitrack(editor)) => Converse::closed(editor.as_mut()),
+            Some(Member::Audio(editor)) => Converse::closed(editor.as_mut()),
+            Some(Member::Notes(editor)) => Converse::closed(editor.as_mut()),
+            Some(Member::Points(editor)) => Converse::closed(editor.as_mut()),
+            #[cfg(feature = "notation")]
+            Some(Member::Score(editor)) => Converse::closed(editor.as_mut()),
+            // a client's own structure: no window of the context's
+            Some(Member::External { .. }) | None => {}
+        }
+        let freed = self.forget_audio(member);
+        self.forget_multitrack(member, ids);
+        self.forget_roll(member, ids);
+        freed
+    }
+
     /// **An audio member whose window is gone leaves the context**: every
     /// file it holds is closed, its history with it, so the takes and the
     /// renders only it named are let go; its session goes, and what is left
     /// of it is an editor with no file. Its seat stays, so no other member's
     /// number moves. Answers what that freed, the renders to delete among it.
-    pub fn forget_audio(&mut self, member: MemberId) -> Vec<Freed> {
+    pub(crate) fn forget_audio(&mut self, member: MemberId) -> Vec<Freed> {
         self.sessions.remove(&member);
         let files = match self.member_mut(member) {
             Some(Member::Audio(editor)) => editor.let_go_files(),

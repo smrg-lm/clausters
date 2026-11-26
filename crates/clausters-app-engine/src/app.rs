@@ -163,11 +163,9 @@ impl App {
             live: &mut self.live,
         };
         here.call_off(member);
-        for freed in editing.forget_audio(member) {
+        for freed in editing.window_gone(member, &mut self.ids) {
             here.delete(&freed.files);
         }
-        editing.forget_multitrack(member, &mut self.ids);
-        editing.forget_roll(member, &mut self.ids);
     }
 
     /// **Whether something under way may land unasked**: a render on its

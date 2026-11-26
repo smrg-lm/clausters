@@ -974,7 +974,7 @@ fn a_session_open_in_one_window_brings_it_forward_instead_of_opening_twice() {
         "{reread:?}"
     );
     // a window that went holds nothing
-    f.editing.forget_multitrack(f.member, &mut f.ids);
+    f.editing.window_gone(f.member, &mut f.ids);
     assert_eq!(f.editing.window_holding_file(path.to_str().unwrap()), None);
 }
 
@@ -1343,6 +1343,77 @@ fn a_rolls_file_close_closes_it_and_lets_its_transport_go() {
     assert!(!f.editing.rolls.contains_key(&roll));
 }
 
+/// **A roll that saved a file and closed holds it no more**: its window
+/// is freed by the application, which no `/gui_closed` answers, so the
+/// close itself lets the file go and a later open of it is not refused as
+/// open in another window.
+#[test]
+fn a_roll_saved_and_closed_lets_its_file_be_opened_again() {
+    let mut f = Fixture::new();
+    let open = |f: &mut Fixture, key: &str| -> MemberId {
+        let opened: Value = serde_json::from_str(&f.editing.open_notes(
+            key,
+            Default::default(),
+            r#"{"rate": 100.0}"#,
+        ))
+        .unwrap();
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        for call in [
+            json!({"verb": "window", "widget": 80}),
+            json!({"verb": "sync", "window": 79}),
+        ] {
+            call_json(
+                &mut f.editing,
+                &json!({"verb": "member", "member": member, "call": call}).to_string(),
+            );
+        }
+        member
+    };
+    let roll = open(&mut f, "first");
+    let start = |f: &mut Fixture, member: MemberId, action: Value| {
+        f.editing
+            .start(member, &action, None, &mut f.disk, &mut f.ids)
+    };
+    start(&mut f, roll, json!({"verb": "open"}));
+    let path = f.folder.join("roll.json");
+    let saved = start(&mut f, roll, json!({"verb": "save", "path": path}));
+    let render = saved.render.expect("the save waits on storage");
+    let [Step::Store { path: to, contents }] = &render.steps[..] else {
+        panic!("a storage step")
+    };
+    std::fs::write(to, contents).unwrap();
+    f.editing
+        .land(roll, render.run, Ok(()), None, &mut f.disk, &mut f.ids);
+    let held = path.to_str().unwrap();
+    assert_eq!(f.editing.window_holding_file(held), Some(79));
+    // File > Close, as the host goes: the effect, then the member forgotten
+    let at = f.editing.version;
+    let closed = start(
+        &mut f,
+        roll,
+        json!({"verb": "event", "addr": "/gui_event", "args": [79, 1, at, "menu", "close"]}),
+    );
+    assert!(
+        closed
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "closeWindow"),
+        "{closed:?}"
+    );
+    f.editing.window_gone(roll, &mut f.ids);
+    assert_eq!(f.editing.window_holding_file(held), None);
+    let other = open(&mut f, "second");
+    start(&mut f, other, json!({"verb": "open"}));
+    let reopened = start(&mut f, other, json!({"verb": "open_file", "path": path}));
+    assert!(
+        !reopened
+            .effects
+            .iter()
+            .any(|effect| effect["kind"] == "front" || effect["kind"] == "say"),
+        "{reopened:?}"
+    );
+}
+
 /// **Two views of one sequence are one history and two conversations**: an
 /// edit in one is corrected in the other and undone from either, a gesture
 /// the other made against the picture before it is refused as overtaken
@@ -1461,7 +1532,7 @@ fn a_roll_closed_and_reopened_keeps_its_object_and_its_entries() {
     };
     let roll = open(&mut f, &sequence);
     f.marker(first, 7);
-    f.editing.forget_roll(roll, &mut f.ids);
+    f.editing.window_gone(roll, &mut f.ids);
     let again = open(&mut f, &sequence);
     assert_eq!(again, roll);
     let Some(Member::Notes(editor)) = f.editing.member(again) else {
@@ -1995,7 +2066,7 @@ fn a_score_s_store_landing_after_its_window_or_its_server_went() {
     let mark = score_menu(&mut f, member, "close", 1);
     assert!(!closes(&mark), "work unsaved: the form asks: {mark:?}");
     assert!(closes(&score_said(&mut f, member, "close:discard", 2)));
-    f.editing.forget_roll(member, &mut f.ids);
+    f.editing.window_gone(member, &mut f.ids);
     f.editing.close_order_of(member);
     let landed = land(&mut f, member, run, Ok(()));
     assert!(matches!(landed.end, Some(Ok(_))), "{landed:?}");

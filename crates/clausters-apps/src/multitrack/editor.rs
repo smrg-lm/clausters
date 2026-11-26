@@ -140,7 +140,7 @@ impl Converse for MultitrackEditor {
     }
 
     fn closed(&mut self) {
-        self.window = None;
+        self.set_window(None);
     }
 
     fn owns(&self, widget: i64, tag: &str) -> bool {

@@ -1135,15 +1135,13 @@ impl Editing {
     }
 
     /// **A multitrack member is gone**: its nodes and its tracks' readers.
-    pub fn forget_multitrack(&mut self, member: MemberId, ids: &mut IdSpaces) {
+    pub(crate) fn forget_multitrack(&mut self, member: MemberId, ids: &mut IdSpaces) {
         if let Some(mut tracks) = self.tracks.remove(&member) {
             self.close_tracks(member, &mut tracks, ids);
         }
-        // in no window now, it holds no file a later open would find, and
         // nothing walks its session again: a window that opens it next is a
         // new member, over what this one left
         if let Some(Member::Multitrack(editor)) = self.member_mut(member) {
-            editor.set_window(None);
             let id = editor.session_binding();
             self.services
                 .histories

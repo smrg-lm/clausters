@@ -499,12 +499,6 @@ impl Editing {
             }
             _ => Value::Null,
         };
-        // **in no window now, it holds no file a later open would find**: a
-        // window that opens it next is a new member, over what this one left
-        #[cfg(feature = "notation")]
-        if let Some(Member::Score(editor)) = self.member_mut(member) {
-            crate::turn::Converse::closed(editor.as_mut());
-        }
         effect(kind, json!({"left": left}))
     }
 
@@ -732,7 +726,7 @@ impl Editing {
     /// **A roll is gone**: its lane, its graphs and its transport. Its
     /// member stays for the history and is taken again by the next roll over
     /// its sequence ([`Editing::open_notes`]).
-    pub fn forget_roll(&mut self, member: MemberId, ids: &mut IdSpaces) {
+    pub(crate) fn forget_roll(&mut self, member: MemberId, ids: &mut IdSpaces) {
         if let Some(mut roll) = self.rolls.remove(&member) {
             let _ = roll.playback.close(ids);
         }
