@@ -27,7 +27,7 @@ use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, OnAxis, Take, TimeSpace,
 };
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
-use crate::host::widget::{EditorProps, Ruler, RulerY};
+use crate::host::widget::{EditorProps, Ruler, RulerDir, RulerY};
 use crate::viewport::View;
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::rect::Rect;
@@ -349,24 +349,39 @@ impl Curve {
         let r = self.regions(ctx.rect, ctx.indent, ctx.metrics);
         if let Some(strip) = r.time {
             let nav = self.view(ctx.time);
-            let ticks = ruler::time_ticks(
-                nav.start,
-                nav.len,
-                strip.w as f64,
+            let scale = crate::host::frame::time_scale(
+                &self.editor,
                 self.rate(ctx.world.sample_rate),
-                crate::host::frame::time_unit(&self.editor),
-                ctx.metrics,
+                false,
             );
-            ruler::draw_ticks_h(d, strip, &ticks, self.editor.dir);
+            ruler::Ruler::new(scale, self.editor.dir).draw(
+                d,
+                strip,
+                strip,
+                (nav.start, nav.len),
+                ruler::Shared::default(),
+            );
         }
         if let Some(strip_x) = r.value {
             let span = self
                 .axes(ctx.rect, ctx.indent, ctx.metrics, ctx.time)
                 .span();
-            let ticks =
-                ruler::value_ticks(self.min as f64, self.max as f64, span.h as f64, ctx.metrics);
-            ruler::draw_ticks_v(d, r.field.x, strip_x, span, &ticks);
+            let strip = Rect::new(strip_x, span.y, (r.field.x - strip_x).max(0.0), span.h);
+            self.value_ruler()
+                .draw(d, strip, span, (0.0, 1.0), ruler::Shared::default());
         }
+    }
+
+    /// **The value ruler over `[min, max]`**, the plain value axis a plot
+    /// draws, standing left of the field.
+    fn value_ruler(&self) -> ruler::Ruler<'static> {
+        ruler::Ruler::new(
+            ruler::Scale::Value {
+                lo: self.min as f64,
+                hi: self.max as f64,
+            },
+            RulerDir::Right,
+        )
     }
 
     /// **The container's gutter, ruled in this curve's units**: what a pane
@@ -379,9 +394,9 @@ impl Curve {
             return;
         }
         let span = ax.span();
-        let ticks =
-            ruler::value_ticks(self.min as f64, self.max as f64, span.h as f64, ctx.metrics);
-        ruler::draw_ticks_v(d, ax.body.x, ctx.rect.x, span, &ticks);
+        let strip = Rect::new(ctx.rect.x, span.y, ax.body.x - ctx.rect.x, span.h);
+        self.value_ruler()
+            .draw(d, strip, span, (0.0, 1.0), ruler::Shared::default());
     }
 
     /// The break-points as they now stand -- what a container holding this as
@@ -868,7 +883,7 @@ impl OnAxis for Curve {
             return None;
         }
         let field = self.regions(rect, 0.0, m).field;
-        let want = ruler::value_strip_w(self.min as f64, self.max as f64, field.h, m);
+        let want = self.value_ruler().thickness((0.0, 1.0), field.h as f64, m);
         (want > m.ruler_w).then_some(want)
     }
 }

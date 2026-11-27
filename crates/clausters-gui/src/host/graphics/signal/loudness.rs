@@ -233,31 +233,26 @@ fn visible(domain: (f32, f32), y: (f64, f64)) -> (f32, f32) {
 ///
 /// It is labelled in **LU relative to the target**, which is the unit R 128
 /// states a scale in: 0 is the target itself, so a curve is read as "three over"
-/// rather than as an absolute figure the reader has to subtract.
+/// rather than as an absolute figure the reader has to subtract. It is the one
+/// ruler every axis is drawn with, in the layer's ink and on the plate.
 fn lu_ruler(d: &mut Draw, body: Rect, domain: (f32, f32), target: f64, y: (f64, f64)) {
     let (lo, hi) = visible(domain, y);
     let target = target as f32;
-    let m = d.m;
-    let ticks = ruler::value_ticks((lo - target) as f64, (hi - target) as f64, body.h as f64, m);
-    let scale = m.caption_scale;
-    let line = clausters_gui_draw::font::height(scale);
-    for tick in &ticks {
-        let Some(label) = tick.label.as_ref() else {
-            continue;
-        };
-        let y = body.y + body.h * (1.0 - tick.frac as f32);
-        {
-            let (mesh, m, theme) = d.parts();
-            mesh.rect(
-                Rect::new(body.x + body.w - m.pad, y, m.pad, m.divider_w),
-                theme.trace_guide,
-            );
-        }
-        let w = clausters_gui_draw::font::width(label, scale);
-        let x = body.x + body.w - m.pad * 2.0 - w;
-        let ty = (y - line * 0.5).clamp(body.y, body.y + body.h - line);
-        crate::host::graphics::plate_text(d, label, x, ty, w, scale, d.theme.trace_loudness);
-    }
+    let ruler = ruler::Ruler::new(
+        ruler::Scale::Value {
+            lo: (lo - target) as f64,
+            hi: (hi - target) as f64,
+        },
+        crate::host::widget::RulerDir::Right,
+    )
+    .with_look(ruler::Look {
+        ink: Some(d.theme.trace_loudness),
+        plated: true,
+    });
+    // a strip inside the body's right edge, its marks along that edge
+    let w = ruler.thickness((0.0, 1.0), body.h as f64, d.m).min(body.w);
+    let strip = Rect::new(body.x + body.w - w, body.y, w, body.h);
+    ruler.draw(d, strip, body, (0.0, 1.0), ruler::Shared::default());
 }
 
 /// **The numbers**, over the span the read-out names: the selection where there

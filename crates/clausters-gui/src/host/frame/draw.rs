@@ -47,24 +47,17 @@ pub(crate) fn draw_time_ruler(
     if !editor.strip() {
         return;
     }
-    let metrics = d.m;
     let strip = ruler_strip(rect, body);
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
     }
-    let ticks = if empty {
-        ruler::origin_ticks(rate, time_unit(editor), metrics)
-    } else {
-        ruler::time_ticks(
-            nav.start,
-            nav.len,
-            strip.w as f64,
-            rate,
-            time_unit(editor),
-            metrics,
-        )
-    };
-    ruler::draw_ticks_h(d, strip, &ticks, editor.dir);
+    ruler::Ruler::new(time_scale(editor, rate, empty), editor.dir).draw(
+        d,
+        strip,
+        strip,
+        (nav.start, nav.len),
+        ruler::Shared::default(),
+    );
     draw_markers(
         d,
         strip,
@@ -141,9 +134,10 @@ fn draw_markers(
         // tall as the marks it points among.
         let h = (strip.h * 0.6).min(width);
         let half = width * 0.5;
-        let (apex, base) = match dir {
-            RulerDir::Up => (strip.y, strip.y + h),
-            RulerDir::Down => (strip.y + strip.h, strip.y + strip.h - h),
+        let (apex, base) = if dir == RulerDir::Up {
+            (strip.y, strip.y + h)
+        } else {
+            (strip.y + strip.h, strip.y + strip.h - h)
         };
         mesh.tri([x, apex], [x - half, base], [x + half, base], color);
         if !marker.label.is_empty() && !named.is_some_and(|n| std::ptr::eq(n, marker)) {
@@ -151,11 +145,10 @@ fn draw_markers(
             let lx = (x + half + metrics.divider_w).min((strip.x + strip.w - w).max(strip.x));
             // The tick labels' own row, so the marker's name and the numbers
             // read as one line instead of two.
-            let ly = match dir {
-                RulerDir::Up => strip.y + crate::host::ruler::TICK_LABEL_TOP,
-                RulerDir::Down => {
-                    strip.y + strip.h - crate::host::ruler::TICK_LABEL_TOP - font::height(scale)
-                }
+            let ly = if dir == RulerDir::Up {
+                strip.y + crate::host::ruler::TICK_LABEL_TOP
+            } else {
+                strip.y + strip.h - crate::host::ruler::TICK_LABEL_TOP - font::height(scale)
             };
             font::text(mesh, &marker.label, lx, ly, scale, color);
         }
@@ -251,23 +244,41 @@ pub(crate) fn ruler_strip_body(rect: Rect, indent: f32) -> Rect {
 /// own is ruled as a plain value axis instead, over the slice its window shows.
 /// The default domain keeps the amplitude ladders untouched, which is every
 /// view that has ever been drawn.
-fn amp_or_value_ticks(
+pub(crate) fn amp_or_value_scale(
     domain: (f32, f32),
     unit: RulerY,
     bit_depth: u32,
-    row_h: f64,
     (y0, y_len): (f64, f64),
-    m: &Metrics,
-) -> Vec<ruler::Tick> {
+) -> (ruler::Scale<'static>, (f64, f64)) {
     if domain == crate::waveform::DEFAULT_DOMAIN {
-        return ruler::amp_ticks(unit, row_h, bit_depth, y0, y_len, m);
+        return (ruler::Scale::Amplitude { unit, bit_depth }, (y0, y_len));
     }
     // The visible slice of the domain. `value_to_display` is affine, so a
     // value's fraction of this slice is exactly its fraction of the window --
     // the ticks land on the samples they name with no margin arithmetic here.
     let lo = crate::waveform::display_to_value(y0, domain.0, domain.1);
     let hi = crate::waveform::display_to_value(y0 + y_len, domain.0, domain.1);
-    ruler::value_ticks(lo as f64, hi as f64, row_h, m)
+    (
+        ruler::Scale::Value {
+            lo: lo as f64,
+            hi: hi as f64,
+        },
+        (0.0, 1.0),
+    )
+}
+
+/// The ticks [`amp_or_value_scale`] draws beside a row `row_h` tall.
+#[cfg(test)]
+fn amp_or_value_ticks(
+    domain: (f32, f32),
+    unit: RulerY,
+    bit_depth: u32,
+    row_h: f64,
+    window: (f64, f64),
+    m: &Metrics,
+) -> Vec<ruler::Tick> {
+    let (scale, window) = amp_or_value_scale(domain, unit, bit_depth, window);
+    ruler::Ruler::new(scale, RulerDir::Right).ticks(window, row_h, m)
 }
 
 /// **The series a channel of one take is inked in.** Stacked, every channel
@@ -635,33 +646,29 @@ pub(super) fn draw_timeline_meshes(
                     );
                     continue;
                 }
-                let ticks = match axis {
-                    Domain::Frequency => ruler::hz_ticks(
-                        nyquist,
-                        look.look.freq_scale,
-                        f_lo,
-                        row.h as f64,
-                        look.y.0,
-                        look.y.1,
-                        m,
+                let (scale, window) = match axis {
+                    Domain::Frequency => (
+                        ruler::Scale::Hertz {
+                            nyquist,
+                            scale: look.look.freq_scale,
+                            f_lo,
+                        },
+                        look.y,
                     ),
-                    Domain::Amplitude => amp_or_value_ticks(
+                    Domain::Amplitude => amp_or_value_scale(
                         look.domain,
                         item.editor.ruler_y,
                         item.editor.bit_depth,
-                        row.h as f64,
                         look.y,
-                        m,
                     ),
-                    _ => Vec::new(),
+                    _ => continue,
                 };
                 // a row of a stack rules the edge it shares once
-                ruler::draw_ticks_v_shared(
+                ruler::Ruler::new(scale, RulerDir::Right).draw(
                     &mut Draw::new(mesh, m, th),
-                    body.x,
-                    item.rect.x,
+                    Rect::new(item.rect.x, row.y, (body.x - item.rect.x).max(0.0), row.h),
                     row,
-                    &ticks,
+                    window,
                     ruler::Shared::of(ch, rows),
                 );
             }

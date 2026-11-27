@@ -152,7 +152,14 @@ impl Ruler {
 /// tick points at, which is how a ruler comes to be read one row off.
 ///
 /// Only the document knows where it put the strip, so this is a prop
-/// (`dir: "down" | "up"`) rather than something the host infers.
+/// (`dir: "down" | "up" | "left" | "right"`) rather than something the host
+/// infers.
+///
+/// **The four are one rule on two axes.** A value ruler is the time ruler
+/// turned on its side: one beside a view's left edge has the view on its
+/// right and draws its marks along its right edge (`Right`, what a view's
+/// own value strip always is), and one standing on the view's right is its
+/// mirror (`Left`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RulerDir {
     /// The content is **below** the strip: marks along its bottom edge.
@@ -160,6 +167,13 @@ pub enum RulerDir {
     /// The content is **above** the strip: marks along its top edge. What an
     /// inline strip reserved under a view's body always is.
     Up,
+    /// The content is **left** of the strip: marks along its left edge, the
+    /// labels beyond them. A value ruler standing on a view's right.
+    Left,
+    /// The content is **right** of the strip: marks along its right edge,
+    /// the labels before them. What a view's own value strip, reserved left
+    /// of its body, always is.
+    Right,
 }
 
 impl RulerDir {
@@ -175,7 +189,18 @@ impl RulerDir {
         match s {
             "down" => Some(RulerDir::Down),
             "up" => Some(RulerDir::Up),
+            "left" => Some(RulerDir::Left),
+            "right" => Some(RulerDir::Right),
             _ => None,
+        }
+    }
+
+    /// The axis a strip facing this way rules: a strip over or under its
+    /// content rules the horizontal, one beside it the vertical.
+    pub(crate) fn along(self) -> crate::host::ruler::Along {
+        match self {
+            RulerDir::Down | RulerDir::Up => crate::host::ruler::Along::Horizontal,
+            RulerDir::Left | RulerDir::Right => crate::host::ruler::Along::Vertical,
         }
     }
 }

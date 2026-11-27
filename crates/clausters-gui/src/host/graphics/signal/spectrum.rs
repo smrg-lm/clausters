@@ -251,7 +251,7 @@ pub(crate) fn regions(
     // (which floors the span at a decibel): a strip has to hold the labels the
     // ruler will actually put in it.
     let (db_floor, db_ceil) = db_window;
-    let want_w = ruler::value_strip_w(db_floor as f64, db_ceil as f64, lane_h, m);
+    let want_w = db_ruler(db_floor, db_ceil).thickness((0.0, 1.0), lane_h as f64, m);
     let strip_y_x = (ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -267,6 +267,18 @@ pub(crate) fn regions(
         strip_y_x,
         strip_x,
     }
+}
+
+/// **A spectrum's decibel ruler** over `[db_floor, db_ceil]`, left of its
+/// field: a plain value axis, since the spectrum's decibels are linear on it.
+fn db_ruler(db_floor: f32, db_ceil: f32) -> ruler::Ruler<'static> {
+    ruler::Ruler::new(
+        ruler::Scale::Value {
+            lo: db_floor as f64,
+            hi: db_ceil as f64,
+        },
+        RulerDir::Right,
+    )
 }
 
 /// Draws a spectrum: a framed field with one smoothed magnitude polyline per
@@ -311,25 +323,26 @@ pub(crate) fn draw_spectrum(
     let (nyquist, sr) = (nyquist as f32, nyquist as f32 * 2.0);
     let (x0, x_len) = p.x_view;
     if let Some(strip) = x_strip {
-        let ticks = ruler::hz_ticks_h(
-            nyquist as f64,
-            p.freq_scale,
-            f_lo_norm,
-            strip.w as f64,
-            x0,
-            x_len,
-            m,
+        let hertz = ruler::Scale::Hertz {
+            nyquist: nyquist as f64,
+            scale: p.freq_scale,
+            f_lo: f_lo_norm,
+        };
+        ruler::Ruler::new(hertz, RulerDir::Up).draw(
+            &mut Draw::new(mesh, m, theme),
+            strip,
+            strip,
+            (x0, x_len),
+            ruler::Shared::default(),
         );
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
     }
     if let Some(strip_x) = strip_x {
-        let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64, m);
-        ruler::draw_ticks_v(
+        db_ruler(p.db_floor, p.db_ceil).draw(
             &mut Draw::new(mesh, m, theme),
-            body.x,
-            strip_x,
+            Rect::new(strip_x, body.y, body.x - strip_x, body.h),
             body,
-            &ticks,
+            (0.0, 1.0),
+            ruler::Shared::default(),
         );
     }
     let columns = body.w.max(1.0) as usize;
@@ -439,7 +452,7 @@ mod tests {
             zoomed.body.x > plain.body.x,
             "the strip stayed at the role for labels that do not fit"
         );
-        let ticks = crate::host::ruler::value_ticks(-0.0625, 0.0625, zoomed.body.h as f64, &m);
+        let ticks = db_ruler(-0.0625, 0.0625).ticks((0.0, 1.0), zoomed.body.h as f64, &m);
         assert_eq!(
             zoomed.body.x - bare.body.x,
             crate::host::ruler::ticks_width(&ticks, &m),

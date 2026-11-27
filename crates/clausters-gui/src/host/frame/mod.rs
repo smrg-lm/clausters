@@ -328,6 +328,16 @@ pub(crate) fn time_unit(editor: &EditorProps) -> TimeUnit<'_> {
     }
 }
 
+/// **The time scale an editor's axis is ruled in**: its unit at `rate`, and
+/// `empty` for an axis bounded by a take of no samples.
+pub(crate) fn time_scale(editor: &EditorProps, rate: f64, empty: bool) -> ruler::Scale<'_> {
+    ruler::Scale::Time {
+        rate,
+        unit: time_unit(editor),
+        empty,
+    }
+}
+
 /// The stacked-channel index under window y `cy` (clamped into range).
 pub(crate) fn channel_at(body: Rect, channels: usize, cy: f64) -> usize {
     let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);

@@ -53,14 +53,16 @@ impl SignalElement {
         if body.h <= 0.0 {
             return None;
         }
-        let (y_start, y_len) = self.editor.y_view();
-        Some(crate::host::ruler::amp_strip_w(
-            self.editor.ruler_y,
-            body.h,
-            self.editor.bit_depth,
-            y_start,
-            y_len,
-            m,
-        ))
+        let scale = crate::host::ruler::Scale::Amplitude {
+            unit: self.editor.ruler_y,
+            bit_depth: self.editor.bit_depth,
+        };
+        Some(
+            crate::host::ruler::Ruler::new(scale, crate::host::widget::RulerDir::Right).thickness(
+                self.editor.y_view(),
+                body.h as f64,
+                m,
+            ),
+        )
     }
 }

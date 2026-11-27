@@ -11,13 +11,11 @@
 
 use clausters_core::measure;
 
-use crate::spectrogram::FreqScale;
-
 use super::controls::body_rect;
 use super::signal::{layers, trace};
 use crate::host::frame::channel_rect;
 use crate::host::live::TapWindow;
-use crate::host::ruler;
+use crate::host::ruler::{self, Shared};
 use crate::host::widget::RulerDir;
 use crate::viewport::{Axis, Unit};
 use clausters_gui_draw::draw::Draw;
@@ -482,6 +480,17 @@ pub fn draw_column_from(
     }
 }
 
+/// **A meter's decibel ladder**, facing its columns from `dir`: the meter's
+/// scale on the one ruler every axis is drawn with.
+pub(crate) fn ladder(floor_db: f32, dir: RulerDir) -> ruler::Ruler<'static> {
+    ruler::Ruler::new(
+        ruler::Scale::Decibels {
+            floor: f64::from(floor_db),
+        },
+        dir,
+    )
+}
+
 /// Draws a vertical level meter: a framed well with the column rising from the
 /// bottom to `fraction` of the body height, plus the raw value as text. The
 /// column is the shared one ([`draw_column`]), so this widget, a track's meter
@@ -594,33 +603,31 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     // value axis steps and therefore how wide the labels the y strip holds are.
     let takes_x = p.ruler && body.h > m.ruler_h * 2.0;
     let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / rows as f32;
-    let want_w = ruler::value_strip_w(p.min as f64, p.max as f64, row_h, m);
-    let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
-        let x = body.x;
-        body.x += want_w;
-        body.w -= want_w;
-        x
-    });
-    let x_strip = takes_x.then(|| {
-        body.h -= m.ruler_h;
-        Rect::new(body.x, body.y + body.h, body.w, m.ruler_h)
-    });
+    let values = ruler::Ruler::new(
+        ruler::Scale::Value {
+            lo: p.min as f64,
+            hi: p.max as f64,
+        },
+        RulerDir::Right,
+    );
+    // The time across the window, a plain value axis in milliseconds.
+    let times = ruler::Ruler::new(
+        ruler::Scale::Value {
+            lo: 0.0,
+            hi: p.window_ms.max(0.1) as f64,
+        },
+        RulerDir::Up,
+    );
+    let want_w = values.thickness((0.0, 1.0), row_h as f64, m);
+    let y_strip = (p.ruler_y && body.w > want_w * 2.0).then(|| values.reserve(&mut body, want_w));
+    let x_strip = takes_x.then(|| times.reserve(&mut body, m.ruler_h));
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
     d.mesh.rect(body, d.theme.field);
     d.mesh.border(body, m.divider_w, d.theme.accent);
     if let Some(strip) = x_strip {
-        let ticks = ruler::hz_ticks_h(
-            p.window_ms.max(0.1) as f64,
-            FreqScale::Linear,
-            1e-4,
-            strip.w as f64,
-            0.0,
-            1.0,
-            m,
-        );
-        ruler::draw_ticks_h(d, strip, &ticks, RulerDir::Up);
+        times.draw(d, strip, strip, (0.0, 1.0), Shared::default());
     }
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
@@ -633,10 +640,10 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
             );
         }
         if (ch == 0 || !p.overlay)
-            && let Some(strip_x) = strip_x
+            && let Some(strip) = y_strip
         {
-            let ticks = ruler::value_ticks(p.min as f64, p.max as f64, row.h as f64, m);
-            ruler::draw_ticks_v(d, body.x, strip_x, row, &ticks);
+            let strip = Rect::new(strip.x, row.y, strip.w, row.h);
+            values.draw(d, strip, row, (0.0, 1.0), Shared::default());
         }
         if ch == 0 && frames > 0 {
             // The trigger level, in the channel the alignment is searched in.
@@ -871,7 +878,7 @@ mod tests {
         let mut bare = Mesh::new();
         draw_at(&mut bare, None);
         let mut ruled = Mesh::new();
-        draw_at(&mut ruled, Some(crate::host::ruler::Side::Left));
+        draw_at(&mut ruled, Some(RulerDir::Right));
         assert!(
             ruled.vertex_count() > bare.vertex_count(),
             "the ladder is drawn: {} vs {}",
@@ -1592,8 +1599,9 @@ pub(crate) struct MeterView<'a> {
     /// is what a strip of meters in a header is.
     pub readout: bool,
     pub label: Option<&'a str>,
-    /// Which side the numbers fall on, or `None` for a meter with no ladder.
-    pub ruler: Option<crate::host::ruler::Side>,
+    /// Which way the ladder faces the columns, or `None` for a meter with no
+    /// ladder: `Right` stands it on their left.
+    pub ruler: Option<RulerDir>,
     /// What the columns are coloured by.
     pub zones: &'a Zones,
 }
@@ -1669,12 +1677,13 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             body.y + body.h
         })
     };
-    let strip = view.ruler.and_then(|side| {
+    let strip = view.ruler.and_then(|dir| {
         let floor = match view.axis {
-            MeterAxis::Decibels { floor_db } => floor_db as f64,
+            MeterAxis::Decibels { floor_db } => floor_db,
             MeterAxis::Linear { .. } => return None,
         };
-        let want = crate::host::ruler::db_strip_w(floor, body.h, m);
+        let ladder = ladder(floor, dir);
+        let want = ladder.thickness((0.0, 1.0), body.h as f64, m);
         // **The columns keep their minimum and the ladder takes the rest.** The
         // rule was half the body, which was right while a meter stretched to
         // its cell and wrong the moment it asked for a width of its own: a
@@ -1686,16 +1695,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
         if body.w - want < least {
             return None;
         }
-        let at = match side {
-            crate::host::ruler::Side::Left => {
-                let x = body.x;
-                body.x += want;
-                x
-            }
-            crate::host::ruler::Side::Right => body.x + body.w - want,
-        };
-        body.w -= want;
-        Some((Rect::new(at, body.y, want, body.h), side))
+        Some((ladder.reserve(&mut body, want), ladder))
     });
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
@@ -1732,13 +1732,8 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             );
         }
     }
-    if let (Some((strip, side)), MeterAxis::Decibels { floor_db }) = (strip, view.axis) {
-        let ticks = crate::host::ruler::db_ticks(floor_db as f64, body.h as f64, d.m);
-        let edge = match side {
-            crate::host::ruler::Side::Left => body.x,
-            crate::host::ruler::Side::Right => body.x + body.w,
-        };
-        crate::host::ruler::draw_ticks_v_side(d, edge, strip, body, &ticks, side);
+    if let Some((strip, ladder)) = strip {
+        ladder.draw(d, strip, body, (0.0, 1.0), Shared::default());
     }
     // The reading is the loudest channel's: one number for the widget, which is
     // the question a glance asks of a stereo pair. On a centred axis that is

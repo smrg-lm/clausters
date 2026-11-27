@@ -200,7 +200,7 @@ fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
         PlotView::Signal => value_range(p),
         PlotView::Spectrum => (p.db_floor, p.db_ceil.max(p.db_floor + 1.0)),
     };
-    let want_w = ruler::value_strip_w(lo as f64, hi as f64, row_h, m);
+    let want_w = value_ruler(lo, hi).thickness((0.0, 1.0), row_h as f64, m);
     let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -217,6 +217,22 @@ fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
         x_strip,
         channels,
     }
+}
+
+/// **The plot's value ruler** over `[lo, hi]`, left of its field.
+fn value_ruler(lo: f32, hi: f32) -> ruler::Ruler<'static> {
+    ruler::Ruler::new(
+        ruler::Scale::Value {
+            lo: lo as f64,
+            hi: hi as f64,
+        },
+        RulerDir::Right,
+    )
+}
+
+/// One row's strip of the value ruler: the band from `strip_x` to the body.
+fn value_strip(strip_x: f32, body: Rect, row: Rect) -> Rect {
+    Rect::new(strip_x, row.y, (body.x - strip_x).max(0.0), row.h)
 }
 
 /// Frame count of the interleaved samples (a trailing partial frame ignored).
@@ -284,22 +300,30 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
     let n = frames_of(p);
     let (lo, hi) = value_range(p);
     if let Some(strip) = g.x_strip {
-        let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p), m);
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
+        let time = ruler::Scale::Time {
+            rate: p.sample_rate,
+            unit: x_unit(p),
+            empty: false,
+        };
+        ruler::Ruler::new(time, RulerDir::Up).draw(
+            &mut Draw::new(mesh, m, theme),
+            strip,
+            strip,
+            (0.0, n as f64),
+            ruler::Shared::default(),
+        );
     }
     for ch in 0..channels {
         let row = channel_rect(g.body, g.channels, if p.overlay { 0 } else { ch });
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
-                let ticks = ruler::value_ticks(lo as f64, hi as f64, row.h as f64, m);
                 // a row of a stack rules the edge it shares once
                 let stacked = if p.overlay { 1 } else { g.channels };
-                ruler::draw_ticks_v_shared(
+                value_ruler(lo, hi).draw(
                     &mut Draw::new(mesh, m, theme),
-                    g.body.x,
-                    strip_x,
+                    value_strip(strip_x, g.body, row),
                     row,
-                    &ticks,
+                    (0.0, 1.0),
                     ruler::Shared::of(if p.overlay { 0 } else { ch }, stacked),
                 );
             }
@@ -359,16 +383,18 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = ruler::axis_floor(p.freq_scale, f64::from(p.tuning), nyquist);
     if let Some(strip) = g.x_strip {
-        let ticks = ruler::hz_ticks_h(
+        let hertz = ruler::Scale::Hertz {
             nyquist,
-            p.freq_scale,
+            scale: p.freq_scale,
             f_lo,
-            strip.w as f64,
-            p.x_view.0,
-            p.x_view.1,
-            m,
+        };
+        ruler::Ruler::new(hertz, RulerDir::Up).draw(
+            &mut Draw::new(mesh, m, theme),
+            strip,
+            strip,
+            p.x_view,
+            ruler::Shared::default(),
         );
-        ruler::draw_ticks_h(&mut Draw::new(mesh, m, theme), strip, &ticks, RulerDir::Up);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
     for (ch, curve) in spec.curves.iter().enumerate() {
@@ -383,19 +409,17 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = g.strip_x
         {
-            let ticks = ruler::value_ticks(dlo as f64, dhi as f64, row.h as f64, m);
             // a row of a stack rules the edge it shares once
             let (index, stacked) = if p.overlay {
                 (0, 1)
             } else {
                 (ch % g.channels, g.channels)
             };
-            ruler::draw_ticks_v_shared(
+            value_ruler(dlo, dhi).draw(
                 &mut Draw::new(mesh, m, theme),
-                g.body.x,
-                strip_x,
+                value_strip(strip_x, g.body, row),
                 row,
-                &ticks,
+                (0.0, 1.0),
                 ruler::Shared::of(index, stacked),
             );
         }
@@ -583,7 +607,7 @@ mod tests {
             "the strip stayed at the role for labels that do not fit"
         );
         let (lo, hi) = value_range(&params(&small, 1));
-        let ticks = ruler::value_ticks(lo as f64, hi as f64, g_small.body.h as f64, &m);
+        let ticks = value_ruler(lo, hi).ticks((0.0, 1.0), g_small.body.h as f64, &m);
         assert_eq!(
             g_small.body.x - g_bare.body.x,
             ruler::ticks_width(&ticks, &m),

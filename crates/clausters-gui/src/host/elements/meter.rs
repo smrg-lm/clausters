@@ -39,7 +39,7 @@ use clausters_core::measure::{Ballistics, CLIP_CEILING, ClipLatch, floor_db_for_
 use serde_json::{Map, Value};
 
 use crate::host::graphics::meters::{self, ChannelRead, MeterAxis, MeterView, Zones};
-use crate::host::ruler::Side;
+use crate::host::widget::RulerDir;
 use crate::host::widget::element::{Claim, Ctx, Element, Input, Live, Needs};
 use crate::host::widget::size::Natural;
 use crate::host::widget::{Rate, parse};
@@ -73,8 +73,9 @@ pub struct Meter {
     /// The first control bus of the over counts (`ClipCount`), one per channel,
     /// or `None` for a meter that watches its own level.
     pub clip: Option<i32>,
-    /// Which side the numbers fall on, `None` for no ladder.
-    pub ruler: Option<Side>,
+    /// Which way the ladder faces the columns, `None` for no ladder: the
+    /// wire's `left` stands it on their left, facing `Right`.
+    pub ruler: Option<RulerDir>,
     /// Whether the meter writes **numbers over its columns**: the level at its
     /// foot, and how far past full scale a lit lamp went. On by default, since
     /// a lamp says that something clipped and the number says by how much,
@@ -213,23 +214,25 @@ fn from_props(props: &Map<String, Value>) -> Meter {
 /// Which side the numbers fall on. A meter drawn in decibels carries them
 /// unless told not to -- a scale nobody can read is a bar -- and one drawn over a
 /// plain range carries none, there being no ladder to draw.
-fn ruler_of(props: &Map<String, Value>, axis: MeterAxis) -> Option<Side> {
-    let default = matches!(axis, MeterAxis::Decibels { .. }).then_some(Side::Left);
+fn ruler_of(props: &Map<String, Value>, axis: MeterAxis) -> Option<RulerDir> {
+    let default = matches!(axis, MeterAxis::Decibels { .. }).then_some(RulerDir::Right);
     match props.get("ruler") {
         None => default,
         Some(v) => side_of(v, default),
     }
 }
 
-fn side_of(v: &Value, default: Option<Side>) -> Option<Side> {
+/// The wire names the side the ladder **stands on**; the drawing is told
+/// which way it **faces**, which is the other one.
+fn side_of(v: &Value, default: Option<RulerDir>) -> Option<RulerDir> {
     match v.as_str() {
-        Some("left") => Some(Side::Left),
-        Some("right") => Some(Side::Right),
+        Some("left") => Some(RulerDir::Right),
+        Some("right") => Some(RulerDir::Left),
         Some("off") | Some("none") => None,
         Some(_) => default,
         None => match parse::truthy(v) {
             Some(false) => None,
-            Some(true) => default.or(Some(Side::Left)),
+            Some(true) => default.or(Some(RulerDir::Right)),
             None => default,
         },
     }
@@ -486,8 +489,8 @@ impl Element for Meter {
         // strip its labels want, read at a height tall enough to carry every
         // label it can write, and only on a decibel axis.
         let ladder = match (self.ruler, self.axis) {
-            (Some(_), MeterAxis::Decibels { floor_db }) => {
-                crate::host::ruler::db_strip_w(f64::from(floor_db), 4096.0, m)
+            (Some(dir), MeterAxis::Decibels { floor_db }) => {
+                meters::ladder(floor_db, dir).thickness((0.0, 1.0), 4096.0, m)
             }
             _ => 0.0,
         };
@@ -690,7 +693,7 @@ mod tests {
         ));
         assert_eq!((m.bus, m.rate, m.channels), (4, Rate::Audio, 2));
         assert_eq!((m.hold, m.decay, m.clip), (0.5, 12.0, Some(30)));
-        assert_eq!(m.ruler, Some(Side::Right));
+        assert_eq!(m.ruler, Some(RulerDir::Left), "stands on the right");
         assert_eq!(m.label.as_deref(), Some("out"));
 
         let m = from_props(&props("{}"));
@@ -922,7 +925,11 @@ mod tests {
         let MeterAxis::Decibels { floor_db } = meter.axis else {
             panic!("a decibel meter");
         };
-        let strip = crate::host::ruler::db_strip_w(f64::from(floor_db), body.h, &m);
+        let strip = meters::ladder(floor_db, crate::host::widget::RulerDir::Right).thickness(
+            (0.0, 1.0),
+            body.h as f64,
+            &m,
+        );
         assert!(
             body.w - strip >= widest,
             "columns of {} hold a reading of {widest}",

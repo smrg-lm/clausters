@@ -530,23 +530,33 @@ const HZ_CEIL: f64 = 159.0;
 /// `height` pixels tall, each as the pitch it sits at and its label when it
 /// has room for one -- the spectrogram's own ruler, over the roll's window.
 pub fn hz_ticks(axis: Pitches, height: f32, m: &Metrics) -> Vec<(f32, Option<String>)> {
+    let top = f64::from(axis.hi) + f64::from(axis.pad());
+    let bottom = top - f64::from(axis.span());
+    let (ruler, window) = hz_ruler(axis);
+    ruler
+        .ticks(window, f64::from(height), m)
+        .into_iter()
+        .map(|tick| ((bottom + tick.frac * (top - bottom)) as f32, tick.label))
+        .collect()
+}
+
+/// **The roll's frequency ruler**, standing in the gutter left of its grid:
+/// the spectrogram's log axis in hertz, and the window of it the roll's
+/// pitches show.
+fn hz_ruler(axis: Pitches) -> (crate::host::ruler::Ruler<'static>, (f64, f64)) {
     let span = HZ_CEIL - HZ_FLOOR;
     let top = f64::from(axis.hi) + f64::from(axis.pad());
     let bottom = top - f64::from(axis.span());
     let nyquist = scale::midi_to_hz(HZ_CEIL);
-    let floor = scale::midi_to_hz(HZ_FLOOR) / nyquist;
-    crate::host::ruler::hz_ticks(
-        nyquist,
-        crate::spectrogram::FreqScale::Log,
-        floor,
-        f64::from(height),
-        (bottom - HZ_FLOOR) / span,
-        (top - bottom) / span,
-        m,
-    )
-    .into_iter()
-    .map(|tick| ((bottom + tick.frac * (top - bottom)) as f32, tick.label))
-    .collect()
+    let ruler = crate::host::ruler::Ruler::new(
+        crate::host::ruler::Scale::Hertz {
+            nyquist,
+            scale: crate::spectrogram::FreqScale::Log,
+            f_lo: scale::midi_to_hz(HZ_FLOOR) / nyquist,
+        },
+        crate::host::widget::RulerDir::Right,
+    );
+    (ruler, ((bottom - HZ_FLOOR) / span, (top - bottom) / span))
 }
 
 /// The grid of a roll in hertz: a line at each round frequency, brighter where
@@ -576,36 +586,19 @@ pub fn draw_hz_grid(d: &mut Draw, grid: Rect, axis: Pitches) {
 /// The ruler of a roll in hertz, in the gutter the keys take otherwise: a tick
 /// at each round frequency and its label beside it.
 pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, axis: Pitches) {
-    let ticks = hz_ticks(axis, gutter.h, d.parts().1);
-    let (mesh, m, theme) = d.parts();
     if gutter.w <= 0.0 || gutter.h <= 0.0 {
         return;
     }
-    mesh.rect(gutter, theme.lane_alt);
-    let text_h = font::height(m.micro_scale);
-    for (pitch, label) in ticks {
-        let y = axis.y(pitch, gutter);
-        if y < gutter.y || y > gutter.y + gutter.h {
-            continue;
-        }
-        let len = if label.is_some() { 6.0 } else { 3.0 };
-        mesh.rect(
-            Rect::new(gutter.x + gutter.w - len, y, len, m.divider_w),
-            theme.ruler_text,
-        );
-        if let Some(label) = label {
-            let top = (y - text_h * 0.5).clamp(gutter.y, gutter.y + gutter.h - text_h);
-            font::text(
-                mesh,
-                &label,
-                gutter.x + 2.0,
-                top,
-                m.micro_scale,
-                theme.ruler_text,
-            );
-        }
-    }
-    mesh.border(gutter, m.divider_w, theme.frame);
+    d.mesh.rect(gutter, d.theme.lane_alt);
+    let (ruler, window) = hz_ruler(axis);
+    ruler.draw(
+        d,
+        gutter,
+        gutter,
+        window,
+        crate::host::ruler::Shared::default(),
+    );
+    d.mesh.border(gutter, d.m.divider_w, d.theme.frame);
 }
 
 /// Draw the OSC markers: a flag at each marker's time, with its label.
