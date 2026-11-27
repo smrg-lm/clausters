@@ -253,6 +253,7 @@ quoted title lands here, on the link to the entry.
 - [What opens over a window comes in by moving its drawing, and only while it comes in (2026-11-21)](decisions/gui.md#what-opens-over-a-window-comes-in-by-moving-its-drawing-and-only-while-it-comes-in-2026-11-21)
 - [Two departures from the reference look, confirmed: a quiet button by default, and a menu on every panel (2026-11-21)](decisions/gui.md#two-departures-from-the-reference-look-confirmed-a-quiet-button-by-default-and-a-menu-on-every-panel-2026-11-21)
 - [A button held is drawn on the toggled fill, not a pixel lower (2026-11-23)](decisions/gui.md#a-button-held-is-drawn-on-the-toggled-fill-not-a-pixel-lower-2026-11-23)
+- [A ruler is a scale drawn on a side, and a value ruler reads its view's rows (2026-11-27)](decisions/gui.md#a-ruler-is-a-scale-drawn-on-a-side-and-a-value-ruler-reads-its-views-rows-2026-11-27)
 
 ## [The document and the applications](decisions/apps.md)
 

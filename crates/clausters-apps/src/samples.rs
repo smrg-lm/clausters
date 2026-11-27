@@ -105,6 +105,11 @@ pub struct Window<'a> {
     pub ruler: Option<i32>,
     /// What the time ruler counts in, the window's choice.
     pub unit: crate::ruler::Unit,
+    /// **The value rulers, on the right of the views** ([`crate::ruler`]),
+    /// when the caller numbered them: the take's (its pane's, which rules
+    /// the body in hand) and the spectrogram lane's. The views beside them
+    /// keep no value strip of their own.
+    pub value_rulers: (Option<i32>, Option<i32>),
 }
 
 /// What a window with no file open says where the take would be.
@@ -235,14 +240,54 @@ pub fn window(w: &Window<'_>) -> Value {
         }
         Value::Object(picture)
     };
+    // **The value rulers, on the views' right**, beside the meter: each the
+    // ruler of the view at its height, the views keeping no strip of their
+    // own. They stand in a column of their own the height of the views', so
+    // the time ruler under the views takes its slot in it too.
+    let take_ruler = w.value_rulers.0.map(|id| crate::ruler::ValueRuler {
+        id,
+        rules: w.pane.unwrap_or(w.widget),
+        side: crate::ruler::Side::Right,
+    });
+    let lane_ruler = w
+        .value_rulers
+        .1
+        .zip(w.lane)
+        .map(|(id, rules)| crate::ruler::ValueRuler {
+            id,
+            rules,
+            side: crate::ruler::Side::Right,
+        });
+    let (mut picture, mut lane) = (picture, lane);
+    if take_ruler.is_some() {
+        rule_take(&mut picture);
+    }
+    if let (Some(_), Some(Value::Object(lane))) = (&lane_ruler, &mut lane) {
+        crate::ruler::ValueRuler::rule(lane);
+    }
     let mut stack: Vec<Value> = [Some(picture), lane].into_iter().flatten().collect();
-    stack.extend(ruler.map(|ruler| ruler.widget()));
+    stack.extend(ruler.as_ref().map(|ruler| ruler.widget()));
     let picture = if stack.len() == 1 {
         stack.remove(0)
     } else {
         json!({"type": "layout", "flow": "col", "margin": 0, "weight": 1, "children": stack})
     };
     let mut children = vec![picture];
+    if let Some(take_ruler) = take_ruler {
+        let mut column = vec![take_ruler.widget()];
+        // the lane's, or a slot for it where the lane has none
+        if w.lane.is_some() {
+            column.push(
+                lane_ruler.map_or_else(|| json!({"type": "layout", "weight": 1}), |r| r.widget()),
+            );
+        }
+        if ruler.is_some() {
+            column.push(json!({"type": "layout", "h": crate::ruler::HEIGHT}));
+        }
+        children.push(
+            json!({"type": "layout", "flow": "col", "margin": 0, "hug": true, "children": column}),
+        );
+    }
     // **The level, beside the take**: the editor's output measured before its
     // declick, one column per channel, read off the control buses the
     // playback's meter writes. The mark that waits is the widget's own
@@ -268,6 +313,21 @@ pub fn window(w: &Window<'_>) -> Value {
         children
     };
     dressed(w, body)
+}
+
+/// **The take's view keeps no value strip of its own**: the signal, or the
+/// pane and every body in it.
+fn rule_take(picture: &mut Value) {
+    if let Some(props) = picture.as_object_mut() {
+        crate::ruler::ValueRuler::rule(props);
+    }
+    if let Some(children) = picture.get_mut("children").and_then(Value::as_array_mut) {
+        for child in children {
+            if let Some(props) = child.as_object_mut() {
+                crate::ruler::ValueRuler::rule(props);
+            }
+        }
+    }
 }
 
 /// The window around `body`: its keys and verbs, its chrome and its dialogs.
@@ -365,7 +425,59 @@ mod tests {
             spectrogram: None,
             ruler: None,
             unit: crate::ruler::Unit::Time,
+            value_rulers: (None, None),
         })
+    }
+
+    /// **The value rulers stand on the views' right**, before the meter: the
+    /// take's rules its pane and the lane's the lane, in a column the height
+    /// of the views with the time ruler's slot under them, and no view keeps
+    /// a value strip of its own.
+    #[test]
+    fn the_value_rulers_stand_on_the_right_of_the_views() {
+        let layers = Stack::checked(&json!(["peak"])).unwrap();
+        let def = window(&Window {
+            channels: 2,
+            layers: &layers,
+            rate: 48_000.0,
+            widget: 9,
+            pane: Some(8),
+            playhead_at: 0.0,
+            layer: "take",
+            title: "take",
+            meter: Some(MeterAt {
+                widget: 7,
+                bus: 0,
+                channels: 2,
+            }),
+            size: (1000, 520),
+            bare: true,
+            dialogs: None,
+            folded: &[],
+            lane: Some(10),
+            empty: false,
+            segments: &json!({"shared": 1}),
+            spectrogram: None,
+            ruler: Some(11),
+            unit: crate::ruler::Unit::Time,
+            value_rulers: (Some(12), Some(13)),
+        });
+        let row = &def["children"][0]["children"];
+        let (views, rulers, meter) = (&row[0], &row[1], &row[2]);
+        assert_eq!(meter["type"], "meter", "the meter stays last");
+        assert_eq!(rulers["hug"], true, "as wide as its rulers");
+        let column = rulers["children"].as_array().unwrap();
+        assert_eq!(column[0]["axes"]["y"]["rules"], 8, "the pane's");
+        assert_eq!(column[1]["axes"]["y"]["rules"], 10, "the lane's");
+        assert_eq!(column[0]["axes"]["y"]["dir"], "left", "facing the views");
+        assert_eq!(
+            column[2]["h"],
+            crate::ruler::HEIGHT,
+            "the time ruler's slot"
+        );
+        let (pane, lane) = (&views["children"][0], &views["children"][1]);
+        assert_eq!(pane["children"][0]["axes"]["y"]["strip"], false);
+        assert_eq!(lane["axes"]["y"]["strip"], false);
     }
 
     /// **One waveform in a column**, numbered with the id it was handed, on a

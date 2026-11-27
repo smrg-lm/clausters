@@ -522,20 +522,9 @@ fn software_against_hardware() {
     }
 }
 
-/// The picture of window 1 of a host holding `json`, with every playhead
-/// reading `clock` and the control buses reading `level`.
-fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
-    use crate::host::world::HeadClocks;
+/// A host holding `json` as window 1.
+fn host_holding(json: &str) -> crate::host::Host {
     use clausters_core::osc::{OscMessage, OscPacket, OscType};
-
-    /// Every control bus at one value: a meter's level, moved by a test.
-    struct Flat(f32);
-    impl crate::host::BusSource for Flat {
-        fn control(&self, _index: usize) -> f32 {
-            self.0
-        }
-    }
-
     let mut host = crate::host::Host::new();
     host.handle_packet(
         OscPacket::Message(OscMessage {
@@ -547,6 +536,27 @@ fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
             9000,
         ))),
     );
+    host
+}
+
+/// The picture of window 1 of a host holding `json`, with every playhead
+/// reading `clock` and the control buses reading `level`.
+fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
+    picture_of(&host_holding(json), clock, level)
+}
+
+/// [`picture_at`] of a host already holding its window.
+fn picture_of(host: &crate::host::Host, clock: f64, level: f32) -> Picture {
+    use crate::host::world::HeadClocks;
+
+    /// Every control bus at one value: a meter's level, moved by a test.
+    struct Flat(f32);
+    impl crate::host::BusSource for Flat {
+        fn control(&self, _index: usize) -> f32 {
+            self.0
+        }
+    }
+
     let bus = Flat(level);
     let inputs = FrameInputs {
         metrics: host.metrics_for(1),
@@ -566,6 +576,76 @@ fn picture_at(json: &str, clock: f64, level: f32) -> Picture {
         &HashMap::new(),
         (800, 600),
     )
+}
+
+/// **A value ruler beside a pane rules it with the body in hand's ticks**,
+/// at the body's heights and in its own rectangle on the pane's right; the
+/// pane's bodies keep no strip of their own, so the body starts at the
+/// pane's left edge and nothing is drawn left of it.
+#[test]
+fn a_value_ruler_beside_a_pane_draws_the_ticks_of_the_body_in_hand() {
+    let json = |rules: i32| {
+        format!(
+            r#"{{"type":"window","flow":"row","margin":0,"children":[
+                {{"type":"pane","id":10,"layer":"points","weight":1,"children":[
+                    {{"type":"curve","id":11,"duration":100,"min":-1,"max":1,
+                      "axes":{{"y":{{"unit":"norm","strip":false}}}},
+                      "points":[0,0.2,1,0,100,0.8,1,0]}}]}},
+                {{"type":"field","id":12,"axes":{{"y":{{"rules":{rules},"dir":"left"}}}}}}]}}"#
+        )
+    };
+    let host = host_holding(&json(10));
+    let placed = host.layout_window(1, 800, 600).expect("laid out");
+    let rect_of = |id: i32| {
+        placed
+            .iter()
+            .find(|p| p.widget.id == Some(id))
+            .map(|p| p.rect)
+            .expect("placed")
+    };
+    let (pane, ruler) = (rect_of(10), rect_of(12));
+    assert!(
+        ruler.x >= pane.x + pane.w,
+        "the ruler stands on the pane's right"
+    );
+    assert!(
+        ruler.w >= host.metrics_for(1).ruler_w,
+        "as wide as its role"
+    );
+    assert_eq!(
+        placed
+            .iter()
+            .find(|p| p.widget.id == Some(11))
+            .unwrap()
+            .indent,
+        0.0
+    );
+    // a pane's curves are drawn over its pictures, in the overlay pass
+    let inside = |picture: &Picture| {
+        picture
+            .base
+            .positions()
+            .chain(picture.over.positions())
+            .filter(|(x, y)| ruler.contains(*x as f64, *y as f64))
+            .count()
+    };
+    let ruled = picture_of(&host, 0.0, 0.0);
+    let unruled = picture_at(&json(99), 0.0, 0.0);
+    assert!(inside(&ruled) > 0, "the ticks are drawn in the ruler");
+    assert_eq!(inside(&unruled), 0, "a ruler of nothing draws nothing");
+    let left_of_body = |picture: &Picture| {
+        picture
+            .base
+            .positions()
+            .chain(picture.over.positions())
+            .filter(|(x, y)| *x < pane.x + 2.0 && pane.contains(*x as f64, *y as f64))
+            .count()
+    };
+    assert_eq!(
+        left_of_body(&ruled),
+        left_of_body(&unruled),
+        "no strip of its own"
+    );
 }
 
 #[test]
@@ -1302,6 +1382,7 @@ fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
         ruler_strip: true,
         dir: crate::host::widget::RulerDir::Up,
         ruler_y,
+        ruler_y_strip: true,
         sample_rate: 0.0,
         bit_depth: 16,
         tempo: 1.0,

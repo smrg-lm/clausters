@@ -3575,3 +3575,39 @@ element draws inside itself (the documentation's strip, the find bar,
 the post window's clear tool) take the same look while held, so no
 button of the host's has a press that is not seen. The `press_shift`
 size role went with the shift, since nothing else moved by it.
+
+## A ruler is a scale drawn on a side, and a value ruler reads its view's rows (2026-11-27)
+
+A ruler is two independent choices: **what it shows** (`ruler::Scale`: time,
+a full-scale amplitude, a plain value, hertz, a meter's decibels) and **how
+it is drawn** (`RulerDir`: the edge of its strip that faces its content, up,
+down, left or right). Before this they were tied together per widget: a tick
+generator per unit and per axis, four strip painters (a horizontal one, a
+vertical one on the left, the same on either side for the meter, and one for
+stacked rows), and two rulers drawn by hand beside them (the loudness layer's
+and the roll's hertz gutter). Each view picked a combination, so a scale or a
+side existed only where somebody had wired it, and asking for the audio
+editor's value rulers on the right looked like a change to the hundred and
+fifty places that read a view's left indent.
+
+**The axis changes one thing about a scale: how a label is measured against
+the next** -- its width where labels stand side by side, a line of text where
+they stand one over the other. So the generators read that from their gaps
+and every scale answers for either axis, and one drawing serves the four
+sides, the right strip the exact mirror of the left (a test holds it, mark
+for mark). The rejected alternative was a second set of right-hand painters,
+which is the special case that made the change look large in the first place.
+
+**A free-standing value ruler draws nothing of its own.** It is a `field`
+naming the view whose vertical it rules (`axes.y.rules`), and the frame
+draws **the view's** ticks into the ruler's rectangle, from the view's rows
+and window, in the same loop that would have drawn them in the view's strip.
+That is what makes the alignment exact rather than arranged: the ruler's own
+height is the layout's, but the heights it draws at are the view's, so a
+column of rulers beside a column of views agrees with them to the pixel
+whatever the two columns' arithmetic does. The same placement answers the
+hand: a hit on the ruler is resolved to the view (a pane's body in hand)
+with the ruler's rectangle as the view's vertical strip, so the gestures are
+the view's own and were not written again. Its width is its labels', which
+are the view's data: the layout widens it after its first pass, as it widens
+a view's own strip.

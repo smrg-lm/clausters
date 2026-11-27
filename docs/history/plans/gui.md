@@ -5695,6 +5695,53 @@ hooks do. Builds on the WS track's quit, "quitting as one act".)*
   client's `Session.live(engine=host)` is; clausters-editor's page starts its
   host on its own engine (`guiHost({ ownEngine: true })`), so it holds one.)*
 
+- ✅ **A ruler is one widget, on either axis** *(2026-11-27, the user, on
+  the audio editor)*. The time ruler is a free-standing widget linked to
+  the axis it rules (`clausters_apps::ruler`), drawn over or under the
+  views as its mirror, and the views under it draw no strip of their own.
+  The value rulers were never made that way: each view draws its own inside
+  a band it reserves at its left (the signal's amplitude and hertz rulers,
+  the curve's, the spectrum's), and that band is the axis group's indent,
+  read as an x offset in about a hundred and fifty places. So asking for
+  the audio editor's rulers on the right, beside the meter, looked like a
+  change to all of them; it is the cost of the special case, not of the
+  request. The general answer is the time ruler's: **a value ruler is the
+  same widget turned on its side**, linked to the view whose vertical it
+  rules (its domain, its `view_y`, its rows per channel and the folded
+  ones, its unit: amplitude, decibels, hertz), placed beside it on either
+  side and drawn as the mirror on the right; the view draws no ruler of its
+  own and reserves no band for one. The arithmetic is the view's own, read
+  once, so a tick and the sample it names agree to the pixel wherever the
+  ruler stands. Every view that draws its own value ruler moves to the
+  widget in the change that lands it, and its own drawing goes
+  ("A replacement replaces"); the indent is left with what really is chrome
+  beside an axis (a lane's header, a roll's keys). The audio editor then
+  puts its rulers on the right. The meter's decibel ladder is the same
+  ruler, and joins it.
+
+  **Done (2026-11-27).** A ruler is now a scale drawn on a side, in
+  `host/ruler/`: `ruler::Scale` is what it shows and answers for either
+  axis (the axis only changes how a label is measured against the next),
+  `RulerDir` gained `left` and `right`, and one drawing serves the four
+  sides, the right strip the mirror of the left. Every view, the plot, the
+  spectrum, the scope, the meter's decibel ladder, the loudness layer and
+  the roll's hertz gutter draw through it; the per-unit painters and the
+  two rulers drawn by hand are gone. The value ruler is a `field` naming
+  the view it rules (`axes.y.rules`, `dir`), a builder in both clients
+  (`valueruler`): the frame draws the view's own ticks, from its rows and
+  window, into the ruler's rectangle, a hit on it is the view's vertical
+  gesture, and the layout widens it to the view's labels. The audio editor
+  stands its take's and its spectrogram's on the right, beside the meter,
+  its views keeping no strip (`axes.y.strip` off). One departure from the
+  entry as written: a view **keeps** its own strip where no ruler stands
+  beside it, as a view keeps its time strip where no time ruler is composed
+  over it (`x.strip`) -- it is a placement of the one ruler, not a second
+  drawing -- so the group indent still serves those strips; what the
+  replacement removed is every drawing of a ruler but one. The decision is
+  "A ruler is a scale drawn on a side, and a value ruler reads its view's
+  rows".
+
+
 ## Found by use: the entries that were fixed
 
 - ✅ **A capture of the multitrack example's window never answers, headless**

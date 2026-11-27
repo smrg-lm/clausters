@@ -15,7 +15,6 @@
 //! its scale, its rate -- and the machine only ever wanted the numbers.
 
 use super::SignalElement;
-use crate::host::widget::RulerY;
 use crate::host::widget::element::FreqAxis;
 use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
@@ -34,7 +33,7 @@ impl SignalElement {
             rect,
             self.display.label.is_some(),
             self.editor.strip(),
-            self.editor.ruler_y != RulerY::Off,
+            self.editor.y_strip(),
             (self.spectral.db_floor, self.spectral.db_ceil),
             m,
         );

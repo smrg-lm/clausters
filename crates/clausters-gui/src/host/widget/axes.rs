@@ -89,12 +89,17 @@ const X_AXIS: &[(&str, &str)] = &[
 ];
 
 /// The y axis' properties. `min`/`max` are the value range five widgets carry
-/// on themselves today; `ruler` is the `ruler_y` strip.
+/// on themselves today; `ruler` is the `ruler_y` strip. `rules` and `dir` are
+/// a free-standing value ruler's: the view whose vertical it rules and the
+/// way it faces it.
 const Y_AXIS: &[(&str, &str)] = &[
     ("start", "y_start"),
     ("len", "y_len"),
     ("ruler", "ruler_y"),
     ("unit", "ruler_y"),
+    ("strip", "ruler_y_strip"),
+    ("rules", "rules"),
+    ("dir", "dir"),
     ("min", "min"),
     ("max", "max"),
     ("bit_depth", "bit_depth"),

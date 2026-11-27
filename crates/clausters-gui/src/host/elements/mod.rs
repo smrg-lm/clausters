@@ -73,6 +73,7 @@ mod table;
 mod text;
 pub(crate) use text::edit_key;
 mod toggle;
+pub(crate) mod value_ruler;
 
 /// The constructor for a built-in element name, or `None` when no built-in
 /// answers to it -- in which case the caller consults the registry, and then

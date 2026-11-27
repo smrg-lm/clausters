@@ -271,6 +271,7 @@ __all__ = [
     "plot",
     "score",
     "timeruler",
+    "valueruler",
     "patch",
     "canvas",
     "to_json",
@@ -3384,6 +3385,40 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
                        tempo=tempo, tempo_map=_tempo_map(tempo_map), cursor=cursor,
                        beat_at=beat_at, quant=quant, link=link, autofit=autofit))
     return node("field", id=id, h=h, **extra, **props)
+
+def valueruler(rules: int, *, dir: str | None = None, theme: dict | None = None,
+               color: str | None = None, id: int | None = None, **props) -> View:
+    """A free-standing **value ruler**: the vertical of the view whose id is
+    ``rules``, drawn as a strip the document places beside it -- the time
+    ruler (`timeruler`) turned on its side.
+
+    The view keeps its own unit, window and rows -- amplitude, decibels or
+    hertz, zoomed or not, one row per channel, the folded ones named -- and
+    the ruler draws them, at the heights of the view's rows, wherever it
+    stands: a tick and the sample it names agree to the pixel. Name a
+    ``pane`` and it rules the body in hand, as the pane's own strip does.
+    The view beside it should keep no strip of its own:
+    ``axes={"y": {"strip": False}}`` on the view, as ``strip`` on its ``x``
+    axis does under a `timeruler`.
+
+    **It is the view's vertical to the hand**: a drag on it pans the view's
+    vertical window, the wheel zooms it, and a press on a folded channel's
+    name unfolds it -- the gestures of the view's own strip.
+
+    ``dir`` says **which side its view is on**, so the marks hug that edge:
+    ``"left"`` for a ruler standing on the view's right, ``"right"`` (the
+    default, where a view's own strip stands) for one on its left. It is as
+    wide as its labels, which are the view's: give it a ``weight`` to stand
+    as tall as the view::
+
+        panel(waveform(data=take, id=3, axes={"y": {"strip": False}}, weight=1),
+              valueruler(3, dir="left"),
+              layout="row")
+    """
+    extra = _drop_none(theme=theme, color=color)
+    return node("field", id=id, axes={"y": _drop_none(rules=rules, dir=dir)},
+                **extra, **props)
+
 
 def piano(*, min: int | None = None, max: int | None = None, active_min: int | None = None,
           active_max: int | None = None, pan: bool | None = None, overview: bool | None = None,

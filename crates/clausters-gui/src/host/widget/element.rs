@@ -799,6 +799,11 @@ pub struct TimeSpace {
     /// element standing on its own rules itself, and a clip's body rules
     /// nothing.
     pub rules_y: bool,
+    /// **Where its vertical ruler stands, when not in a strip of its own**: the
+    /// rectangle of the free-standing value ruler that rules it (or its pane)
+    /// and the way it faces it ([`crate::host::layout::value_ruler_of`]).
+    /// `None` rules in the element's own strip, as it always did.
+    pub y_ruler: Option<(Rect, super::RulerDir)>,
     /// **What of its samples the container is showing** -- where its time zero
     /// reads in the source, whether the window loops
     /// ([`SourceWindow`](super::SourceWindow)).
@@ -829,6 +834,7 @@ impl TimeSpace {
             cursor: None,
             active: true,
             rules_y: false,
+            y_ruler: None,
             window: super::SourceWindow::default(),
         }
     }
@@ -1625,6 +1631,25 @@ pub trait Element: fmt::Debug {
     /// Notes a picture of this element drawn `px` wide (see
     /// [`Self::drawn_width`]). Takes `&self`: the frame reads the tree.
     fn note_width(&self, _px: f32) {}
+
+    /// **The view whose vertical this element rules**, by widget id, and the
+    /// way it faces it: a free-standing value ruler's answer, `None` (the
+    /// default) for everything else.
+    ///
+    /// It is what lets the ruler stand anywhere the layout puts it. The frame
+    /// draws the view's value ticks into the ruler's rectangle instead of a
+    /// strip of the view's own, from the view's own rows, so a tick and the
+    /// sample it names agree to the pixel; and a press or a wheel on the ruler
+    /// is the view's vertical gesture, as it is on the view's own strip.
+    fn rules_y(&self) -> Option<(i32, super::RulerDir)> {
+        None
+    }
+
+    /// **Widens a value ruler to `px`**, the width its labels need over the
+    /// view it rules as that view was placed -- what the layout measures after
+    /// its first pass, since a label's width is the data's. Takes `&self`: the
+    /// layout reads the tree. Nothing for any other element.
+    fn widen(&self, _px: f32) {}
 
     /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
@@ -2657,6 +2682,15 @@ pub trait OnAxis {
     /// owed.
     fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
         None
+    }
+
+    /// **How wide a value ruler of this element's vertical has to be** with
+    /// the element placed at `rect`: the role, or its widest label where that
+    /// is wider. What a free-standing value ruler beside it is widened to,
+    /// and the measure [`measured_gutter`](OnAxis::measured_gutter) asks of a
+    /// strip of its own.
+    fn value_ruler_w(&self, _rect: Rect, m: &Metrics) -> f32 {
+        m.ruler_w
     }
 
     /// **How many rows this element stacks on screen**, given the `uploaded`

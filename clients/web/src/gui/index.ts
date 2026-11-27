@@ -56,7 +56,7 @@ export {
     phasescope, piano, plane, plot, pointsToEnv, post, progress, row, samplesToBlob,
     samplesToFile, scope, score, scoreView, scroll, separator, signal, slider,
     source, spectrogram, spectrogramCacheFile, spectrum, stack, table, tabs, text,
-    timeruler, toggle, toolbar, view, waveform, window,
+    timeruler, toggle, toolbar, valueruler, view, waveform, window,
 } from "./guidef.ts";
 export type * from "./guidef.ts";
 export * as guidef from "./guidef.ts";

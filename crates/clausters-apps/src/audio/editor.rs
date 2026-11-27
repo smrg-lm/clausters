@@ -430,6 +430,8 @@ impl Converse for AudioEditor {
             .chain(self.window_state.envelope_widget)
             .chain(self.window_state.lane)
             .chain(self.window_state.ruler)
+            .chain(self.window_state.value_rulers.0)
+            .chain(self.window_state.value_rulers.1)
             .any(|w| i64::from(w) == widget)
             || self.dialog_name(widget).is_some()
     }
@@ -846,6 +848,9 @@ struct AudioWindowState {
     /// seconds until another is chosen.
     ruler: Option<i32>,
     ruler_unit: crate::ruler::Unit,
+    /// **The value rulers on the right of the views**, the take's and the
+    /// spectrogram lane's, when the caller numbered them.
+    value_rulers: (Option<i32>, Option<i32>),
     title: String,
     size: (i64, i64),
     bare: bool,
@@ -958,6 +963,7 @@ impl AudioEditor {
                 lane: None,
                 ruler: None,
                 ruler_unit: crate::ruler::Unit::Time,
+                value_rulers: (None, None),
                 title: "Audio".into(),
                 size: (1000, 520),
                 bare: false,
@@ -1556,6 +1562,7 @@ impl AudioEditor {
             spectrogram: Some(&spectrogram),
             ruler: self.window_state.ruler,
             unit: self.window_state.ruler_unit,
+            value_rulers: self.window_state.value_rulers,
         });
         self.compose_envelope(&mut tree);
         self.compose_settings(&mut tree);

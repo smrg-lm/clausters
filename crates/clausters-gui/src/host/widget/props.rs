@@ -460,6 +460,12 @@ pub struct EditorProps {
     /// lanes it is usually placed as.
     pub dir: RulerDir,
     pub ruler_y: RulerY,
+    /// **Whether the view reserves its own strip** for its vertical ruler (the
+    /// `ruler_y_strip` prop, `axes.y.strip`), true unless told: the twin of
+    /// [`ruler_strip`](Self::ruler_strip). An application that stands a value
+    /// ruler beside the view (a `field` that `rules` it) turns it off, and the
+    /// view keeps its unit, which is what that ruler reads.
+    pub ruler_y_strip: bool,
     pub sample_rate: f64,
     pub bit_depth: u32,
     pub tempo: f64,
@@ -610,6 +616,7 @@ impl EditorProps {
             ruler_strip: props.get("ruler_strip").and_then(truthy).unwrap_or(true),
             dir: RulerDir::parse(props, RulerDir::Up),
             ruler_y: RulerY::parse(props, default_y),
+            ruler_y_strip: props.get("ruler_y_strip").and_then(truthy).unwrap_or(true),
             sample_rate: number_f64(props, "sample_rate", 0.0),
             bit_depth: props
                 .get("bit_depth")
@@ -797,6 +804,13 @@ impl EditorProps {
         self.ruler != Ruler::Off && self.ruler_strip
     }
 
+    /// **Whether the view draws its own value-ruler strip**: a vertical unit,
+    /// and no value ruler standing beside it.
+    #[must_use]
+    pub fn y_strip(&self) -> bool {
+        self.ruler_y != RulerY::Off && self.ruler_y_strip
+    }
+
     pub fn x_view(&self) -> (f64, f64) {
         normalized_window(self.x_start, self.x_len, 1.0)
     }
@@ -805,6 +819,7 @@ impl EditorProps {
         match key {
             "ruler" => self.ruler.set(v),
             "ruler_strip" => truthy(v).map(|on| self.ruler_strip = on).is_some(),
+            "ruler_y_strip" => truthy(v).map(|on| self.ruler_y_strip = on).is_some(),
             "dir" => v
                 .as_str()
                 .and_then(RulerDir::from_str)

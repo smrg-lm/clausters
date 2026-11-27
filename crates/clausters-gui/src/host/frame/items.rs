@@ -96,6 +96,10 @@ pub(super) struct TimelineItem {
     /// a pane only while it is the body the gutter is ruled for
     /// ([`crate::host::layers::child_rules_y`]).
     pub(super) rules_y: bool,
+    /// The free-standing value ruler this view's vertical is drawn in, and
+    /// the way it faces the view; `None` draws it in the view's own strip
+    /// ([`layout::value_ruler_of`]).
+    pub(super) y_ruler: Option<(Rect, crate::host::widget::RulerDir)>,
     /// The span of the samples a container placed this picture over, in its
     /// own frames ([`SlotFrame::Signal`]'s `placed`); `None` draws at the
     /// group's window, with the view's chrome.
@@ -139,7 +143,7 @@ pub(super) fn collect_widgets(
     // a dialog is drawn on its own, its card first: what is in it stands on
     // the card
     let in_card = placed.first().is_some_and(|p| p.widget.kind.is_modal());
-    for p in placed {
+    for (i, p) in placed.iter().enumerate() {
         // Everything a scrolled widget paints clips to its container's area...
         mesh.set_clip(p.clip);
         // ...and everything it paints carries its own opacity and corner
@@ -228,6 +232,7 @@ pub(super) fn collect_widgets(
                             time.active = crate::host::layers::child_is_active(owner, index);
                             time.rules_y = crate::host::layers::child_rules_y(owner, index);
                         }
+                        time.y_ruler = layout::value_ruler_of(placed, i);
                         Some(time)
                     }),
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
@@ -313,6 +318,7 @@ pub(super) fn collect_widgets(
                                 rules_y: p.pane(placed).is_none_or(|(owner, index)| {
                                     crate::host::layers::child_rules_y(owner, index)
                                 }),
+                                y_ruler: layout::value_ruler_of(placed, i),
                                 placed: window,
                             });
                         }

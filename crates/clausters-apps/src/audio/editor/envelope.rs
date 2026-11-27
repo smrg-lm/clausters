@@ -82,6 +82,11 @@ impl AudioEditor {
             let mut body = self.envelope_props();
             body["type"] = json!("curve");
             body["id"] = json!(id);
+            // ruled beside the pane, as the take is
+            if let (Some(_), Some(props)) = (self.window_state.value_rulers.0, body.as_object_mut())
+            {
+                crate::ruler::ValueRuler::rule(props);
+            }
             append(
                 tree,
                 pane,

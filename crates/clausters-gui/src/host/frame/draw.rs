@@ -627,9 +627,35 @@ pub(super) fn draw_timeline_meshes(
         }
         // In a pane the gutter is the body in hand's: a take not in hand
         // leaves it to the curve that is, folded strip names included.
-        if own && item.editor.ruler_y != RulerY::Off && item.rules_y {
+        //
+        // **Where the vertical is ruled**: in the free-standing value ruler
+        // that rules this view, when one does -- the same ticks at the same
+        // rows, in its rectangle and facing the view from wherever it stands --
+        // and otherwise in the strip the view keeps left of its body.
+        let strip = match item.y_ruler {
+            Some((ruler, dir)) => Some((ruler.x, ruler.w, dir)),
+            None if item.editor.y_strip() => Some((
+                item.rect.x,
+                (body.x - item.rect.x).max(0.0),
+                RulerDir::Right,
+            )),
+            None => None,
+        };
+        if own
+            && item.editor.ruler_y != RulerY::Off
+            && item.rules_y
+            && let Some((strip_x, strip_w, dir)) = strip
+        {
+            // A ruler standing beside the view is cut where the view's rows
+            // are, at the body's top and bottom, and nowhere else: the view's
+            // own clip is the view's.
+            let kept = mesh.clip();
+            if item.y_ruler.is_some() {
+                mesh.set_clip(Some(Rect::new(strip_x, body.y, strip_w, body.h)));
+            }
             for ch in 0..rows {
                 let row = look.lanes.rect(body, rows, ch);
+                let band = Rect::new(strip_x, row.y, strip_w, row.h);
                 // A folded row is a strip with the channel's name where its
                 // ruler would be, which is also what a press unfolds it by.
                 if look.lanes.is_folded(ch) {
@@ -638,9 +664,9 @@ pub(super) fn draw_timeline_meshes(
                     clausters_gui_draw::font::text_ellipsis(
                         mesh,
                         &name,
-                        item.rect.x + m.pad * 0.5,
+                        band.x + m.pad * 0.5,
                         row.y + ((row.h - h) * 0.5).max(0.0),
-                        (body.x - item.rect.x - m.pad).max(0.0),
+                        (band.w - m.pad).max(0.0),
                         m.caption_scale,
                         th.text,
                     );
@@ -664,14 +690,15 @@ pub(super) fn draw_timeline_meshes(
                     _ => continue,
                 };
                 // a row of a stack rules the edge it shares once
-                ruler::Ruler::new(scale, RulerDir::Right).draw(
+                ruler::Ruler::new(scale, dir).draw(
                     &mut Draw::new(mesh, m, th),
-                    Rect::new(item.rect.x, row.y, (body.x - item.rect.x).max(0.0), row.h),
+                    band,
                     row,
                     window,
                     ruler::Shared::of(ch, rows),
                 );
             }
+            mesh.set_clip(kept);
         }
         // The picture itself, placed on the *local* window: a member of a group
         // draws its own samples where it sits, and a picture a container
@@ -1065,7 +1092,7 @@ pub(super) fn draw_element_overlays(
     // draws nothing -- this walk used to ask only an element that had declared
     // a rectangle outside its placement, so a readout that stayed inside one
     // was never drawn at all.
-    for p in placed {
+    for (i, p) in placed.iter().enumerate() {
         let WidgetKind::Custom(el) = &p.widget.kind else {
             continue;
         };
@@ -1083,6 +1110,9 @@ pub(super) fn draw_element_overlays(
         {
             time.active = crate::host::layers::child_is_active(owner, index);
             time.rules_y = crate::host::layers::child_rules_y(owner, index);
+        }
+        if let Some(time) = &mut time {
+            time.y_ruler = layout::value_ruler_of(placed, i);
         }
         let ctx = Ctx {
             world: &inputs.world,

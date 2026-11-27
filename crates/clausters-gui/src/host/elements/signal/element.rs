@@ -84,7 +84,7 @@ impl SignalElement {
                             trigger: bus.trigger,
                             overlay: self.display.overlay,
                             ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
-                            ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
+                            ruler_y: self.editor.y_strip(),
                             label: self.display.label.as_deref(),
                             layers: &self.layers,
                             loudness: self.live_curve(),
@@ -122,7 +122,7 @@ impl SignalElement {
                     tuning: self.spectral.tuning,
                     peak_hold: self.spectral.peak_hold,
                     ruler: self.editor.ruler != crate::host::widget::Ruler::Off,
-                    ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
+                    ruler_y: self.editor.y_strip(),
                     // The window the axis can show, not the one that was asked
                     // for: the floor of the analysis is part of the drawing.
                     x_view: self.freq_window(ctx.world.sample_rate),
@@ -343,7 +343,7 @@ impl OnAxis for SignalElement {
                 indent,
                 m,
             ),
-            self.editor.ruler_y != crate::host::widget::RulerY::Off,
+            self.editor.y_strip(),
         ))
     }
 
@@ -365,6 +365,10 @@ impl OnAxis for SignalElement {
 
     fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
         SignalElement::measured_gutter(self, rect, m)
+    }
+
+    fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
+        SignalElement::value_ruler_w(self, rect, m)
     }
 
     fn rows(&self, uploaded: usize) -> usize {
@@ -734,7 +738,7 @@ impl SignalElement {
             min: self.value.min,
             max: self.value.max,
             ruler: self.editor.ruler,
-            ruler_y: self.editor.ruler_y != crate::host::widget::RulerY::Off,
+            ruler_y: self.editor.y_strip(),
             spectrum: self.analysis.as_deref(),
             db_floor: self.spectral.db_floor,
             db_ceil: self.spectral.db_ceil,

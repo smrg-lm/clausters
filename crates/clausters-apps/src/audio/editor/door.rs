@@ -369,6 +369,8 @@ pub(crate) fn call_value(editor: &mut AudioEditor, request: Value) -> Value {
                 .get("ruler")
                 .and_then(Value::as_i64)
                 .map(|n| n as i32);
+            let id = |role: &str| request.get(role).and_then(Value::as_i64).map(|n| n as i32);
+            editor.window_state.value_rulers = (id("valueRuler"), id("laneRuler"));
             editor.window(
                 widget,
                 request

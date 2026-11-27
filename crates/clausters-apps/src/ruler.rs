@@ -18,6 +18,12 @@
 //! roll's page bars, a take's rate alone. Each states it on a [`TimeRuler`],
 //! the one shape, which this module turns into the strip and the props of
 //! the views under it.
+//!
+//! **A value ruler is the same ruler on the other axis** ([`ValueRuler`]): a
+//! free-standing `field` beside one view, ruling its vertical in the view's
+//! own unit, on whichever side the window reads better -- the audio editor's
+//! on the right of its take, beside the meter. The view under it keeps no
+//! strip of its own, as the views under a time ruler keep none.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -94,7 +100,8 @@ impl Unit {
 
 /// **Which side of the views the strip is on**, and so which way it faces:
 /// its marks hug the edge the views are on, so a strip under them is the
-/// mirror of one over them.
+/// mirror of one over them, and one on their right the mirror of one on
+/// their left. A time ruler stands over or under; a value ruler beside.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Side {
     /// Over the views, its marks along its bottom edge: the multitrack's and
@@ -104,6 +111,26 @@ pub enum Side {
     /// Under them, its marks along its top edge: the audio editor's, under
     /// its take.
     Bottom,
+    /// On the view's left, its marks along its right edge: where a view's
+    /// own value strip stands.
+    Left,
+    /// On the view's right, its marks along its left edge: the audio
+    /// editor's, beside the meter.
+    Right,
+}
+
+impl Side {
+    /// The way a strip on this side faces the views, as the host's `dir`
+    /// prop spells it.
+    #[must_use]
+    pub fn dir(self) -> &'static str {
+        match self {
+            Side::Top => "down",
+            Side::Bottom => "up",
+            Side::Left => "right",
+            Side::Right => "left",
+        }
+    }
 }
 
 /// **One window's time ruler**: the strip's id, its unit, and what the
@@ -134,13 +161,7 @@ impl TimeRuler {
         x.insert("unit".into(), json!(self.unit.prop()));
         x.insert("sample_rate".into(), json!(self.rate));
         x.insert("link".into(), json!(self.link));
-        x.insert(
-            "dir".into(),
-            json!(match self.side {
-                Side::Top => "down",
-                Side::Bottom => "up",
-            }),
-        );
+        x.insert("dir".into(), json!(self.side.dir()));
         json!({
             "type": "field",
             "id": self.id,
@@ -165,9 +186,80 @@ impl TimeRuler {
     }
 }
 
+/// **One view's value ruler**: the strip's id, the view it rules and the
+/// side of it it stands on. The unit, the window and the rows are the
+/// view's, which the host reads from the view itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueRuler {
+    /// The widget id the caller numbered the strip with.
+    pub id: i32,
+    /// The widget id of the view it rules: a take, a lane, or the pane whose
+    /// body in hand it rules.
+    pub rules: i32,
+    /// Which side of the view it stands on.
+    pub side: Side,
+}
+
+impl ValueRuler {
+    /// **The strip**, elastic along the view and as wide as its labels.
+    #[must_use]
+    pub fn widget(&self) -> Value {
+        json!({
+            "type": "field",
+            "id": self.id,
+            "weight": 1,
+            "axes": {"y": {"rules": self.rules, "dir": self.side.dir()}},
+        })
+    }
+
+    /// **A view beside the strip**: it keeps no value strip of its own.
+    /// `props` are the view's, its vertical flat or under `axes.y`.
+    pub fn rule(props: &mut Map<String, Value>) {
+        let axes = props
+            .entry("axes")
+            .or_insert_with(|| json!({}))
+            .as_object_mut();
+        if let Some(axes) = axes {
+            let y = axes.entry("y").or_insert_with(|| json!({}));
+            if let Some(y) = y.as_object_mut() {
+                y.insert("strip".into(), json!(false));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A value ruler is a field beside its view**, facing it, and the view
+    /// beside it keeps no strip of its own -- whatever its vertical already
+    /// said.
+    #[test]
+    fn a_value_ruler_faces_its_view_and_the_view_keeps_no_strip() {
+        let ruler = ValueRuler {
+            id: 30,
+            rules: 18,
+            side: Side::Right,
+        };
+        let strip = ruler.widget();
+        assert_eq!(strip["type"], "field");
+        assert_eq!(strip["axes"]["y"]["rules"], 18);
+        assert_eq!(
+            strip["axes"]["y"]["dir"], "left",
+            "it faces the view on its left"
+        );
+        let left = ValueRuler {
+            side: Side::Left,
+            ..ruler
+        };
+        assert_eq!(left.widget()["axes"]["y"]["dir"], "right", "the mirror");
+        let mut view = Map::new();
+        view.insert("axes".into(), json!({"y": {"unit": "db"}}));
+        ValueRuler::rule(&mut view);
+        assert_eq!(view["axes"]["y"]["unit"], "db");
+        assert_eq!(view["axes"]["y"]["strip"], false);
+    }
 
     /// **The strip is a field over its group, in its unit**, and a view
     /// under it counts in the same unit and draws no strip of its own.

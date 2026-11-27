@@ -278,11 +278,6 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **A ruler is one widget, on either axis**
-  *(`crates/clausters-gui/PLAN.md`, Future directions)*. The value rulers
-  become the time ruler turned on its side, which puts the audio editor's
-  on the right. First of the near work.
-
 - ⬜ **`G50` — the rest of a window manager's file dialog**
   *(`crates/clausters-gui/PLAN.md`, "G47–G50 — The file dialog")*. Every
   application asks through the element now; what is left is places,

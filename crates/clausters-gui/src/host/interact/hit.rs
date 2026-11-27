@@ -61,7 +61,7 @@ pub(crate) fn hit(
             scale: p.scale,
             indent: p.indent,
             kind: p.widget.kind.clone(),
-            chain: chain_of(host, def_id, &placed, i, y, rows),
+            chain: chain_of(host, def_id, &placed, i, y, rows, None),
         });
     }
     for (i, p) in placed.iter().enumerate().skip(from) {
@@ -86,6 +86,13 @@ pub(crate) fn hit(
         }
     }
     let i = found?;
+    // **A value ruler answers as the view it rules**: its rectangle is that
+    // view's vertical strip, wherever it stands, so a press, a drag and a
+    // wheel on it are the view's -- a pane's through the body in hand.
+    let (i, y_strip) = match ruled_by(&placed, i) {
+        Some(view) => (view, Some(placed[i].rect)),
+        None => (i, None),
+    };
     let p = placed[i];
     Some(Hit {
         id: p.widget.id?,
@@ -93,7 +100,27 @@ pub(crate) fn hit(
         scale: p.scale,
         indent: p.indent,
         kind: p.widget.kind.clone(),
-        chain: chain_of(host, def_id, &placed, i, y, rows),
+        chain: chain_of(host, def_id, &placed, i, y, rows, y_strip),
+    })
+}
+
+/// **The placement a value ruler at `i` rules**: the view it names, or the
+/// body in hand of the pane it names ([`crate::host::layers::child_rules_y`]).
+/// `None` for anything that is not a value ruler, and for one whose view is
+/// not in the window.
+fn ruled_by(placed: &[layout::Placed], i: usize) -> Option<usize> {
+    let WidgetKind::Custom(el) = &placed[i].widget.kind else {
+        return None;
+    };
+    let (rules, _) = el.rules_y()?;
+    let view = placed.iter().position(|p| p.widget.id == Some(rules))?;
+    if !matches!(placed[view].widget.kind, WidgetKind::Pane { .. }) {
+        return Some(view);
+    }
+    placed.iter().position(|p| {
+        p.parent == Some(view)
+            && p.pane(placed)
+                .is_some_and(|(owner, index)| crate::host::layers::child_rules_y(owner, index))
     })
 }
 
@@ -135,7 +162,7 @@ pub(crate) fn sole_time_axis(
             None => key = Some(this),
         }
         if found.is_none() {
-            found = time_axis(host, def_id, p, p.indent, rows).map(|axis| (id, axis));
+            found = time_axis(host, def_id, p, p.indent, rows, None).map(|axis| (id, axis));
         }
     }
     let (id, axis) = found?;
@@ -152,6 +179,7 @@ fn chain_of(
     i: usize,
     y: f64,
     rows: &dyn Fn(i32, &WidgetKind) -> usize,
+    y_strip: Option<Rect>,
 ) -> Vec<Frame> {
     let mut chain = Vec::new();
     let mut at = Some(i);
@@ -166,7 +194,8 @@ fn chain_of(
             // every member of one axis starts it at the same x, and the layout
             // already resolved it (`Placed::indent`).
             _ if p.widget.is_timeline() => {
-                time_axis(host, def_id, &p, p.indent, rows).map(Coords::Time)
+                time_axis(host, def_id, &p, p.indent, rows, y_strip.filter(|_| j == i))
+                    .map(Coords::Time)
             }
             _ => None,
         };
@@ -231,13 +260,15 @@ fn map_for(host: &Host, def_id: i32, p: &layout::Placed, y: f64) -> GestureMap {
 /// The [`TimeAxis`] of a placed timeline view -- the geometry the renderer drew
 /// through, resolved once here rather than by each gesture from the kind it
 /// happens to have hit. The body is the strip samples map onto; the vertical
-/// axis is the band left of it, when the view has one.
+/// axis is the band left of it, when the view has one -- or `y_strip`, the
+/// value ruler standing beside it that the press landed on.
 fn time_axis(
     host: &Host,
     def_id: i32,
     p: &layout::Placed,
     indent: f32,
     rows: &dyn Fn(i32, &WidgetKind) -> usize,
+    y_strip: Option<Rect>,
 ) -> Option<TimeAxis> {
     let metrics = host.metrics_for(def_id);
     let _ruler_on = p.widget.kind.editor()?.ruler != super::super::widget::Ruler::Off;
@@ -257,18 +288,21 @@ fn time_axis(
         // generic body -- a roll's grid, with its strips stacked under it.
         kind => kind.axis_body(p.rect, indent, metrics).unwrap_or((
             super::super::frame::timeline_body(p.rect, kind.editor()?, false, indent, metrics),
-            kind.editor()?.ruler_y != super::super::widget::RulerY::Off,
+            kind.editor()?.y_strip(),
         )),
     };
     let (start, len) = p.widget.kind.editor()?.y_view();
     Some(TimeAxis {
         body,
         nav: view_of(host, def_id, p, body),
-        y: y_surface.then(|| YAxis {
+        y: (y_surface || y_strip.is_some()).then(|| YAxis {
             // The whole band left of the body, full height: the strip is where
             // the axis is grabbed, and a press beside it at any height means the
-            // same axis.
-            strip: Rect::new(p.rect.x, p.rect.y, (body.x - p.rect.x).max(0.0), p.rect.h),
+            // same axis. A value ruler standing beside the view is that band,
+            // wherever it stands.
+            strip: y_strip.unwrap_or_else(|| {
+                Rect::new(p.rect.x, p.rect.y, (body.x - p.rect.x).max(0.0), p.rect.h)
+            }),
             start,
             len,
             rows: p.widget.id.map_or(1, |id| rows(id, &p.widget.kind)).max(1),

@@ -1684,30 +1684,6 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
-- ⬜ **A ruler is one widget, on either axis** *(2026-11-27, the user, on
-  the audio editor)*. The time ruler is a free-standing widget linked to
-  the axis it rules (`clausters_apps::ruler`), drawn over or under the
-  views as its mirror, and the views under it draw no strip of their own.
-  The value rulers were never made that way: each view draws its own inside
-  a band it reserves at its left (the signal's amplitude and hertz rulers,
-  the curve's, the spectrum's), and that band is the axis group's indent,
-  read as an x offset in about a hundred and fifty places. So asking for
-  the audio editor's rulers on the right, beside the meter, looked like a
-  change to all of them; it is the cost of the special case, not of the
-  request. The general answer is the time ruler's: **a value ruler is the
-  same widget turned on its side**, linked to the view whose vertical it
-  rules (its domain, its `view_y`, its rows per channel and the folded
-  ones, its unit: amplitude, decibels, hertz), placed beside it on either
-  side and drawn as the mirror on the right; the view draws no ruler of its
-  own and reserves no band for one. The arithmetic is the view's own, read
-  once, so a tick and the sample it names agree to the pixel wherever the
-  ruler stands. Every view that draws its own value ruler moves to the
-  widget in the change that lands it, and its own drawing goes
-  ("A replacement replaces"); the indent is left with what really is chrome
-  beside an axis (a lane's header, a roll's keys). The audio editor then
-  puts its rulers on the right. The meter's decibel ladder is the same
-  ruler, and joins it.
-
 - ⬜ **The platforms' own file dialogs, as a second presenter** *(2026-11-26,
   with `G47`)*. A native front may present a `file_dialog` with the system's
   dialog instead of drawing it: the xdg desktop portal on Linux (`ashpd`,

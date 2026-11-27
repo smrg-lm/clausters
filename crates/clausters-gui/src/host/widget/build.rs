@@ -121,6 +121,11 @@ pub(super) fn build_kind(
             editor: EditorProps::parse(props, RulerY::Off),
             label: label(props),
         },
+        // A `field` naming a view is that view's **value ruler**: the same
+        // free-standing ruler, on the other axis.
+        "field" if props.contains_key("rules") => {
+            WidgetKind::Custom(super::super::elements::value_ruler::build(props, blobs)?)
+        }
         "field" => WidgetKind::TimeRuler {
             editor: EditorProps::parse_ruler(props),
         },

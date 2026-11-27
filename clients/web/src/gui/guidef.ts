@@ -3932,6 +3932,47 @@ export function timeruler(
 }
 
 /**
+ * A free-standing **value ruler**: the vertical of the view whose id is
+ * `rules`, drawn as a strip the document places beside it -- the time ruler
+ * ({@link timeruler}) turned on its side.
+ *
+ * The view keeps its own unit, window and rows -- amplitude, decibels or
+ * hertz, zoomed or not, one row per channel, the folded ones named -- and the
+ * ruler draws them, at the heights of the view's rows, wherever it stands: a
+ * tick and the sample it names agree to the pixel. Name a `pane` and it rules
+ * the body in hand, as the pane's own strip does. The view beside it should
+ * keep no strip of its own: `axes: { y: { strip: false } }` on the view, as
+ * `strip` on its `x` axis does under a `timeruler`.
+ *
+ * **It is the view's vertical to the hand**: a drag on it pans the view's
+ * vertical window, the wheel zooms it, and a press on a folded channel's name
+ * unfolds it -- the gestures of the view's own strip.
+ *
+ * It is as wide as its labels, which are the view's: give it a `weight` to
+ * stand as tall as the view.
+ */
+export function valueruler(
+    rules: number,
+    options: WidgetOptions & {
+        /**
+         * **Which side its view is on**, so the marks hug that edge: `"left"`
+         * for a ruler standing on the view's right, `"right"` (the default,
+         * where a view's own strip stands) for one on its left.
+         */
+        dir?: string;
+        /** A theme group over the strip. */
+        theme?: Record<string, string>;
+    } = {},
+): View {
+    const { dir, theme, ...rest } = options;
+    return node("field", {
+        ...rest,
+        axes: { y: { rules, ...drop([["dir", dir]]) } },
+        ...drop([["theme", theme]]),
+    });
+}
+
+/**
  * An engraved music-notation `score` page. The host is only the renderer: it
  * fits the engraved page into the widget and tessellates its primitives.
  *

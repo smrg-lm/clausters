@@ -47,8 +47,10 @@ the pass ends; a second press stops it there sooner. **L** switches the loop:
 looping, the selection -- or the whole take -- plays over and over, and a
 selection drawn again while it loops is where it loops next: the loop follows
 the drag, and the sound goes to the new start when the drag is let go. The
-**meter** beside the take reads its level while it plays and falls when it
-stops, and neither a play nor a stop clicks: the editor sounds the take on its
+take's and the spectrogram's **value rulers** stand on the right of the
+views, beside the meter: a drag on one pans that view's vertical and the
+wheel zooms it. The **meter** beside them reads its level while it plays and
+falls when it stops, and neither a play nor a stop clicks: the editor sounds the take on its
 own engine, whose output fades in and out with the transport.
 **Wheel** to zoom in until each sample is a disc, then **Alt+drag**
 to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the history. Every one of

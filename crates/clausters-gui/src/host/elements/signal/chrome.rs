@@ -23,7 +23,7 @@ impl SignalElement {
     /// The band this element reserves left of its body: a value ruler's width,
     /// or nothing when it draws no ruler.
     pub fn gutter(&self, m: &Metrics) -> f32 {
-        if self.editor.ruler_y != RulerY::Off {
+        if self.editor.y_strip() {
             m.ruler_w
         } else {
             0.0
@@ -42,6 +42,21 @@ impl SignalElement {
     /// reservation, and reserving a character wide costs pixels where reserving
     /// short clamps a label.
     pub fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
+        if !self.editor.y_strip() {
+            return None;
+        }
+        self.measured_ruler_w(rect, m)
+    }
+
+    /// **How wide a value ruler of this element has to be** placed at `rect`,
+    /// wherever it stands: its own strip or a free-standing ruler beside it.
+    pub fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
+        self.measured_ruler_w(rect, m).unwrap_or(m.ruler_w)
+    }
+
+    /// The measure itself, `None` where the role answers it (see
+    /// [`measured_gutter`](Self::measured_gutter)).
+    fn measured_ruler_w(&self, rect: Rect, m: &Metrics) -> Option<f32> {
         if !self.navigates_time() || matches!(self.editor.ruler_y, RulerY::Off | RulerY::Hz) {
             return None;
         }

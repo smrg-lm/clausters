@@ -476,6 +476,7 @@ impl TimelineGroups {
             // deciding between claimants or showing a window of it.
             active: true,
             rules_y: false,
+            y_ruler: None,
             window: crate::host::widget::SourceWindow::default(),
         })
     }

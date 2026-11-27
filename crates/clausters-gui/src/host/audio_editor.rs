@@ -35,6 +35,8 @@ const ROLES: &[&str] = &[
     "envelope",
     "lane",
     "ruler",
+    "valueRuler",
+    "laneRuler",
     "filesWidget",
 ];
 

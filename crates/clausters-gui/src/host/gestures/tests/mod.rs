@@ -32,6 +32,7 @@ mod spectrum;
 mod status_bar;
 mod table;
 mod take;
+mod value_ruler;
 
 fn from() -> ClientId {
     ClientId::Udp(std::net::SocketAddr::from((

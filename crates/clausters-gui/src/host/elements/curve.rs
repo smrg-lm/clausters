@@ -282,7 +282,7 @@ impl Curve {
         let outer = controls::body_rect(rect, self.label.is_some(), m);
         let ruled = self.editor.strip() && outer.h > m.ruler_h * 2.0;
         let strip_h = if ruled { m.ruler_h } else { 0.0 };
-        let gutter = if self.editor.ruler_y == RulerY::Off {
+        let gutter = if !self.editor.y_strip() {
             0.0
         } else {
             indent.min((outer.w * 0.5).max(0.0))
@@ -388,12 +388,31 @@ impl Curve {
     /// hands the body in hand, so an envelope being edited over a take is read
     /// against its own `[min, max]` rather than the take's amplitude. The strip
     /// is the band left of the field, the same one the take rules when it is
-    /// the body in hand.
+    /// the body in hand -- or the free-standing value ruler that rules the
+    /// pane, wherever it stands ([`TimeSpace::y_ruler`]).
     fn draw_gutter(&self, d: &mut Draw, ctx: &Ctx, ax: &Axes) {
-        if ax.body.x - ctx.rect.x < 1.0 || ax.body.h <= 0.0 {
+        if ax.body.h <= 0.0 {
             return;
         }
         let span = ax.span();
+        if let Some((ruler, dir)) = ctx.time.and_then(|t| t.y_ruler) {
+            // it stands outside the pane, whose clip is the pane's: it is cut
+            // at the body's top and bottom instead
+            let kept = d.mesh.clip();
+            d.mesh
+                .set_clip(Some(Rect::new(ruler.x, ax.body.y, ruler.w, ax.body.h)));
+            let strip = Rect::new(ruler.x, span.y, ruler.w, span.h);
+            ruler::Ruler {
+                dir,
+                ..self.value_ruler()
+            }
+            .draw(d, strip, span, (0.0, 1.0), ruler::Shared::default());
+            d.mesh.set_clip(kept);
+            return;
+        }
+        if ax.body.x - ctx.rect.x < 1.0 {
+            return;
+        }
         let strip = Rect::new(ctx.rect.x, span.y, ax.body.x - ctx.rect.x, span.h);
         self.value_ruler()
             .draw(d, strip, span, (0.0, 1.0), ruler::Shared::default());
@@ -866,7 +885,7 @@ impl OnAxis for Curve {
     /// band actually needs depends on the labels, which depend on how tall the
     /// curve ended up -- that is [`OnAxis::measured_gutter`], one pass later.
     fn gutter(&self, m: &Metrics) -> f32 {
-        if self.editor.ruler_y == RulerY::Off {
+        if !self.editor.y_strip() {
             0.0
         } else {
             m.ruler_w
@@ -879,12 +898,16 @@ impl OnAxis for Curve {
     /// height. `None` while the role-sized wish already covers it, so the
     /// second layout pass is taken only when one is owed.
     fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        if self.editor.ruler_y == RulerY::Off {
+        if !self.editor.y_strip() {
             return None;
         }
-        let field = self.regions(rect, 0.0, m).field;
-        let want = self.value_ruler().thickness((0.0, 1.0), field.h as f64, m);
+        let want = self.value_ruler_w(rect, m);
         (want > m.ruler_w).then_some(want)
+    }
+
+    fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
+        let field = self.regions(rect, 0.0, m).field;
+        self.value_ruler().thickness((0.0, 1.0), field.h as f64, m)
     }
 }
 

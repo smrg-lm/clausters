@@ -1294,6 +1294,7 @@
     "timeruler",
     "toggle",
     "toolbar",
+    "valueruler",
     "view",
     "waveform",
     "window"
@@ -1401,6 +1402,7 @@
     "toJson",
     "toggle",
     "toolbar",
+    "valueruler",
     "view",
     "waveform",
     "window"

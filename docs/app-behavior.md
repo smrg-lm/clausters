@@ -967,6 +967,16 @@ code that keeps it lives.
   where bars and beats are refused since a take has no tempo. A press on the
   strip is the window's: a click places the position cursor and Alt and a
   drag sweeps a time range.
+- **A value ruler is the same ruler on the other axis, and stands where the
+  window reads it.** The audio editor stands its take's and its
+  spectrogram's value rulers on the right of the views, beside the meter;
+  the views keep no strip of their own, so the take starts at the window's
+  edge of the views and its first sample sits there. Each ruler draws its
+  view's own unit, window and rows, at the heights of the view's rows -- a
+  tick and the sample it names agree to the pixel -- and the take's rules
+  the body in hand, a curve's `[min, max]` while the envelope is edited. To
+  the hand it is the view's vertical: a drag pans it, the wheel zooms it, a
+  press on a folded channel's name unfolds it.
 
 - **A plain press on the roll is its tool's, and the modifiers are every
   tool's.** The window's tool (the keys 1 to 5, the toolbar's icons, the
