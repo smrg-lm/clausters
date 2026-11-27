@@ -1684,27 +1684,29 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
-- ⬜ **A time axis whose value rulers stand on its right** *(2026-11-27,
-  the user, on the audio editor)*. The audio editor's take, its
-  spectrogram lane and the gain envelope draw their vertical rulers on the
-  left; the user wants them on the right, beside the meter, so the take's
-  left edge lines up with the files list and the rulers mirror the meter's
-  ladder. The band is not a widget's: it is the **axis group's** indent
-  (`timeline::group_indents`, stamped on every placement), the one number
-  every member's body starts after (`frame::timeline_body`) and that the
-  chrome is drawn into (`timeline::gutter_band`), so that one sample sits at
-  one x across a lane, a roll and a ruler. A right-hand side is therefore a
-  property of the group, declared on the axis (the pane's or a solo view's
-  `axes.y`), never a member's: its members' bodies end where the band
-  begins, the band is drawn and hit at the right, and the time ruler under
-  the take follows the same body. The indent is read as an x offset in about
-  a hundred and fifty places (drawing, hit testing, the gestures, the
-  multitrack and the roll), so the side goes into the type the placement
-  carries rather than beside it, and a group that declares nothing keeps
-  the left, so every view that exists draws as it does. The ticks already
-  draw on either side (`ruler::draw_ticks_v_side`); the stacked rows'
-  shared label placement (`draw_ticks_v_shared`) gains the mirror. Both
-  clients' builders take the prop where they write `axes`.
+- ⬜ **A ruler is one widget, on either axis** *(2026-11-27, the user, on
+  the audio editor)*. The time ruler is a free-standing widget linked to
+  the axis it rules (`clausters_apps::ruler`), drawn over or under the
+  views as its mirror, and the views under it draw no strip of their own.
+  The value rulers were never made that way: each view draws its own inside
+  a band it reserves at its left (the signal's amplitude and hertz rulers,
+  the curve's, the spectrum's), and that band is the axis group's indent,
+  read as an x offset in about a hundred and fifty places. So asking for
+  the audio editor's rulers on the right, beside the meter, looked like a
+  change to all of them; it is the cost of the special case, not of the
+  request. The general answer is the time ruler's: **a value ruler is the
+  same widget turned on its side**, linked to the view whose vertical it
+  rules (its domain, its `view_y`, its rows per channel and the folded
+  ones, its unit: amplitude, decibels, hertz), placed beside it on either
+  side and drawn as the mirror on the right; the view draws no ruler of its
+  own and reserves no band for one. The arithmetic is the view's own, read
+  once, so a tick and the sample it names agree to the pixel wherever the
+  ruler stands. Every view that draws its own value ruler moves to the
+  widget in the change that lands it, and its own drawing goes
+  ("A replacement replaces"); the indent is left with what really is chrome
+  beside an axis (a lane's header, a roll's keys). The audio editor then
+  puts its rulers on the right. The meter's decibel ladder is the same
+  ruler, and joins it.
 
 - ⬜ **The platforms' own file dialogs, as a second presenter** *(2026-11-26,
   with `G47`)*. A native front may present a `file_dialog` with the system's
