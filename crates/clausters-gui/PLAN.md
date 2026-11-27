@@ -1684,6 +1684,28 @@ An entry that was done without becoming a milestone is ticked and moves whole
 to [`docs/history/plans/gui.md`](../../docs/history/plans/gui.md) ("Future directions: the entries that were done"), so this list
 holds what is open.
 
+- ⬜ **A time axis whose value rulers stand on its right** *(2026-11-27,
+  the user, on the audio editor)*. The audio editor's take, its
+  spectrogram lane and the gain envelope draw their vertical rulers on the
+  left; the user wants them on the right, beside the meter, so the take's
+  left edge lines up with the files list and the rulers mirror the meter's
+  ladder. The band is not a widget's: it is the **axis group's** indent
+  (`timeline::group_indents`, stamped on every placement), the one number
+  every member's body starts after (`frame::timeline_body`) and that the
+  chrome is drawn into (`timeline::gutter_band`), so that one sample sits at
+  one x across a lane, a roll and a ruler. A right-hand side is therefore a
+  property of the group, declared on the axis (the pane's or a solo view's
+  `axes.y`), never a member's: its members' bodies end where the band
+  begins, the band is drawn and hit at the right, and the time ruler under
+  the take follows the same body. The indent is read as an x offset in about
+  a hundred and fifty places (drawing, hit testing, the gestures, the
+  multitrack and the roll), so the side goes into the type the placement
+  carries rather than beside it, and a group that declares nothing keeps
+  the left, so every view that exists draws as it does. The ticks already
+  draw on either side (`ruler::draw_ticks_v_side`); the stacked rows'
+  shared label placement (`draw_ticks_v_shared`) gains the mirror. Both
+  clients' builders take the prop where they write `axes`.
+
 - ⬜ **The platforms' own file dialogs, as a second presenter** *(2026-11-26,
   with `G47`)*. A native front may present a `file_dialog` with the system's
   dialog instead of drawing it: the xdg desktop portal on Linux (`ashpd`,

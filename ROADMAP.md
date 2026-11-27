@@ -278,6 +278,11 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **A time axis whose value rulers stand on its right**
+  *(`crates/clausters-gui/PLAN.md`, Future directions)*. Asked for the
+  audio editor; the side is the axis group's, so it reaches every place
+  the indent is read. First of the near work.
+
 - ⬜ **`G50` — the rest of a window manager's file dialog**
   *(`crates/clausters-gui/PLAN.md`, "G47–G50 — The file dialog")*. Every
   application asks through the element now; what is left is places,
