@@ -219,6 +219,8 @@ pub fn window(w: &Window<'_>) -> Value {
         "title": w.title,
         "w": w.size.0,
         "h": w.size.1,
+        "margin": crate::chrome::SPACING,
+        "gap": crate::chrome::SPACING,
         "flow": "col",
         "ask_close": crate::closing::asks(w.asks, w.close_form.is_some()),
         // the window's own verbs, and the scope of the key table they are in

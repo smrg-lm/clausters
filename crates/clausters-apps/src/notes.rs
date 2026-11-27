@@ -350,6 +350,8 @@ pub fn window(roll: Map<String, Value>, widget: i32, title: &str, size: (i64, i6
         "title": title,
         "w": size.0,
         "h": size.1,
+        "margin": crate::chrome::SPACING,
+        "gap": crate::chrome::SPACING,
         "flow": "col",
         // **The space bar is the application's**: it plays the sequence
         // through the editor's own playback, so the host's monitor stays out.

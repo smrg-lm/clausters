@@ -239,6 +239,8 @@ pub fn window(w: Window<'_>) -> Value {
         "title": title,
         "w": size.0,
         "h": size.1,
+        "margin": crate::chrome::SPACING,
+        "gap": crate::chrome::SPACING,
         "flow": "col",
         // **The space bar is the application's**: it plays the score through
         // the editor's own playback, so the host's monitor stays out.

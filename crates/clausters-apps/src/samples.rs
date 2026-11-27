@@ -339,6 +339,8 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
         "title": w.title,
         "w": w.size.0,
         "h": w.size.1,
+        "margin": crate::chrome::SPACING,
+        "gap": crate::chrome::SPACING,
         "flow": "col",
         // **The space bar and `L` are the application's**: it plays its own
         // take through its own playback, so the host's monitor stays out.

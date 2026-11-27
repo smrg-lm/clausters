@@ -538,6 +538,13 @@ pub fn toolbar(app: App, lead: Option<Vec<Value>>) -> Value {
     })
 }
 
+/// **The spacing of an application's window**, in logical pixels: its
+/// margin and the gap between what it stacks (the toolbar, the work, a status
+/// line), one pixel as the code editor's panes stand apart, so the parts of a
+/// window read as panels and the work keeps the room. A window a script
+/// composes keeps the host's spacing; this is the applications' alone.
+pub const SPACING: f64 = 1.0;
+
 /// **Dresses `window`**: the menu bar, the toolbar on top of what it holds
 /// (none for `null`), the outlines the tools are drawn with, and the view
 /// the window's commands address (`main`).

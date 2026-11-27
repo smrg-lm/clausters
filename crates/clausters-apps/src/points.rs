@@ -168,6 +168,8 @@ pub fn window(
         "title": title,
         "w": size.0,
         "h": size.1,
+        "margin": crate::chrome::SPACING,
+        "gap": crate::chrome::SPACING,
         "flow": "col",
         "children": [Value::Object(picture), controls(ids.shape)],
     })
