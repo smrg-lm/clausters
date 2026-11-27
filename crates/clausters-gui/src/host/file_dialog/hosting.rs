@@ -216,7 +216,7 @@ impl Host {
         };
         let seq = self.outbox.borrow_mut().stamp(def_id, id);
         let message = self.event_message(id, seq, report);
-        if !self.deliver(def_id, &message) {
+        if !self.deliver_to_owner(def_id, &message) {
             effects.push(HostEffect::Emit { def_id, message });
         }
     }

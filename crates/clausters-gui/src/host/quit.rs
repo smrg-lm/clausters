@@ -293,7 +293,6 @@ impl Host {
             return;
         };
         let ids = closing::Ids {
-            stack: window,
             dialog,
             save,
             discard,
@@ -302,11 +301,12 @@ impl Host {
         let form = quitting::dialog(Some(dialog), &quitting::says(titles), titles.len(), |n| {
             ids.button(n)
         });
-        self.question = Some(ids);
+        self.question = Some((window, ids));
+        // the dialog stands over the dock, and takes no room in the window
         let mut def = json!({
             "type": "window", "id": window, "title": quitting::TITLE,
             "dock_edge": "top", "h": 1,
-            "children": [{"type": "layout", "w": 0, "h": 0, "margin": 0, "children": [form]}],
+            "children": [form],
         });
         self.number_own(&mut def, QUESTION, "quit");
         let origin = own_origin();
@@ -327,10 +327,10 @@ impl Host {
     pub(super) fn question_event(&mut self, def_id: i32, message: &OscMessage) -> bool {
         #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         {
-            let Some(ids) = self.question else {
+            let Some((window, ids)) = self.question else {
                 return false;
             };
-            if def_id != ids.stack {
+            if def_id != window {
                 return false;
             }
             let widget = match message.args.first() {
@@ -370,11 +370,11 @@ impl Host {
     /// The host's question taken down, if it is up.
     fn drop_question(&mut self, effects: &mut Vec<HostEffect>) {
         #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-        if let Some(ids) = self.question.take() {
+        if let Some((window, _)) = self.question.take() {
             effects.extend(self.handle_packet(
                 OscPacket::Message(OscMessage {
                     addr: GUI_FREE.into(),
-                    args: vec![OscType::Int(ids.stack)],
+                    args: vec![OscType::Int(window)],
                 }),
                 own_origin(),
             ));

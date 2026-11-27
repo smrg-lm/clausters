@@ -41,16 +41,6 @@ impl Spec for Form {
         }
     }
 
-    fn page(self) -> i32 {
-        match self {
-            Form::New => 1,
-            Form::SaveAs => 2,
-            Form::Open => 3,
-            Form::Close => 4,
-            Form::Depth => 5,
-        }
-    }
-
     fn title(self) -> &'static str {
         match self {
             Form::New => "New",
@@ -323,31 +313,36 @@ mod tests {
     }
 
     #[test]
-    fn the_forms_are_pages_of_a_stack() {
+    fn the_forms_are_dialogs_held_closed() {
         let ids = ids();
-        let stack = forms::stack(&FORMS, &ids).expect("numbered");
-        let pages = stack["children"].as_array().unwrap();
+        let held = forms::dialogs(&FORMS, &ids).expect("numbered");
         assert_eq!(
-            pages.len(),
-            6,
-            "the file dialogs, a new file, a save, an open, the close form and the depth"
+            held.len(),
+            5,
+            "a new file, a save, an open, the close form and the depth"
         );
-        assert_eq!(pages[1]["children"][0]["title"], "New");
-        assert_eq!(pages[5]["children"][0]["title"], "Bit depth");
-        // the open and the save are the host's file dialog, on page 0
-        let files = pages[0]["children"].as_array().unwrap();
-        let open = files.iter().find(|f| f["id"] == ids["open"]).unwrap();
+        let of = |name: &str| held.iter().find(|d| d["id"] == ids[name]).unwrap();
+        assert_eq!(of("new")["title"], "New");
+        assert_eq!(of("depth")["title"], "Bit depth");
+        assert!(
+            held.iter()
+                .filter(|d| d["modal"] == true)
+                .all(|d| d["open"] == false),
+            "none is up"
+        );
+        // the open and the save are the host's file dialog
+        let open = of("open");
         assert_eq!(open["type"], "file_dialog");
         assert_eq!(open["mode"], "open");
         assert_eq!(open["multiple"], true);
         assert!(open["kinds"].to_string().contains("flac"));
-        let save = files.iter().find(|f| f["id"] == ids["file"]).unwrap();
+        let save = of("file");
         assert_eq!(save["mode"], "save");
         assert_eq!(save["kinds"], json!([["WAV", ["wav", "wave"]]]));
         let open = Open::new(Form::Depth, BTreeMap::new());
         assert_eq!(
             open.shown(&ids).last(),
-            Some(&(ids["stack"], json!({"index": 5})))
+            Some(&(ids["depth"], json!({"open": 1})))
         );
     }
 

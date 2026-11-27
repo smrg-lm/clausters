@@ -82,9 +82,9 @@ pub struct Window<'a> {
     /// **A window with no chrome**: no menu bar and no tools, for a client
     /// that composes its own around it.
     pub bare: bool,
-    /// The dialogs a menu entry opens, as the stack the window holds, when
+    /// The dialogs a menu entry opens, as the window holds them, when
     /// the caller numbered them.
-    pub dialogs: Option<Value>,
+    pub dialogs: Option<Vec<Value>>,
     /// The channels drawn folded.
     pub folded: &'a [u32],
     /// **The spectrogram's lane, for the stacked views**: the id it is
@@ -363,11 +363,11 @@ fn dressed(w: &Window<'_>, body: Vec<Value>) -> Value {
             w.widget,
         );
     }
-    if let (Some(stack), Some(children)) = (
+    if let (Some(held), Some(children)) = (
         w.dialogs.clone(),
         window.get_mut("children").and_then(Value::as_array_mut),
     ) {
-        children.push(stack);
+        children.extend(held);
     }
     window
 }

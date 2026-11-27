@@ -290,7 +290,9 @@ pub trait Presenter: std::fmt::Debug {
 /// How many ids a drawn dialog takes from the host's.
 pub const IDS: usize = 64;
 
-/// Offsets of the drawn dialog's widgets in its block of ids.
+/// Offsets of the drawn dialog's widgets in its block of ids. The card is
+/// the element itself and answers to its id; its slot here is kept unused,
+/// and names it in [`Presenter::event`].
 const DIALOG: i32 = 0;
 const FILES: i32 = 1;
 const NAME: i32 = 2;
@@ -806,7 +808,8 @@ impl Drawn {
             {"type": "button", "id": self.at(ACCEPT), "label": accept,
                 "default": true, "variant": "default"},
         ]});
-        json!({"type": "layout", "id": self.at(DIALOG), "modal": true, "large": true,
+        json!({"type": "layout", "id": self.id, "modal": true, "large": true,
+        "open": self.up,
         "title": self.request.title, "flow": "col", "children": [
             {"type": "layout", "flow": "col", "weight": 1, "margin": 0, "gap": BODY_GAP,
                 "children": rows},
@@ -878,19 +881,15 @@ fn paths(args: &[OscType]) -> Vec<String> {
 
 impl Presenter for Drawn {
     fn stand_in(&self) -> Value {
+        // the card, the element's own id, up while it is open
         let mut dialog = self.dialog();
         let mut next = self.at(SPARE);
         number(&mut dialog, &mut next);
-        let mut empty = json!({"type": "layout"});
-        number(&mut empty, &mut next);
-        let mut page = json!({"type": "layout", "children": [dialog]});
-        number(&mut page, &mut next);
         debug_assert!(
             next <= self.at(IDS as i32),
             "a drawn dialog outgrew its ids"
         );
-        json!({"type": "layout", "id": self.id, "flow": "stack", "index": i32::from(self.up),
-            "margin": 0, "h": 0, "children": [empty, page]})
+        dialog
     }
 
     fn update(&mut self, request: Request) {
@@ -933,9 +932,9 @@ impl Presenter for Drawn {
         answer.push(self.at(PLACE), json!({"index": 0}));
         answer.push(self.at(BAR), json!({"path": self.dir}));
         self.ways(&mut answer);
-        answer.push(self.at(DIALOG), json!({"title": self.request.title}));
+        answer.push(self.id, json!({"title": self.request.title}));
         answer.push(self.at(ACCEPT), json!({"label": self.request.accept}));
-        answer.push(self.id, json!({"index": 1}));
+        answer.push(self.id, json!({"open": 1}));
         answer.push(self.at(self.keys()), json!({"focus": 1}));
         answer
     }
@@ -946,7 +945,7 @@ impl Presenter for Drawn {
         self.editing = false;
         self.replacing = None;
         self.pending = false;
-        Answer::set(self.id, json!({"index": 0}))
+        Answer::set(self.id, json!({"open": 0}))
     }
 
     fn is_up(&self) -> bool {
@@ -954,7 +953,7 @@ impl Presenter for Drawn {
     }
 
     fn owns(&self, id: i32) -> bool {
-        (self.base..self.base + IDS as i32).contains(&id)
+        id == self.id || (self.base..self.base + IDS as i32).contains(&id)
     }
 
     fn event(&mut self, id: i32, tag: &str, args: &[OscType]) -> Answer {
@@ -963,7 +962,12 @@ impl Presenter for Drawn {
         }
         self.fresh = false;
         let saves = self.request.mode == Mode::Save;
-        match id - self.base {
+        let at = if id == self.id {
+            DIALOG
+        } else {
+            id - self.base
+        };
+        match at {
             // Escape while the path is typed gives the bar back
             DIALOG if tag == "cancel" && self.editing => self.edit(false),
             DIALOG if tag == "cancel" => self.cancel(),

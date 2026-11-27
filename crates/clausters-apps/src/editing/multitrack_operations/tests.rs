@@ -421,7 +421,6 @@ fn the_close_form_waits_for_storage_and_a_failed_save_keeps_the_window() {
         panic!()
     };
     editor.set_close_form(Some(crate::closing::Ids {
-        stack: 50,
         dialog: 51,
         save: 52,
         discard: 53,
@@ -991,7 +990,6 @@ impl Fixture {
             panic!()
         };
         editor.set_close_form(Some(crate::closing::Ids {
-            stack: 50,
             dialog: 51,
             save: 52,
             discard: 53,
@@ -1028,8 +1026,8 @@ impl Fixture {
 fn shows_close_form(ran: &Ran) -> bool {
     ran.effects.iter().any(|effect| {
         effect["kind"] == "echo"
-            && effect["answer"].to_string().contains(r#""widget":50"#)
-            && effect["answer"].to_string().contains(r#""index":1"#)
+            && effect["answer"].to_string().contains(r#""widget":51"#)
+            && effect["answer"].to_string().contains(r#""open":1"#)
     })
 }
 

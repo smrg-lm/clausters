@@ -429,8 +429,8 @@ fn a_window_drawn_again_keeps_the_dialog_and_one_without_it_forgets_it() {
     def(&mut host, WINDOW);
     assert_eq!(host.file_dialogs[&20].base, base);
     assert_eq!(
-        host.registry.get(20).unwrap().props.get("index"),
-        Some(&json!(1)),
+        host.registry.get(20).unwrap().props.get("open"),
+        Some(&json!(true)),
         "still up"
     );
     def(&mut host, r#"{"type":"window","title":"w","children":[]}"#);

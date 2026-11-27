@@ -994,12 +994,12 @@ impl NotesEditor {
             self.compose_panel(&mut window);
             self.compose_display(&mut window);
             self.display_lanes = self.display_panel.then(|| self.display_lane_names());
-            // **the dialog stands over the window**, on a page of its stack
-            if let (Some(stack), Some(children)) = (
-                self.dialogs.stack(dialogs::forms()),
+            // **the dialogs stand over the window**, closed but the one up
+            if let (Some(held), Some(children)) = (
+                self.dialogs.dialogs(dialogs::forms()),
                 window.get_mut("children").and_then(Value::as_array_mut),
             ) {
-                children.push(stack);
+                children.extend(held);
             }
         }
         // **asked before it closes** only where it is the sequence's one

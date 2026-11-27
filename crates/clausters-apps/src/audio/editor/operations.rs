@@ -574,9 +574,12 @@ impl Application for AudioEditor {
                 .conversation
                 .applied(delta.outcome.version);
         }
-        if visible && applied && delta.close_dialog {
-            self.window_state.dialogs.hide();
-        }
+        // the dialog the save was asked in goes, and the window with it
+        let hidden = if visible && applied && delta.close_dialog {
+            self.window_state.dialogs.hide()
+        } else {
+            Vec::new()
+        };
         if !visible {
             delta.outcome.answer = None;
             delta.outcome.restructure = false;
@@ -625,16 +628,10 @@ impl Application for AudioEditor {
             };
             let mut corrections = self.reread();
             corrections.extend(self.envelope_corrections());
-            if delta.close_dialog {
-                corrections.extend(
-                    crate::forms::hidden(&self.window_state.dialogs.ids)
-                        .into_iter()
-                        .map(|(widget, props)| Correction {
-                            widget: i64::from(widget),
-                            props,
-                        }),
-                );
-            }
+            corrections.extend(hidden.into_iter().map(|(widget, props)| Correction {
+                widget: i64::from(widget),
+                props,
+            }));
             corrections.extend(self.focus_corrections());
             corrections.extend(self.pane_correction());
             // the list names each file as it is now: a save may have named it

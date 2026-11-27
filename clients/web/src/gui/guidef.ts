@@ -3112,6 +3112,11 @@ export interface DialogOptions extends GroupOptions {
      * window lets it, and what in it has a `weight` shares the height it gets.
      */
     large?: boolean;
+    /**
+     * Whether it is up: `false` defines it closed, in the window and
+     * numbered but taking no room and not drawn until its `open` is set.
+     */
+    open?: boolean;
 }
 
 /**
@@ -3128,9 +3133,13 @@ export interface DialogOptions extends GroupOptions {
  * to its button marked `default`; as it goes they go back to what had them.
  *
  * It is up from the moment it is defined until it is **freed** -- which is how
- * it is closed (`WidgetHandle.free`). Escape, its close button and a press
- * beside it ask it to go: the dialog reports `"cancel"`, and freeing it is
- * yours. `alert` makes it an **alert dialog**, which asks before something is
+ * it is closed (`WidgetHandle.free`) -- or until its `open` is set false.
+ * `open: false` defines it closed: it is in the window, numbered, and takes no
+ * room and is not drawn until its `open` is set true, which is how a window
+ * holds a dialog from the start and brings it up and down with no node
+ * defined or freed. Escape, its close button and a press beside it ask it to
+ * go: the dialog reports `"cancel"`, and freeing it, or setting its `open`
+ * false, is yours. `alert` makes it an **alert dialog**, which asks before something is
  * done: it has no close button, a press beside it does nothing, and only
  * Escape and its own buttons answer it. `large` makes it a dialog that holds
  * a browser (a file dialog's): as large as the window lets it, a margin round
@@ -3139,12 +3148,13 @@ export interface DialogOptions extends GroupOptions {
  * dialog.
  */
 export function dialog(options: DialogOptions = {}, ...children: GuiNode[]): View {
-    const { description, alert, wide, large, ...rest } = options;
+    const { description, alert, wide, large, open, ...rest } = options;
     const own = drop([
         ["description", description],
         ["alert", flag(alert)],
         ["wide", flag(wide)],
         ["large", flag(large)],
+        ["open", flag(open)],
     ]);
     return layout({ ...rest, ...own, modal: true, hug: !large }, ...children);
 }

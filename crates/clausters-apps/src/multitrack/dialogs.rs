@@ -22,13 +22,6 @@ impl Spec for Form {
         }
     }
 
-    fn page(self) -> i32 {
-        match self {
-            Form::SaveAs => 1,
-            Form::Open => 2,
-        }
-    }
-
     fn title(self) -> &'static str {
         match self {
             Form::SaveAs => "Save as",

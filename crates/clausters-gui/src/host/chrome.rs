@@ -574,41 +574,38 @@ mod tests {
         assert_eq!(work.rect.h + more.rect.h + m.gap, 300.0);
     }
 
-    /// **A dialog a window opens while it is up is a page of a stack.** A
-    /// hidden page is not placed at all, so a dialog held on one is not up;
-    /// flipping the stack's `index` -- a `/gui_set`, with no node defined or
-    /// freed -- puts it over the window, centred, as one defined there is.
+    /// **A dialog a window holds closed is not there** until its `open` is
+    /// set -- a `/gui_set`, with no node defined or freed -- and then stands
+    /// over the window, centred, as one defined there is. Open or closed, it
+    /// takes no room in the window's flow: the work keeps all of it.
     #[test]
-    fn a_dialog_on_a_page_of_a_stack_is_up_only_while_that_page_shows() {
+    fn a_dialog_held_closed_is_up_only_while_it_is_open() {
         let m = Metrics::default();
-        let window = |index: i32| {
+        let window = |open: bool| {
             tree(&format!(
                 r#"{{"type":"window","margin":0,"flow":"col","children":[
                     {{"id":2,"type":"label","text":"work","weight":1}},
-                    {{"id":6,"type":"layout","flow":"stack","index":{index},"margin":0,"h":0,
-                      "children":[
-                        {{"id":7,"type":"layout"}},
-                        {{"id":8,"type":"layout","children":[
-                            {{"id":3,"type":"layout","modal":true,"w":200,"h":100,"children":[
-                                {{"id":4,"type":"button","label":"OK"}}]}}]}}]}}]}}"#
+                    {{"id":3,"type":"layout","modal":true,"open":{open},"w":200,"h":100,
+                      "children":[{{"id":4,"type":"button","label":"OK"}}]}}]}}"#
             ))
         };
-        let closed = window(0);
-        let placed = layout::layout(area(), &closed, &m);
-        assert!(modal_start(&placed).is_none(), "its page is hidden");
-        assert!(placed.iter().all(|p| p.widget.id != Some(4)));
-
-        let open = window(1);
-        let placed = layout::layout(area(), &open, &m);
-        let start = modal_start(&placed).expect("the page shows, and the dialog is up");
-        assert_eq!(placed[start].widget.id, Some(3));
-        assert_eq!(
-            modal_rect(&placed),
-            Some(Rect::new(100.0, 100.0, 200.0, 100.0)),
-            "centred over the window, whatever its page was given"
-        );
-        // and the work keeps the window: the stack takes no room in the flow
-        let work = placed.iter().find(|p| p.widget.id == Some(2)).unwrap();
-        assert!(work.rect.h >= 300.0 - m.gap);
+        for open in [false, true] {
+            let t = window(open);
+            let placed = layout::layout(area(), &t, &m);
+            let work = placed.iter().find(|p| p.widget.id == Some(2)).unwrap();
+            assert_eq!(work.rect.h, 300.0, "no room and no gap for it");
+            if !open {
+                assert!(modal_start(&placed).is_none(), "closed, it is not up");
+                assert!(placed.iter().all(|p| p.widget.id != Some(4)));
+                continue;
+            }
+            let start = modal_start(&placed).expect("open, the dialog is up");
+            assert_eq!(placed[start].widget.id, Some(3));
+            assert_eq!(
+                modal_rect(&placed),
+                Some(Rect::new(100.0, 100.0, 200.0, 100.0)),
+                "centred over the window"
+            );
+        }
     }
 }

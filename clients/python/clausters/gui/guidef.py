@@ -2343,8 +2343,8 @@ def toolbar(*children, id: int | None = None, **props) -> View:
 
 def dialog(*children, title: str | None = None, description: str | None = None,
            alert: bool | None = None, wide: bool | None = None,
-           large: bool | None = None, flow: str | None = None, id: int | None = None,
-           **props) -> View:
+           large: bool | None = None, open: bool | None = None,
+           flow: str | None = None, id: int | None = None, **props) -> View:
     """A **dialog**: a `layout` that stands over the window and takes every
     press while it exists.
 
@@ -2359,9 +2359,14 @@ def dialog(*children, title: str | None = None, description: str | None = None,
     go back to what had them.
 
     It is up from the moment it is defined until it is **freed** -- which is
-    how it is closed (`clausters.gui.handle.WidgetHandle.free`). Escape, its
-    close button and a press beside it ask it to go: the dialog reports
-    ``("cancel",)``, and freeing it is yours. ``alert`` makes it an **alert
+    how it is closed (`clausters.gui.handle.WidgetHandle.free`) -- or until
+    its ``open`` is set false. ``open=False`` defines it closed: it is in the
+    window, numbered, and takes no room and is not drawn until its ``open``
+    is set true, which is how a window holds a dialog from the start and
+    brings it up and down with no node defined or freed. Escape, its close
+    button and a press beside it ask it to go: the dialog reports
+    ``("cancel",)``, and freeing it, or setting its ``open`` false, is
+    yours. ``alert`` makes it an **alert
     dialog**, which asks before something is done: it has no close button,
     a press beside it does nothing, and only Escape and its own buttons
     answer it. ``large`` makes it a dialog that holds a browser (a file
@@ -2375,6 +2380,8 @@ def dialog(*children, title: str | None = None, description: str | None = None,
         extra["wide"] = 1 if wide else 0
     if large is not None:
         extra["large"] = 1 if large else 0
+    if open is not None:
+        extra["open"] = 1 if open else 0
     return layout(*children, title=title, flow=flow, modal=True, hug=not large,
                   id=id, **extra, **props)
 

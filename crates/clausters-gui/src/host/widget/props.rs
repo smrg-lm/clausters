@@ -937,6 +937,12 @@ pub struct Group {
     /// A dialog's `large` prop: one that holds a browser (a file dialog),
     /// as large as the window lets it, its content sharing what it gets.
     pub large: bool,
+    /// **A dialog that is not up**: its `open` prop false. It stays in the
+    /// tree, numbered and corrected like any widget, and is not placed --
+    /// nothing draws it, nothing hits it, a reader does not see it -- until
+    /// its `open` is set. A dialog says nothing of it is up, as it always
+    /// was: from the moment it is defined.
+    pub closed: bool,
 }
 
 impl Group {
@@ -956,6 +962,7 @@ impl Group {
             alert: props.get("alert").and_then(truthy).unwrap_or(false),
             wide: props.get("wide").and_then(truthy).unwrap_or(false),
             large: props.get("large").and_then(truthy).unwrap_or(false),
+            closed: !props.get("open").and_then(truthy).unwrap_or(true),
         }
     }
 
@@ -979,6 +986,7 @@ impl Group {
             "alert" => truthy(v).map(|b| self.alert = b).is_some(),
             "wide" => truthy(v).map(|b| self.wide = b).is_some(),
             "large" => truthy(v).map(|b| self.large = b).is_some(),
+            "open" => truthy(v).map(|b| self.closed = !b).is_some(),
             _ => false,
         }
     }

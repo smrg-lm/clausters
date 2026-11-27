@@ -141,6 +141,12 @@ impl WidgetKind {
         matches!(self, WidgetKind::Panel { group, .. } if group.modal)
     }
 
+    /// **A dialog that is not up** (its `open` false): out of its parent's
+    /// flow as every dialog is, and not placed over the window either.
+    pub fn is_closed_dialog(&self) -> bool {
+        matches!(self, WidgetKind::Panel { group, .. } if group.modal && group.closed)
+    }
+
     /// Whether the focus moving onto or off this widget is reported
     /// ([`Element::reports_focus`]).
     pub fn reports_focus(&self) -> bool {

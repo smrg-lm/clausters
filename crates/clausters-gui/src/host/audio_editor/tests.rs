@@ -623,11 +623,6 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
     });
     let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
     let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
-    let index =
-        |host: &Host, stack: i32| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
-            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
-            other => panic!("a stack: {other:?}"),
-        };
     let dialog = widget(&host, "dialog:open");
     let verb = |host: &mut Host, seq, verb: &str| {
         let message = host.event_message(def_id, seq, vec![OscType::String(verb.into())]);
@@ -647,9 +642,9 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
     );
     assert_eq!(edited["applied"], true, "{edited}");
     verb(&mut host, 3, "new_file");
-    let close = widget(&host, "close_stack");
+    let close = widget(&host, "close_dialog");
     until(&mut host, "the close form never came up", |h| {
-        index(h, close) == 1
+        dialog_up(h, def_id, close)
     });
     assert_eq!(
         ask(&mut host, def_id, json!({"query": "file"}))["path"],
@@ -659,10 +654,18 @@ fn an_empty_multitrack_opens_a_session_from_its_file_menu() {
     let click = host.event_message(discard, 4, vec![OscType::String("click".into())]);
     assert!(host.deliver(def_id, &click));
     until(&mut host, "the new session never came", |h| {
-        index(h, close) == 0 && ask(h, def_id, json!({"query": "file"}))["path"].is_null()
+        !dialog_up(h, def_id, close) && ask(h, def_id, json!({"query": "file"}))["path"].is_null()
     });
     host.close_audio(def_id);
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Whether dialog `id` of window `def_id` is up: its `open` set.
+fn dialog_up(host: &Host, def_id: i32, id: i32) -> bool {
+    match host.window_defs[&def_id].find(id).map(|w| &w.kind) {
+        Some(crate::host::widget::WidgetKind::Panel { group, .. }) => group.modal && !group.closed,
+        other => panic!("a dialog: {other:?}"),
+    }
 }
 
 /// **A session in `folder` holding one box of notes**: region 3 over
@@ -2192,17 +2195,12 @@ fn a_roll_asks_how_before_it_converts_a_take_into_a_page_of_its_own() {
     );
     let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
     let widget = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
-    let index =
-        |host: &Host, stack: i32| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
-            Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
-            other => panic!("a stack: {other:?}"),
-        };
-    let stack = widget(&host, "dialog:stack");
-    assert_eq!(index(&host, stack), 0);
+    let notation = widget(&host, "dialog:notation");
+    assert!(!dialog_up(&host, def_id, notation));
     let message = host.event_message(def_id, 1, vec![OscType::String("convert_notation".into())]);
     assert!(host.deliver(def_id, &message));
     until(&mut host, "the dialog never came up", |h| {
-        index(h, stack) == 1
+        dialog_up(h, def_id, notation)
     });
     let before: Vec<i32> = host
         .audio
@@ -2645,11 +2643,8 @@ fn an_audio_window_s_close_form_waits_for_the_write_in_the_host() {
     let widget = widget_of(&host, def_id);
     let structure = host.audio.as_ref().unwrap().windows[&def_id].structure;
     let id = |host: &Host, name: &str| host.own_widget_id(structure, AUDIO, name).unwrap();
-    let stack = id(&host, "dialog:stack");
-    let page = |host: &Host| match host.window_defs[&def_id].find(stack).map(|w| &w.kind) {
-        Some(crate::host::widget::WidgetKind::Stack { index, .. }) => *index,
-        other => panic!("a stack: {other:?}"),
-    };
+    let form = id(&host, "dialog:close");
+    let up = |host: &Host| dialog_up(host, def_id, form);
     let delete = host.event_message(
         widget,
         1,
@@ -2672,24 +2667,21 @@ fn an_audio_window_s_close_form_waits_for_the_write_in_the_host() {
         let click = host.event_message(button, seq, vec![OscType::String("click".into())]);
         assert!(host.deliver(def_id, &click));
     };
-    let up = 4;
 
     // Cancel keeps it all
     close(&mut host, 2);
-    until(&mut host, "the close form never came up", |h| page(h) == up);
+    until(&mut host, "the close form never came up", |h| up(h));
     click(&mut host, "dialog:close:cancel", 3);
-    until(&mut host, "Cancel never took the form down", |h| {
-        page(h) == 0
-    });
+    until(&mut host, "Cancel never took the form down", |h| !up(h));
     assert!(host.window_def(def_id).is_some());
 
     // a write that fails: the form went down with the answer
     close(&mut host, 4);
-    until(&mut host, "the close form never came up", |h| page(h) == up);
+    until(&mut host, "the close form never came up", |h| up(h));
     let read_only = std::fs::Permissions::from_mode(0o555);
     std::fs::set_permissions(&folder, read_only).unwrap();
     click(&mut host, "dialog:close:ok", 5);
-    until(&mut host, "the form never went down", |h| page(h) == 0);
+    until(&mut host, "the form never went down", |h| !up(h));
     settled(&mut host, def_id);
     std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(host.window_def(def_id).is_some(), "the window stays");
@@ -2701,7 +2693,7 @@ fn an_audio_window_s_close_form_waits_for_the_write_in_the_host() {
 
     // a write that lands lets the window go, the work in the file
     close(&mut host, 6);
-    until(&mut host, "the close form never came up", |h| page(h) == up);
+    until(&mut host, "the close form never came up", |h| up(h));
     click(&mut host, "dialog:close:ok", 7);
     until(&mut host, "the window never went", |h| {
         h.window_def(def_id).is_none()
@@ -3414,13 +3406,13 @@ fn a_quit_asks_once_over_every_application() {
     };
     // asked, and cancelled
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
-    let ids = question(&mut host);
-    let says = host.window_defs[&ids.stack]
+    let (window, ids) = question(&mut host);
+    let says = host.window_defs[&window]
         .find(ids.dialog)
         .map(|w| format!("{:?}", w.kind));
     let says = says.unwrap_or_default();
     assert!(says.contains("Save changes before quitting?"), "{says}");
-    click(&mut host, ids.stack, ids.cancel);
+    click(&mut host, window, ids.cancel);
     assert!(host.question.is_none() && host.quit.is_none());
     // asked again, and not answered: the second close ends it
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
@@ -3429,8 +3421,8 @@ fn a_quit_asks_once_over_every_application() {
     assert!(host.question.is_none());
     // asked, and Save all: closes once both are written
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
-    let ids = question(&mut host);
-    click(&mut host, ids.stack, ids.save);
+    let (window, ids) = question(&mut host);
+    click(&mut host, window, ids.save);
     assert!(matches!(host.quit, Some(Quitting::Saving { .. })));
     until(&mut host, "the quit never ended", |h| h.quit.is_none());
     for &w in &windows {
@@ -3575,15 +3567,15 @@ fn a_quit_asks_once_over_the_applications_and_the_client_that_quits() {
     // one question over both
     let mut fx = Vec::new();
     assert_eq!(host.dock_close(&mut fx), DockClose::Asked);
-    let ids = host.question.expect("the question is up");
-    let says = host.window_defs[&ids.stack]
+    let (window, ids) = host.question.expect("the question is up");
+    let says = host.window_defs[&window]
         .find(ids.dialog)
         .map(|w| format!("{:?}", w.kind))
         .unwrap_or_default();
     assert!(says.contains("a.py") && says.contains("Audio"), "{says}");
     // Save all: the client is told to save its own, the application saves
     let click = host.event_message(ids.save, 9, vec![OscType::String("click".into())]);
-    assert!(host.deliver(ids.stack, &click));
+    assert!(host.deliver(window, &click));
     let fx = std::mem::take(&mut host.pending_effects);
     assert_eq!(
         told(&fx, GUI_DOCK_QUIT),

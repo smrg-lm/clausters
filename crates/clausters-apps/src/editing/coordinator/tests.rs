@@ -1290,8 +1290,8 @@ fn a_close_form_answered_with_save_is_down_while_the_file_is_written() {
             e["kind"] == "echo"
                 && e["answer"]
                     .to_string()
-                    .contains(&format!(r#""widget":{}"#, ids["stack"]))
-                && e["answer"].to_string().contains(r#""index":0"#)
+                    .contains(&format!(r#""widget":{}"#, ids["close"]))
+                && e["answer"].to_string().contains(r#""open":0"#)
         })
     };
     let action = verb_of_window(2, &editing, "close");

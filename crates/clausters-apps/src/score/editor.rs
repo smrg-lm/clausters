@@ -613,7 +613,7 @@ impl ScoreEditor {
             scale: self.scale(),
             menu: (!self.bare).then(|| self.menu()),
             toolbar: tools::toolbar(&self.tools, &self.input(), &outlines),
-            dialogs: self.dialogs.stack(dialogs::forms()),
+            dialogs: self.dialogs.dialogs(dialogs::forms()),
             ask_close: crate::closing::window_asks(self),
             palettes: palettes::column(&self.palettes, &outlines),
             glyphs: &outlines,

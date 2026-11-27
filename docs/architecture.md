@@ -1304,9 +1304,9 @@ face's eighth, smaller) is written from that glyph's outline. A tool sets the
 size its symbol is drawn at as its `text_size`. **A
 dialog is in the window from the start** (`score::dialogs`): an editor answers
 with props, never with nodes, so the three forms -- the page's text, a
-transformation's parameter, the margins and the staff -- are each alone on a
-page of a `stack` that shows none, and opening one is that stack's `index`
-corrected to its page with its fields corrected to what the score holds. A
+transformation's parameter, the margins and the staff -- are each a dialog
+held closed beside the window's contents, out of its flow, and opening one
+is its `open` set with its fields corrected to what the score holds. A
 field reports its text as it is typed and the editor keeps it
 (`editor/forms.rs`); nothing reaches the score until `OK`, which is one entry
 of the history however many fields changed, and a form that cannot be read
@@ -1413,9 +1413,8 @@ shared turn reads the window's `close` for every editor (`Converse::unsaved`,
 carries `ask_close` only where it asks, so the host holds its close mark for
 the answer; and every holder -- each client's `Editor`, the standalone host --
 frees the window on any editor's `close`. An application with no dialogs of
-its own holds the form as a page of a stack that takes no room
-(`closing::stack`), which is how the standalone host's multitrack asks about
-its session. **A window opened from inside another depends on it**
+its own holds the form as a dialog held closed (`closing::held`), which is
+how the standalone host's multitrack asks about its session. **A window opened from inside another depends on it**
 (`Host::depend`): the outer application governs, so the multitrack's window
 takes the rolls opened from it along whichever way it closes, and only the
 outer window asks.
@@ -1884,8 +1883,8 @@ A freed widget or window takes nothing. A form field becomes a chooser by
 reports `Chosen`, `Picked` and `Entered`, and `Dialogs` keeps them. Opening
 a form sets the chooser's `path` (a fresh listing, nothing selected) and
 gives it keyboard focus. Cancel and accept forget the selection and keep
-the last directory; a redraw with a form up rebuilds the stack on that page
-with its typed values and directory, forgetting the selection the new
+the last directory; a redraw with a form up rebuilds its dialog open, with
+its typed values and directory, forgetting the selection the new
 chooser lacks; a closed window drops the form. Reading a chosen file is not
 the chooser's: the audio editor answers `openFile` and its client reads
 through `SoundFile`. The clients' `file_dialog` builders compose the same

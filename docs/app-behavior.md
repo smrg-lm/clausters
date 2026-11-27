@@ -683,6 +683,15 @@ code that keeps it lives.
   beside it ask it to go; an alert dialog (the close form) is answered only
   by Escape and its buttons. In a dock a dialog stands over the whole dock,
   whichever pane it belongs to.
+- **A dialog takes no room in the window, up or not.** Every dialog an
+  application may ask in is a child of its window from the start, held
+  closed, and comes up by its `open`: nothing of it is laid out in the
+  window's flow, so the contents, the toolbar and a bar's tools keep every
+  pixel. Check it with an application open and no dialog up: nothing stands
+  between its contents and the window's status bar. *(Found 2026-11-27: the
+  dialogs sat on the pages of a `stack` in the flow, whose empty pages kept
+  their margins, so every application had an empty band over its status bar
+  and the code editor's bar lost the width at its end.)*
 - **A text field keeps its own history.** Ctrl+Z undoes its last change (a
   run of typing is one step), Ctrl+Shift+Z or Ctrl+Y redoes it, and the
   document behind it is not reached while it holds the focus.

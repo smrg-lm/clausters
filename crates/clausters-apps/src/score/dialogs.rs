@@ -265,18 +265,6 @@ impl Spec for Form {
         }
     }
 
-    /// The page of the stack it is on; page 0 is no dialog.
-    fn page(self) -> i32 {
-        match self {
-            Form::Text => 1,
-            Form::Param(_) => 2,
-            Form::Page => 3,
-            Form::File(File::Open) => 6,
-            Form::File(_) => 4,
-            Form::Close => 5,
-        }
-    }
-
     /// Its fields, by name, each with what it is labelled.
     fn fields(self) -> Vec<(&'static str, &'static str)> {
         match self {
@@ -505,7 +493,7 @@ mod tests {
     }
     use super::*;
 
-    use crate::forms::{Ids, STACK, Said, hidden, read, stack};
+    use crate::forms::{Ids, Said, dialogs, hidden, read};
 
     fn ids() -> Ids {
         names()
@@ -516,27 +504,20 @@ mod tests {
     }
 
     #[test]
-    fn the_dialogs_are_pages_of_a_stack_that_shows_none() {
+    fn the_dialogs_are_held_closed() {
         let ids = ids();
-        let stack = stack(&FORMS, &ids).expect("numbered");
-        assert_eq!(
-            (stack["flow"].as_str(), stack["index"].as_i64()),
-            (Some("stack"), Some(0))
-        );
-        assert_eq!(stack["h"], 0, "it takes no room in the window");
-        let pages = stack["children"].as_array().unwrap();
-        assert_eq!(pages.len(), 7, "no dialog, and the six forms");
-        // the file forms are the host's file dialog, on page 0, one each
-        // prefix
-        let files = pages[0]["children"].as_array().unwrap();
+        let held = dialogs(&FORMS, &ids).expect("numbered");
+        assert_eq!(held.len(), 6, "a dialog each form");
+        // the file forms are the host's file dialog, one each prefix
+        let files: Vec<&Value> = held.iter().filter(|d| d["type"] == "file_dialog").collect();
         assert_eq!(files.len(), 2, "the open and the file form");
-        assert!(files.iter().all(|f| f["type"] == "file_dialog"));
-        for (page, form) in pages[1..].iter().zip(FORMS) {
+        assert!(files.iter().all(|f| f.get("open").is_none()));
+        for (dialog, form) in held.iter().zip(FORMS) {
             if matches!(form, Form::File(_)) {
                 continue;
             }
-            let dialog = &page["children"][0];
             assert_eq!(dialog["modal"], true);
+            assert_eq!(dialog["open"], false, "none is up");
             assert_eq!(dialog["id"], ids[form.prefix()]);
             // a body of a field each and the buttons -- the close form's
             // buttons alone, its question being its description
@@ -551,18 +532,18 @@ mod tests {
             }
         }
         // every name is a widget, each under an id of its own
-        let text = stack.to_string();
+        let text = json!(held).to_string();
         for (name, id) in &ids {
             assert!(text.contains(&format!("\"id\":{id}")), "{name}");
         }
         // and a window that numbered only some has none
         let mut some = ids.clone();
         some.remove("page:staff");
-        assert!(crate::forms::stack(&FORMS, &some).is_none());
+        assert!(dialogs(&FORMS, &some).is_none());
     }
 
     #[test]
-    fn a_form_is_shown_by_correcting_its_fields_and_turning_the_stack() {
+    fn a_form_is_shown_by_correcting_its_fields_and_opening_its_dialog() {
         let ids = ids();
         let open = Open::new(
             Form::Param(Param::Stretch),
@@ -572,9 +553,9 @@ mod tests {
         assert!(shown.contains(&(ids["param:value"], json!({"value": "3/2"}))));
         assert!(shown.contains(&(ids["param:label"], json!({"text": "Factor"}))));
         assert!(shown.contains(&(ids["param"], json!({"title": "Stretch"}))));
-        assert_eq!(shown.last(), Some(&(ids[STACK], json!({"index": 2}))));
+        assert_eq!(shown.last(), Some(&(ids["param"], json!({"open": 1}))));
         // the file's form is the host's dialog, asked as the save or an
-        // export, and no page of the stack
+        // export
         let save = Open::new(
             Form::File(File::SaveAs),
             [("path".to_string(), "a.mei".to_string())].into(),
@@ -584,8 +565,10 @@ mod tests {
         assert_eq!(asked["title"], "Save as");
         assert_eq!(asked["path"], "a.mei");
         assert_eq!(asked["open"], 1);
-        assert!(shown.contains(&(ids[STACK], json!({"index": 0}))));
-        assert_eq!(hidden(&ids), vec![(ids[STACK], json!({"index": 0}))]);
+        assert_eq!(
+            hidden(Form::File(File::SaveAs), &ids),
+            vec![(ids["file"], json!({"open": 0}))]
+        );
     }
 
     #[test]

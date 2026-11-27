@@ -22,7 +22,7 @@ The components that exist (in `crates/clausters-apps/src` unless named), and wha
 | Component | What it carries, for every application that composes it |
 |---|---|
 | `chrome` | The menu bar and the toolbar in one vocabulary: an entry or a tool names a verb and nothing else |
-| `forms` | Dialogs: every form in the window from the start on a page of a `stack`, opened by a correction, never defined or freed |
+| `forms` | Dialogs: every form in the window from the start, a dialog held closed beside its contents, opened by a correction of its `open`, never defined or freed |
 | `panels` | A column of titled, folding sections beside the work, with a divider a drag moves |
 | `closing` | Closing or replacing a window's document that may hold unsaved work: the save/discard/cancel rule |
 | `editing::Editing`, `turn` | One undo order over every application open in a context; members (`Member::{Multitrack, Audio, Notes, Points, Score, External}`); what a turn is |

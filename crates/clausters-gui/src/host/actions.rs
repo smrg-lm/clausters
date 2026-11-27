@@ -187,9 +187,9 @@ pub(crate) fn resolve(
 }
 
 /// The dialog up in `widget`'s subtree: a modal panel on the path a layout
-/// places -- visible, and the shown page of a stack.
+/// places -- visible, open, and on the shown page of a stack.
 fn dialog_of(widget: &Widget) -> Option<&Widget> {
-    if !widget.visible {
+    if !widget.visible || widget.kind.is_closed_dialog() {
         return None;
     }
     if widget.kind.is_modal() {

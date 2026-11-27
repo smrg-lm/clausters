@@ -182,11 +182,11 @@ impl Host {
         let touches_stream = keys
             .iter()
             .any(|k| matches!(k.as_str(), "fills" | "buffer"));
-        // And a set can bring a dialog up or take it down: a stack's page, a
-        // subtree shown or hidden, `modal` itself.
+        // And a set can bring a dialog up or take it down: its `open`, a
+        // stack's page, a subtree shown or hidden, `modal` itself.
         let touches_dialog = keys
             .iter()
-            .any(|k| matches!(k.as_str(), "index" | "visible" | "modal"));
+            .any(|k| matches!(k.as_str(), "open" | "index" | "visible" | "modal"));
         // Mirror the change into the typed window tree the front renders. A
         // timeline view's shared keys (`view_*`, `sel_*`, `playhead_at`,
         // `link`) route through its navigation group instead, so a set on any

@@ -17,9 +17,6 @@ use serde_json::{Value, json};
 /// Where the dialogs' ids start: below the editor's own, above every id a
 /// client allocates or a script picks.
 const BASE: i32 = (1 << 24) - 100_000;
-/// Where their nodes with no role of their own are numbered from: past
-/// every widget [`forms::names`] lists.
-pub const SPARE: i32 = BASE + 100;
 /// Past the dialogs' ids.
 const END: i32 = BASE + 1000;
 
@@ -41,14 +38,6 @@ impl Spec for Form {
             Form::Open(_) => "open",
             Form::SaveAs(_) => "file",
             Form::Folder => "folder",
-        }
-    }
-
-    fn page(self) -> i32 {
-        match self {
-            Form::Open(_) => 1,
-            Form::SaveAs(_) => 2,
-            Form::Folder => 3,
         }
     }
 
@@ -136,13 +125,12 @@ mod tests {
     use clausters_apps::forms::Said;
     use std::collections::BTreeMap;
 
-    /// Every widget is numbered in the editor's range, before its spare
-    /// nodes.
+    /// Every widget is numbered in the editor's range.
     #[test]
     fn the_dialogs_are_numbered_in_the_editor_s_range() {
         let ids = ids();
         assert!(dialogs().numbered(&forms(PYTHON.types)));
-        assert!(ids.values().all(|id| owns(*id) && *id < SPARE));
+        assert!(ids.values().all(|id| owns(*id)));
     }
 
     /// **Each request is the host's file dialog**, asking for the
@@ -150,8 +138,7 @@ mod tests {
     #[test]
     fn each_request_is_the_host_s_file_dialog() {
         let d = dialogs();
-        let stack = d.stack(&forms(JAVASCRIPT.types)).unwrap();
-        let files = stack["children"][0]["children"].as_array().unwrap();
+        let files = d.dialogs(&forms(JAVASCRIPT.types)).unwrap();
         assert_eq!(files.len(), 3);
         let of = |id: i32| files.iter().find(|f| f["id"] == id).unwrap();
         let save = of(d.ids["file"]);

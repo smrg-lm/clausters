@@ -176,13 +176,11 @@ pub fn asking(
 pub const FOOTER_GAP: f64 = 8.0;
 
 /// **The close form's widgets, numbered by the window's holder**: the
-/// stack it is a page of, the dialog, and its three buttons. An application
-/// with no dialogs of its own composes the form with these ([`stack`]); one
-/// that has a stack of forms already puts [`dialog`] on a page of it.
+/// dialog and its three buttons. An application with no dialogs of its own
+/// composes the form with these ([`held`]); one that has forms already asks
+/// [`dialog`] among them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ids {
-    /// The stack: page 0 holds nothing, page 1 the form.
-    pub stack: i32,
     /// The dialog.
     pub dialog: i32,
     /// `Save`.
@@ -197,15 +195,9 @@ impl Ids {
     /// Whether `widget` is one of the form's.
     #[must_use]
     pub fn contains(&self, widget: i64) -> bool {
-        [
-            self.stack,
-            self.dialog,
-            self.save,
-            self.discard,
-            self.cancel,
-        ]
-        .iter()
-        .any(|id| i64::from(*id) == widget)
+        [self.dialog, self.save, self.discard, self.cancel]
+            .iter()
+            .any(|id| i64::from(*id) == widget)
     }
 
     /// The button named `name` ([`SAVE`], [`DISCARD`], [`CANCEL`]).
@@ -242,29 +234,22 @@ impl Ids {
     }
 }
 
-/// **The close form as a window holds it**: a stack that takes no room, page
-/// 0 empty and page 1 the form -- in the window from the start, so asking is
-/// a correction of the stack's `index` ([`shown`]) and nothing is defined.
+/// **The close form as a window holds it**: the dialog, closed -- in the
+/// window from the start, so asking is a correction of its `open`
+/// ([`shown`]) and nothing is defined.
 #[must_use]
-pub fn stack(ids: &Ids, says: &str) -> Value {
-    let form = dialog(Some(ids.dialog), says, |name| ids.button(name));
-    json!({
-        "type": "layout",
-        "id": ids.stack,
-        "flow": "stack",
-        "index": 0,
-        "h": 0,
-        "margin": 0,
-        "children": [{"type": "layout"}, {"type": "layout", "children": [form]}],
-    })
+pub fn held(ids: &Ids, says: &str) -> Value {
+    let mut form = dialog(Some(ids.dialog), says, |name| ids.button(name));
+    form["open"] = json!(false);
+    form
 }
 
 /// The correction that puts the close form up, or takes it down.
 #[must_use]
 pub fn shown(ids: &Ids, up: bool) -> Vec<Correction> {
     vec![Correction {
-        widget: i64::from(ids.stack),
-        props: json!({"index": i32::from(up)}),
+        widget: i64::from(ids.dialog),
+        props: json!({"open": i32::from(up)}),
     }]
 }
 
@@ -448,29 +433,35 @@ mod tests {
         assert!(asks(true, true) && !asks(false, true) && !asks(true, false));
     }
 
-    /// The form a window holds is a page of a stack, up by a correction, and
-    /// its buttons and its own close are read back as the three answers.
+    /// The form a window holds is its dialog, closed, up by a correction,
+    /// and its buttons and its own close are read back as the three answers.
     #[test]
-    fn a_held_form_is_a_page_and_reads_its_answers() {
+    fn a_held_form_is_a_closed_dialog_and_reads_its_answers() {
         let ids = Ids {
-            stack: 20,
             dialog: 21,
             save: 22,
             discard: 23,
             cancel: 24,
         };
-        let held = stack(&ids, "Unsaved.");
+        let form = held(&ids, "Unsaved.");
         assert_eq!(
-            (held["id"].clone(), held["index"].clone()),
-            (json!(20), json!(0))
+            (
+                form["id"].clone(),
+                form["open"].clone(),
+                form["modal"].clone()
+            ),
+            (json!(21), json!(false), json!(true))
         );
-        assert_eq!(held["children"][1]["children"][0]["id"], 21);
-        assert_eq!(shown(&ids, true)[0].props, json!({"index": 1}));
+        let up = shown(&ids, true);
+        assert_eq!(
+            (up[0].widget, up[0].props.clone()),
+            (21, json!({"open": 1}))
+        );
         assert_eq!(ids.read(22, "click"), Some(Choice::Save));
         assert_eq!(ids.read(23, "click"), Some(Choice::Discard));
         assert_eq!(ids.read(24, "click"), Some(Choice::Cancel));
         assert_eq!(ids.read(21, "cancel"), Some(Choice::Cancel));
         assert_eq!(ids.read(22, "focus"), None);
-        assert!(ids.contains(20) && !ids.contains(25));
+        assert!(ids.contains(21) && !ids.contains(20) && !ids.contains(25));
     }
 }

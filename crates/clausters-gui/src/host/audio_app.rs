@@ -122,7 +122,6 @@ pub(super) const MULTITRACK_ROLES: &[&str] = &[
     "play",
     "stop",
     "clock",
-    "close_stack",
     "close_dialog",
     "close_save",
     "close_discard",
@@ -1385,9 +1384,8 @@ impl App {
     ) {
         let controls = json!({"row": ids["row"], "rewind": ids["rewind"], "play": ids["play"],
             "stop": ids["stop"], "clock": ids["clock"]});
-        let form = json!({"stack": ids["close_stack"], "dialog": ids["close_dialog"],
-            "save": ids["close_save"], "discard": ids["close_discard"],
-            "cancel": ids["close_cancel"]});
+        let form = json!({"dialog": ids["close_dialog"], "save": ids["close_save"],
+            "discard": ids["close_discard"], "cancel": ids["close_cancel"]});
         // **A window that saves its session asks before a close loses
         // work**: one over a file, or told where it writes. An untitled one
         // goes back to the script that handed it over, which keeps it.

@@ -882,24 +882,17 @@ fn a_loop_switch_sent_again_says_nothing() {
     assert_eq!(said(&host).last().map(String::as_str), Some("loop on"));
 }
 
-/// A dialog in a stack's page is up only while that page is shown: page 0 of
-/// an application's dialogs is empty.
+/// A dialog held closed is not up until its `open` is set, as an
+/// application's dialogs are held.
 #[test]
-fn a_dialog_in_a_hidden_page_is_not_up() {
+fn a_dialog_held_closed_is_not_up() {
     let mut host = host_from(
         r#"{"type":"window","children":[
-            {"id":7,"type":"layout","flow":"stack","index":0,"h":0,"children":[
-              {"type":"layout"},
-              {"type":"layout","children":[
-                {"id":3,"type":"layout","modal":true,"children":[]}]}]}]}"#,
+            {"id":3,"type":"layout","modal":true,"open":false,"children":[]}]}"#,
     );
     assert!(host.dialog(1).is_none());
     let mut effects = Vec::new();
-    host.set_props(
-        7,
-        vec![("index".into(), serde_json::json!(1))],
-        &mut effects,
-    );
+    host.set_props(3, vec![("open".into(), serde_json::json!(1))], &mut effects);
     assert_eq!(host.dialog(1).and_then(|d| d.id), Some(3));
 }
 

@@ -102,6 +102,14 @@ impl Host {
         if self.question_event(def_id, message) || self.file_dialog_event(message) {
             return true;
         }
+        self.deliver_to_owner(def_id, message)
+    }
+
+    /// **[`Host::deliver`] past the host's own dialogs**: what one of them
+    /// reports as an event of its element, which is its caller's to hear
+    /// and never the dialog's own again -- a file dialog's card answers to
+    /// the element's id, and its report comes from that id too.
+    pub(super) fn deliver_to_owner(&mut self, def_id: i32, message: &OscMessage) -> bool {
         #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
         if self.owns_audio(def_id) {
             return self.answer_audio(def_id, message);

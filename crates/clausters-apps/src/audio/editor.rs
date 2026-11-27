@@ -1551,7 +1551,7 @@ impl AudioEditor {
             size: self.window_state.size,
             meter,
             bare: self.window_state.bare,
-            dialogs: self.window_state.dialogs.stack(dialogs::forms()),
+            dialogs: self.window_state.dialogs.dialogs(dialogs::forms()),
             folded: &self.folded(),
             lane: self
                 .window_state

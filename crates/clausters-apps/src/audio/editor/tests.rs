@@ -818,7 +818,7 @@ fn with_dialogs(facts: Value) -> (AudioEditor, BTreeMap<String, i64>) {
     );
     assert!(
         window.to_string().contains("\"Save as\""),
-        "the window holds the dialogs' stack"
+        "the window holds its dialogs"
     );
     (editor, ids)
 }
@@ -851,13 +851,9 @@ fn an_untitled_file_is_saved_through_the_save_as_form() {
         json!([ids["file"], 2, 0, "chosen", "WAV", "/takes/new.wav"]),
     );
     assert!(depth.get("steps").is_none(), "the depth is asked first");
-    assert_eq!(corrections_of(&depth, ids["stack"]), json!({"index": 5}));
+    assert_eq!(corrections_of(&depth, ids["depth"])["open"], 1);
     let ok = event(&mut editor.clone(), json!([ids["depth:ok"], 3, 0, "click"]));
-    assert!(
-        ok["answer"]["corrections"]
-            .to_string()
-            .contains("\"index\":0")
-    );
+    assert_eq!(corrections_of(&ok, ids["depth"]), json!({"open": 0}));
     let (requested, saved) = window_save(&mut editor, json!([ids["depth:ok"], 3, 0, "click"]));
     assert!(requested);
     assert_eq!(renders(&saved["steps"])[0]["path"], "/takes/new.wav");
@@ -885,10 +881,6 @@ fn a_save_as_starts_at_its_file_and_cancel_closes_it() {
     assert_eq!(corrections_of(&shown, ids["file"])["path"], "/takes/a.wav");
     let cancelled = event(&mut editor, json!([ids["file"], 2, 0, "cancel"]));
     assert_eq!(corrections_of(&cancelled, ids["file"]), json!({"open": 0}));
-    assert_eq!(
-        corrections_of(&cancelled, ids["stack"]),
-        json!({"index": 0})
-    );
     assert_eq!(
         call(&mut editor, json!({"verb": "file"}))["path"],
         "/takes/a.wav"
@@ -1099,10 +1091,7 @@ fn the_open_form_is_the_host_s_file_dialog() {
     assert!(drawn["kinds"].to_string().contains("flac"));
     event(&mut editor, json!([900, 1, 0, "open_file"]));
     let cancelled = event(&mut editor, json!([ids["open"], 2, 0, "cancel"]));
-    assert_eq!(
-        corrections_of(&cancelled, ids["stack"]),
-        json!({"index": 0})
-    );
+    assert_eq!(corrections_of(&cancelled, ids["open"]), json!({"open": 0}));
     assert!(cancelled.get("openFile").is_none());
 }
 

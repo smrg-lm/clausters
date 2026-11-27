@@ -139,8 +139,8 @@ pub struct Window<'a> {
     /// **Whether the window saves its session itself**: File has Save and
     /// Save as then. Not a session opened read-only.
     pub saves: bool,
-    /// The dialogs' stack ([`dialogs`]), when the holder numbered them.
-    pub dialogs: Option<&'a Value>,
+    /// The dialogs ([`dialogs`]), when the holder numbered them.
+    pub dialogs: Option<&'a [Value]>,
     /// **A window with no chrome**: no menu bar and no tools, for a client
     /// that composes its own around it. The transport row stays, under the
     /// multitrack, where a window with chrome holds it in the toolbar.
@@ -208,11 +208,11 @@ pub fn window(w: &Window<'_>) -> Value {
     // **The close form, held**, where the holder numbered it -- and the
     // window asks before it closes only where it is the work's one holder
     if let Some(ids) = &w.close_form {
-        children.push(crate::closing::stack(ids, UNSAVED));
+        children.push(crate::closing::held(ids, UNSAVED));
     }
-    // **The dialogs, held**: the Save as form, on a page of its stack
-    if let Some(stack) = w.dialogs {
-        children.push(stack.clone());
+    // **The dialogs, held**: the Save as and Open forms, closed
+    if let Some(held) = w.dialogs {
+        children.extend(held.iter().cloned());
     }
     let mut window = json!({
         "type": "window",

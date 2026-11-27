@@ -1238,9 +1238,10 @@ pub struct Host {
     /// **What the client that quits the application would lose**, as it
     /// declared it: its documents' titles.
     declared: Vec<String>,
-    /// The host's own question before a quit, while it is up.
+    /// The host's own question before a quit, while it is up: the window
+    /// it stands in, and its widgets.
     #[cfg(any(not(target_arch = "wasm32"), feature = "apps"))]
-    question: Option<clausters_apps::closing::Ids>,
+    question: Option<(i32, clausters_apps::closing::Ids)>,
     /// **What the dock's window opens as**: its title and its size in
     /// logical pixels -- an application's name and the size it was left at,
     /// where an application set them, and the host's own otherwise.

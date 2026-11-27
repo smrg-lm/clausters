@@ -6,9 +6,10 @@
 //! ([`gestures::focus`](super::gestures)), and Escape and a press on the
 //! scrim asking it to go are the gesture machine's.
 //!
-//! A dialog comes up however a window says so -- defined, its stack's page
-//! turned, freed, its `modal` set -- so the host looks after each change that
-//! can do it ([`Host::settle_dialog`]) rather than in any one of them.
+//! A dialog comes up however a window says so -- defined, its `open` set,
+//! a stack's page turned, freed, its `modal` set -- so the host looks after
+//! each change that can do it ([`Host::settle_dialog`]) rather than in any
+//! one of them.
 
 use super::widget::Widget;
 use super::{Host, HostEffect};

@@ -141,8 +141,9 @@ pub struct Window<'a> {
     pub menu: Option<Value>,
     /// The toolbar ([`tools::toolbar`]), when the caller numbered its tools.
     pub toolbar: Option<Value>,
-    /// The dialogs ([`crate::forms::stack`]), when the caller numbered them.
-    pub dialogs: Option<Value>,
+    /// The dialogs ([`crate::forms::dialogs`]), when the caller numbered
+    /// them.
+    pub dialogs: Option<Vec<Value>>,
     /// **Whether the window asks before it closes** -- its `ask_close`
     /// ([`crate::closing::asks`]).
     pub ask_close: bool,
@@ -231,7 +232,7 @@ pub fn window(w: Window<'_>) -> Value {
         .into_iter()
         .chain([work])
         .chain(line)
-        .chain(dialogs)
+        .chain(dialogs.into_iter().flatten())
         .collect();
     let mut window = json!({
         "type": "window",

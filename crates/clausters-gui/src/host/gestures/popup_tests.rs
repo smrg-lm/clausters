@@ -1968,7 +1968,7 @@ fn a_press_on_the_scrim_asks_a_dialog_to_go_and_an_alert_stays() {
 
 /// **A dialog takes the keys as it comes up and gives them back as it
 /// goes**: to its first field, else to its default button; back to what had
-/// them, which a page of a stack turning shows as well as a definition.
+/// them, which its `open` set shows as well as a definition.
 #[test]
 fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
     let dialog = |field: bool| {
@@ -1980,13 +1980,10 @@ fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
         format!(
             r#"{{"type":"window","margin":0,"flow":"col","status":false,"children":[
                 {{"id":2,"type":"text","value":"behind"}},
-                {{"id":3,"type":"layout","flow":"stack","index":0,"h":0,"margin":0,"children":[
-                    {{"type":"layout"}},
-                    {{"type":"layout","children":[
-                        {{"id":10,"type":"layout","modal":1,"w":300,"h":200,"children":[
-                            {first}
-                            {{"id":12,"type":"button","label":"Cancel"}},
-                            {{"id":13,"type":"button","label":"OK","default":1}}]}}]}}]}}]}}"#
+                {{"id":10,"type":"layout","modal":1,"open":0,"w":300,"h":200,"children":[
+                    {first}
+                    {{"id":12,"type":"button","label":"Cancel"}},
+                    {{"id":13,"type":"button","label":"OK","default":1}}]}}]}}"#
         )
     };
     let set = |host: &mut Host, id: i32, key: &str, v: i32| {
@@ -1997,7 +1994,7 @@ fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
         let mut host = host_from(&dialog(field));
         set(&mut host, 2, "focus", 1);
         assert_eq!(host.focused(), Some((1, 2)));
-        set(&mut host, 3, "index", 1);
+        set(&mut host, 10, "open", 1);
         assert_eq!(host.focused(), Some((1, stop)), "field {field}");
         // Tab comes round inside it, never behind it
         let mut g = Gestures::default();
@@ -2006,7 +2003,7 @@ fn a_dialog_takes_the_keys_as_it_comes_up_and_gives_them_back() {
             let (_, at) = host.focused().expect("the dialog keeps the keys");
             assert!([11, 12, 13].contains(&at), "on {at}");
         }
-        set(&mut host, 3, "index", 0);
+        set(&mut host, 10, "open", 0);
         assert_eq!(host.focused(), Some((1, 2)), "given back");
     }
 }

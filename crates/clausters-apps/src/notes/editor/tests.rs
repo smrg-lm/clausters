@@ -965,11 +965,16 @@ fn entering_notation_in_a_window_with_the_dialog_asks_how_first() {
         };
         e.event(&event, 1)
     };
-    let stack = ids["stack"].as_i64().unwrap();
+    let dialog = ids["notation"].as_i64().unwrap();
     let out = e.event(&window_verb("convert_notation"), 1);
     assert!(out.converted.is_none(), "nothing is converted yet");
     let answer = serde_json::to_value(out.answer.unwrap()).unwrap();
-    assert!(answer.to_string().contains(&format!("{stack}")));
+    assert!(
+        answer
+            .to_string()
+            .contains(&format!(r#"{{"props":{{"open":1}},"widget":{dialog}}}"#)),
+        "{answer}"
+    );
     // Cancel: nothing is made
     let out = said(&mut e, "notation:cancel", "click");
     assert!(out.converted.is_none() && out.record.is_none());

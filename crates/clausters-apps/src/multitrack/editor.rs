@@ -1481,8 +1481,8 @@ impl MultitrackEditor {
     pub fn window(&mut self, widget: i32, ruler: i32) -> Value {
         self.widget = Some(widget);
         self.ruler = Some(ruler);
-        let stack = self.dialogs.stack(dialogs::forms());
-        let mut def = self.composed(widget, ruler, stack.as_ref(), super::window);
+        let held = self.dialogs.dialogs(dialogs::forms());
+        let mut def = self.composed(widget, ruler, held.as_deref(), super::window);
         if let Some(lists) = self.lists() {
             set_on(&mut def, widget, "lists", &lists);
         }
@@ -1668,7 +1668,7 @@ impl MultitrackEditor {
         &self,
         widget: i32,
         ruler: i32,
-        dialogs: Option<&Value>,
+        dialogs: Option<&[Value]>,
         f: impl FnOnce(&Window<'_>) -> T,
     ) -> T {
         let multitrack = self.multitrack();
@@ -2495,7 +2495,6 @@ mod tests {
     #[test]
     fn the_sessions_one_window_asks_before_a_close_loses_work() {
         let ids = crate::closing::Ids {
-            stack: 50,
             dialog: 51,
             save: 52,
             discard: 53,
@@ -2519,7 +2518,10 @@ mod tests {
             .last()
             .unwrap()
             .clone();
-        assert_eq!(held["id"], 50);
+        assert_eq!(
+            (held["id"].clone(), held["open"].clone()),
+            (json!(51), json!(false))
+        );
         assert!(alone.event(&close(), 1).close, "nothing unsaved: at once");
         alone.set_unsaved(true);
         let out = alone.event(&close(), 1);
@@ -2527,7 +2529,10 @@ mod tests {
         let Some(Answer::Push { corrections, .. }) = out.answer else {
             panic!("the form shown")
         };
-        assert_eq!(corrections[0].props, json!({"index": 1}));
+        assert_eq!(
+            (corrections[0].widget, corrections[0].props.clone()),
+            (51, json!({"open": 1}))
+        );
         // Cancel keeps the window; Don't save closes; Save saves, then closes
         let said = |editor: &mut MultitrackEditor, widget: i64| {
             editor.event(&event(widget, 2, 1, "click", vec![]), 1)
@@ -3099,13 +3104,14 @@ mod tests {
         ed.set_saves(true);
         ed.set_untitled(true);
         let window = ed.window(40, 41);
-        let stack = &window["children"]
+        let held = &window["children"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|c| c["id"] == ids["stack"])
-            .expect("the window holds the dialogs' stack");
-        assert_eq!(stack["index"], 0);
+            .find(|c| c["id"] == ids["file"])
+            .expect("the window holds the dialogs");
+        assert_eq!(held["type"], "file_dialog");
+        assert!(held.get("open").is_none(), "closed");
         assert!(
             window["menu"].to_string().contains("save_as"),
             "File has Save as"

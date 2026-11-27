@@ -74,15 +74,6 @@ impl Spec for Form {
         }
     }
 
-    fn page(self) -> i32 {
-        match self {
-            Form::Notation => 1,
-            Form::Open => 2,
-            Form::SaveAs(_) => 3,
-            Form::Close => 4,
-        }
-    }
-
     fn title(self) -> &'static str {
         match self {
             Form::Notation => "Write as notation",
@@ -228,7 +219,7 @@ pub fn conversion(form: &Open) -> Result<(Value, Writing), String> {
 mod tests {
     use super::*;
 
-    use crate::forms::{Said, stack};
+    use crate::forms::{Said, dialogs as held};
 
     fn dialogs() -> Dialogs {
         let mut d = Dialogs::default();
@@ -273,7 +264,7 @@ mod tests {
     #[test]
     fn the_choices_are_the_host_s_choice_and_report_the_option_chosen() {
         let mut d = dialogs();
-        let tree = stack(&FORMS, &d.ids).unwrap();
+        let tree = json!({"children": held(&FORMS, &d.ids).unwrap()});
         let division = find(&tree, d.ids["notation:division"]).unwrap();
         assert_eq!(division["type"], "choice");
         assert_eq!(division["options"], json!(DIVISION_NAMES));

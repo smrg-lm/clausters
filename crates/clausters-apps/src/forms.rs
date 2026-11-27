@@ -2,12 +2,13 @@
 //! while it is up, one mechanism for every application that has any.
 //!
 //! A dialog is a node of the tree and an editor answers with props, never with
-//! nodes, so every dialog is **in the window from the start, on a page of a
-//! `stack`**: a hidden page is not placed, which is a dialog that is not up,
-//! and opening one is the stack's `index` set to its page, with its fields
-//! corrected to what the editor holds. Nothing is defined and nothing is freed,
-//! so the standalone host and every client open the same dialog by the same
-//! correction.
+//! nodes, so every dialog is **in the window from the start, closed**: a
+//! dialog whose `open` is false takes no room and is not placed, and opening
+//! one is its `open` set, with its fields corrected to what the editor holds.
+//! The dialogs are the window's own children, beside its contents and
+//! outside their flow, since a dialog stands over the window rather than in
+//! it. Nothing is defined and nothing is freed, so the standalone host and
+//! every client open the same dialog by the same correction.
 //!
 //! An application says what its forms are ([`Spec`]) and the widgets are named
 //! here ([`names`]) and numbered by the caller, as the tools are; a window
@@ -42,16 +43,13 @@ use serde_json::{Map, Value, json};
 /// The caller's widget id for each widget of the dialogs it numbered.
 pub type Ids = BTreeMap<String, i32>;
 
-/// The stack the dialogs are pages of.
-pub const STACK: &str = "stack";
-
 /// **What an application's form is**: everything the mechanism needs to name,
 /// build, show and read it.
 pub trait Spec: Copy + PartialEq {
-    /// The prefix its widgets are named under.
+    /// **The prefix its widgets are named under**, and so the dialog it is
+    /// asked in: forms that share a prefix share one dialog, drawn as the
+    /// question that is up.
     fn prefix(self) -> &'static str;
-    /// The page of the stack it is on; page 0 is no dialog.
-    fn page(self) -> i32;
     /// What its dialog is titled.
     fn title(self) -> &'static str;
     /// Its fields, by name, each with what it is labelled; none for a file
@@ -297,15 +295,15 @@ pub fn footer(cancel: Option<i32>, ok: Option<i32>, accept: &str) -> Value {
     footer_of(&[cancel, ok])
 }
 
-/// **Every widget of the dialogs, by name**, for a caller to number: the
-/// stack; and for each form its dialog (`text`), its fields (`text:title`),
+/// **Every widget of the dialogs, by name**, for a caller to number: for
+/// each form its dialog (`text`), its fields (`text:title`),
 /// the caption a form corrects (`param:label`) and its two buttons
 /// (`text:ok`, `text:cancel`) -- three for the close form, whose third closes
 /// without saving (`close:discard`). A file request is its dialog alone,
 /// the host's `file_dialog`.
 #[must_use]
 pub fn names<F: Spec>(forms: &[F]) -> Vec<String> {
-    let mut out = vec![STACK.to_string()];
+    let mut out = Vec::new();
     for form in forms {
         let prefix = form.prefix();
         out.push(prefix.to_string());
@@ -344,18 +342,17 @@ const CAPTION_GAP: f64 = 8.0;
 /// gap inside a dialog's body.
 const BODY_GAP: f64 = 16.0;
 
-/// One form as a dialog: a row per field, and `Cancel` and `OK` under them --
-/// or, closing, the close form every application asks in
-/// ([`crate::closing::dialog`]). A file request has none here: it is the
-/// host's dialog, beside the pages.
+/// One form as a dialog, up while `up` holds it: a row per field, and
+/// `Cancel` and `OK` under them -- or, closing, the close form every
+/// application asks in ([`crate::closing::dialog`]). A file request is the
+/// host's dialog, and is built by [`dialogs`].
 fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
     let prefix = form.prefix();
     let id = |name: &str| ids.get(&format!("{prefix}:{name}")).copied();
     if let Some(question) = form.closes() {
-        return crate::closing::dialog(ids.get(prefix).copied(), question, id);
-    }
-    if form.file().is_some() {
-        return json!({"type": "layout"});
+        let mut card = crate::closing::dialog(ids.get(prefix).copied(), question, id);
+        card["open"] = json!(up.is_some());
+        return card;
     }
     // what a field holds: the form's text when it is the one up, else nothing
     let held = |name: &str| up.map_or("", |open| open.value(name));
@@ -395,6 +392,7 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
         "type": "layout",
         "id": ids.get(prefix),
         "modal": true,
+        "open": up.is_some(),
         "hug": true,
         "title": form.title(),
         "flow": "col",
@@ -402,40 +400,40 @@ fn dialog<F: Spec>(form: F, ids: &Ids, up: Option<&Open<F>>) -> Value {
     })
 }
 
-/// **The dialogs, as the stack the window holds** -- or `None` when the
-/// caller did not number them. It takes no room in the window's flow: page 0
-/// holds the file requests' dialogs, the host's, which take none either, and
-/// each other form's dialog is alone on a page of its own, in the order
-/// `forms` gives, which is the order of their pages.
+/// **The dialogs, as the window holds them** -- or `None` when the caller
+/// did not number them: one per prefix, in the order `forms` gives, each
+/// closed. They are children of the window, which places none of them in
+/// its flow: a dialog stands over the window while it is up.
 #[must_use]
-pub fn stack<F: Spec>(forms: &[F], ids: &Ids) -> Option<Value> {
-    stack_with(forms, ids, None)
+pub fn dialogs<F: Spec>(forms: &[F], ids: &Ids) -> Option<Vec<Value>> {
+    dialogs_with(forms, ids, None)
 }
 
-/// The stack, turned to the page of the form `up` with its fields holding
-/// what it holds -- the window drawn again while a dialog is up. **Forms may
-/// share a page**, a dialog that serves several questions: `forms` names the
-/// page by one of them, and a page is drawn as the question it is asking.
-fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<Value> {
+/// The dialogs, the one of the form `up` open with its fields holding what
+/// it holds -- the window drawn again while a dialog is up. **Forms may
+/// share a dialog**, one that serves several questions: `forms` names it by
+/// one of them, and it is drawn as the question it is asking.
+fn dialogs_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<Vec<Value>> {
     if !numbered(forms, ids) {
         return None;
     }
-    let up = up.filter(|open| forms.iter().any(|form| form.page() == open.form.page()));
-    // the file requests: one host dialog each prefix, open while its form
-    // is up
-    let mut files: Vec<Value> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
+    let mut out = Vec::new();
     for form in forms {
-        let Some(request) = form.file() else {
-            continue;
-        };
-        if seen.contains(&form.prefix()) {
+        let prefix = form.prefix();
+        if seen.contains(&prefix) {
             continue;
         }
-        seen.push(form.prefix());
-        let id = ids.get(form.prefix()).copied();
-        let open = up.filter(|open| open.form.prefix() == form.prefix());
-        let element = match open {
+        seen.push(prefix);
+        let open = up.filter(|open| open.form.prefix() == prefix);
+        let id = ids.get(prefix).copied();
+        let Some(request) = form.file() else {
+            out.push(dialog(open.map_or(*form, |open| open.form), ids, open));
+            continue;
+        };
+        // the file requests: one host dialog each prefix, open while its
+        // form is up
+        out.push(match open {
             Some(open) => {
                 let request = open.form.file().unwrap_or(request);
                 let mut element = file_dialog(id, &request, open.form.title(), open.form.accept());
@@ -446,28 +444,9 @@ fn stack_with<F: Spec>(forms: &[F], ids: &Ids, up: Option<&Open<F>>) -> Option<V
                 element
             }
             None => file_dialog(id, &request, form.title(), form.accept()),
-        };
-        files.push(element);
+        });
     }
-    let pages: Vec<Value> = std::iter::once(json!({"type": "layout", "children": files}))
-        .chain(forms.iter().map(|form| {
-            let open = up.filter(|open| open.form.page() == form.page());
-            let asked = open.map_or(*form, |open| open.form);
-            json!({"type": "layout", "children": [dialog(asked, ids, open)]})
-        }))
-        .collect();
-    let index = up
-        .filter(|open| open.form.file().is_none())
-        .map_or(0, |open| open.form.page());
-    Some(json!({
-        "type": "layout",
-        "id": ids.get(STACK),
-        "flow": "stack",
-        "index": index,
-        "margin": 0,
-        "h": 0,
-        "children": pages,
-    }))
+    Some(out)
 }
 
 /// **What a widget of the dialogs said.**
@@ -579,17 +558,13 @@ impl<F: Spec> Open<F> {
     }
 
     /// **What the window is corrected with to show it**: every field's text,
-    /// the caption it asks with, its title, and the stack turned to its page
-    /// -- for a file request, its dialog asked and opened.
+    /// the caption it asks with, its title, and its dialog opened -- for a
+    /// file request, its dialog asked and opened.
     #[must_use]
     pub fn shown(&self, ids: &Ids) -> Vec<(i32, Value)> {
         let prefix = self.form.prefix();
         if let Some(request) = self.form.file() {
-            let mut out: Vec<(i32, Value)> = ids
-                .get(STACK)
-                .map(|stack| (*stack, json!({"index": 0})))
-                .into_iter()
-                .collect();
+            let mut out = Vec::new();
             if let Some(id) = ids.get(prefix) {
                 let mut props =
                     request.props(self.form.title(), self.form.accept(), self.value(PATH));
@@ -626,8 +601,9 @@ impl<F: Spec> Open<F> {
         if let Some(id) = ids.get(&format!("{prefix}:ok")) {
             out.push((*id, json!({"label": self.form.accept()})));
         }
-        if let Some(stack) = ids.get(STACK) {
-            out.push((*stack, json!({"index": self.form.page()})));
+        // last, so it comes up holding what it holds
+        if let Some(id) = ids.get(prefix) {
+            out.push((*id, json!({"open": 1})));
         }
         out
     }
@@ -647,11 +623,11 @@ pub fn corrections(list: Vec<(i32, Value)>) -> Vec<clausters_editing::conversati
         .collect()
 }
 
-/// What the stack is corrected with to take a dialog down.
+/// What the window is corrected with to take `form`'s dialog down.
 #[must_use]
-pub fn hidden(ids: &Ids) -> Vec<(i32, Value)> {
-    ids.get(STACK)
-        .map(|stack| (*stack, json!({"index": 0})))
+pub fn hidden<F: Spec>(form: F, ids: &Ids) -> Vec<(i32, Value)> {
+    ids.get(form.prefix())
+        .map(|id| (*id, json!({"open": 0})))
         .into_iter()
         .collect()
 }
@@ -696,10 +672,10 @@ impl<F: Spec> Dialogs<F> {
             .map(|(name, _)| name.as_str())
     }
 
-    /// **The stack for a window drawn now**: turned to the form that is up,
+    /// **The dialogs for a window drawn now**: the form that is up open,
     /// its fields holding what they hold.
-    pub fn stack(&self, forms: &[F]) -> Option<Value> {
-        stack_with(forms, &self.ids, self.up.as_ref())
+    pub fn dialogs(&self, forms: &[F]) -> Option<Vec<Value>> {
+        dialogs_with(forms, &self.ids, self.up.as_ref())
     }
 
     /// **Opens `form`**, its fields holding `values`, and answers what the
@@ -708,21 +684,22 @@ impl<F: Spec> Dialogs<F> {
     /// with none, where the host's dialog was last left.
     pub fn open(&mut self, form: F, values: BTreeMap<String, String>) -> Vec<(i32, Value)> {
         let open = Open::new(form, values);
-        let shown = open.shown(&self.ids);
+        // one dialog at a time: another that was up goes first
+        let mut out = match &self.up {
+            Some(was) if was.form.prefix() != form.prefix() => hidden(was.form, &self.ids),
+            _ => Vec::new(),
+        };
+        out.extend(open.shown(&self.ids));
         self.up = Some(open);
-        shown
+        out
     }
 
     /// **Takes the dialog down**, and answers the window's correction.
     pub fn hide(&mut self) -> Vec<(i32, Value)> {
-        let mut out = hidden(&self.ids);
-        if let Some(open) = self.up.take()
-            && open.form.file().is_some()
-            && let Some(id) = self.ids.get(open.form.prefix())
-        {
-            out.push((*id, json!({"open": 0})));
-        }
-        out
+        self.up
+            .take()
+            .map(|open| hidden(open.form, &self.ids))
+            .unwrap_or_default()
     }
 
     /// **An answer the application refused**: a form of fields stays up,
@@ -785,13 +762,6 @@ mod tests {
                 Form::Keep => "keep",
             }
         }
-        fn page(self) -> i32 {
-            match self {
-                Form::Name => 1,
-                Form::Load => 2,
-                Form::Keep => 3,
-            }
-        }
         fn title(self) -> &'static str {
             match self {
                 Form::Keep => "Save as",
@@ -835,14 +805,18 @@ mod tests {
         }
     }
 
-    fn find(tree: &Value, id: i32) -> Option<&Value> {
+    /// The node numbered `id` in a tree, or in a list of them.
+    fn find_in(tree: &Value, id: i32) -> Option<&Value> {
+        if let Some(list) = tree.as_array() {
+            return list.iter().find_map(|node| find_in(node, id));
+        }
         if tree["id"] == id {
             return Some(tree);
         }
         tree["children"]
             .as_array()?
             .iter()
-            .find_map(|child| find(child, id))
+            .find_map(|child| find_in(child, id))
     }
 
     /// **A file request is the host's dialog**: one element, named by the
@@ -851,14 +825,14 @@ mod tests {
     fn a_file_request_is_the_host_s_file_dialog() {
         let d = dialogs();
         assert!(names(&FORMS).iter().all(|n| !n.starts_with("load:")));
-        let stack = stack(&FORMS, &d.ids).unwrap();
-        let load = find(&stack, d.ids["load"]).unwrap();
+        let stack = json!(super::dialogs(&FORMS, &d.ids).unwrap());
+        let load = find_in(&stack, d.ids["load"]).unwrap();
         assert_eq!(load["type"], "file_dialog");
         assert_eq!(load["mode"], "open");
         assert_eq!(load["kinds"], json!([["WAV", ["wav"]]]));
         assert_eq!(load["multiple"], true);
         assert_eq!(load["all_files"], true);
-        let keep = find(&stack, d.ids["keep"]).unwrap();
+        let keep = find_in(&stack, d.ids["keep"]).unwrap();
         assert_eq!(keep["mode"], "save");
         assert_eq!(keep["all_files"], false, "a save writes its kinds");
         assert_eq!(keep["accept"], "Save");
@@ -881,7 +855,6 @@ mod tests {
         let (_, props) = shown.iter().find(|(w, _)| *w == id).unwrap();
         assert_eq!(props["open"], 1);
         assert_eq!(props["path"], "/takes/a.wav");
-        assert!(shown.contains(&(d.ids[STACK], json!({"index": 0}))));
         assert_eq!(
             d.read("keep", "chosen", &[json!("WAV"), json!("/takes/b.wav")]),
             Some(Said::Accept)
@@ -905,23 +878,41 @@ mod tests {
     #[test]
     fn a_window_drawn_again_shows_the_dialog_that_was_up() {
         let mut d = dialogs();
-        assert_eq!(d.stack(&FORMS).unwrap()["index"], 0);
+        let drawn = |d: &Dialogs<Form>| json!(d.dialogs(&FORMS).unwrap());
+        assert_eq!(find_in(&drawn(&d), d.ids["name"]).unwrap()["open"], false);
         d.open(Form::Load, BTreeMap::new());
-        let stack = d.stack(&FORMS).unwrap();
-        assert_eq!(stack["index"], 0, "a file request is no page");
-        assert_eq!(find(&stack, d.ids["load"]).unwrap()["open"], true);
+        assert_eq!(find_in(&drawn(&d), d.ids["load"]).unwrap()["open"], true);
+        assert_eq!(find_in(&drawn(&d), d.ids["name"]).unwrap()["open"], false);
         d.hide();
         d.open(Form::Name, BTreeMap::from([("text".into(), "x".into())]));
-        let stack = d.stack(&FORMS).unwrap();
-        assert_eq!(stack["index"], 1);
-        assert_eq!(find(&stack, d.ids["name:text"]).unwrap()["value"], "x");
-        assert!(find(&stack, d.ids["load"]).unwrap().get("open").is_none());
+        let shown = drawn(&d);
+        assert_eq!(find_in(&shown, d.ids["name"]).unwrap()["open"], true);
+        assert_eq!(find_in(&shown, d.ids["name:text"]).unwrap()["value"], "x");
+        assert!(
+            find_in(&shown, d.ids["load"])
+                .unwrap()
+                .get("open")
+                .is_none()
+        );
         d.closed();
         assert_eq!(
-            d.stack(&FORMS).unwrap()["index"],
-            0,
+            find_in(&drawn(&d), d.ids["name"]).unwrap()["open"],
+            false,
             "a closed window has none up"
         );
+    }
+
+    /// **One dialog at a time**: opening another takes the one up down, and
+    /// a dialog opens last, holding what it holds.
+    #[test]
+    fn opening_a_dialog_takes_the_one_up_down() {
+        let mut d = dialogs();
+        let shown = d.open(Form::Name, BTreeMap::new());
+        assert_eq!(shown.last(), Some(&(d.ids["name"], json!({"open": 1}))));
+        let shown = d.open(Form::Keep, BTreeMap::new());
+        assert_eq!(shown.first(), Some(&(d.ids["name"], json!({"open": 0}))));
+        assert_eq!(d.hide(), vec![(d.ids["keep"], json!({"open": 0}))]);
+        assert!(d.hide().is_empty(), "none is up");
     }
 
     /// **Two questions of one dialog**: the page is named by one and drawn
@@ -935,9 +926,6 @@ mod tests {
     impl Spec for Asked {
         fn prefix(self) -> &'static str {
             "asked"
-        }
-        fn page(self) -> i32 {
-            1
         }
         fn title(self) -> &'static str {
             match self {
@@ -971,16 +959,16 @@ mod tests {
             Asked::Second,
             BTreeMap::from([("value".into(), "typed".into())]),
         );
-        let stack = d.stack(&forms).unwrap();
-        assert_eq!(stack["index"], 1);
-        let dialog = find(&stack, d.ids["asked"]).unwrap();
+        let stack = json!(d.dialogs(&forms).unwrap());
+        let dialog = find_in(&stack, d.ids["asked"]).unwrap();
+        assert_eq!(dialog["open"], true);
         assert_eq!(dialog["title"], "Second");
         assert_eq!(
             dialog["children"][0]["children"][0]["children"][0]["text"],
             "Two"
         );
         assert_eq!(
-            find(&stack, d.ids["asked:value"]).unwrap()["value"],
+            find_in(&stack, d.ids["asked:value"]).unwrap()["value"],
             "typed"
         );
     }

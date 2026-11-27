@@ -118,9 +118,6 @@ const APPS: [(i32, &str, &str, &str); 4] = [
     (IDS + 16, "notes", "keyboard-music", "New notes"),
     (IDS + 17, "audio", "audio-waveform", "New audio"),
 ];
-/// Where the bar holds the dialog that is up: the preferences or the
-/// environments, over the whole dock.
-const DIALOG_HOLD: i32 = IDS + 19;
 /// The preferences' dialog.
 const PREFS_DIALOG: i32 = IDS + 20;
 const PREFS_REOPEN: i32 = IDS + 22;
@@ -162,7 +159,6 @@ const CODE: i32 = 2;
 /// application asks in (`clausters_apps::closing`).
 fn form(win: i32) -> closing::Ids {
     closing::Ids {
-        stack: win + 3,
         dialog: win + 5,
         save: win + 6,
         discard: win + 7,
@@ -1022,7 +1018,7 @@ impl App {
                     "paragraph": self.settings.eval_paragraph,
                     "text_size": self.settings.text_size(),
                 },
-                closing::stack(&form(win), ""),
+                closing::held(&form(win), ""),
             ]
         }]);
         number(&mut tree, win + FILE_SPARE);
@@ -1242,19 +1238,19 @@ impl App {
     // -- questions, in a file window's close form
 
     /// The close form up in window `win`, saying `says` of what is not
-    /// saved: the form's stack defined again around it, shown.
+    /// saved: the form defined again, open.
     fn ask(&mut self, win: i32, what: Ask, says: &str) {
         self.asking = Some((win, what));
         self.show_file(win);
         let ids = form(win);
-        let mut stack = closing::stack(&ids, says);
-        stack["index"] = json!(1);
-        number(&mut stack, win + FILE_SPARE);
-        self.link.def(ids.stack, &stack);
+        let mut dialog = closing::held(&ids, says);
+        dialog["open"] = json!(1);
+        number(&mut dialog, win + FILE_SPARE);
+        self.link.def(ids.dialog, &dialog);
     }
 
     fn answer(&mut self, win: i32, choice: closing::Choice) {
-        self.link.set(form(win).stack, &[("index", json!(0))]);
+        self.link.set(form(win).dialog, &[("open", json!(0))]);
         let Some((asked_in, what)) = self.asking.take() else {
             return;
         };
@@ -1609,19 +1605,19 @@ impl App {
                 tool(APPS[1].0, APPS[1].2, &format!("app:{}", APPS[1].1), APPS[1].3),
                 tool(APPS[2].0, APPS[2].2, &format!("app:{}", APPS[2].1), APPS[2].3),
                 tool(APPS[3].0, APPS[3].2, &format!("app:{}", APPS[3].1), APPS[3].3),
-                // where a dialog of the application's is defined, over the dock
-                {"id": DIALOG_HOLD, "type": "layout", "w": 0, "h": 0, "margin": 0},
+                // the application's dialogs, closed: each is defined again
+                // as it opens, over the dock
+                {"id": PREFS_DIALOG, "type": "layout", "modal": 1, "open": 0},
+                {"id": ENVS_DIALOG, "type": "layout", "modal": 1, "open": 0},
             ],
         }]);
         // the file dialogs, the host's, in the bar from the start: an open
         // is a set of one, and each keeps where the hand last went
-        if let (Some(stack), Some(children)) = (
-            self.dialogs.stack(&filedialog::forms(self.lang.types)),
+        if let (Some(held), Some(children)) = (
+            self.dialogs.dialogs(&filedialog::forms(self.lang.types)),
             tree["children"][0]["children"].as_array_mut(),
         ) {
-            let mut stack = stack;
-            number(&mut stack, filedialog::SPARE);
-            children.push(stack);
+            children.extend(held);
         }
         self.link.def(BAR_WIN, &tree);
     }
@@ -2210,10 +2206,12 @@ impl App {
     /// **A dialog of the application's goes up**, over the whole dock: the
     /// bar holds it, so it is the application's rather than a panel's. One
     /// at a time, as a dialog takes everything behind it.
-    fn show_dialog(&mut self, dialog: Value, spare: i32) {
-        let mut hold = json!({"type": "layout", "w": 0, "h": 0, "margin": 0, "children": [dialog]});
-        number(&mut hold, spare);
-        self.link.def(DIALOG_HOLD, &hold);
+    fn show_dialog(&mut self, mut dialog: Value, spare: i32) {
+        number(&mut dialog, spare);
+        dialog["open"] = json!(1);
+        if let Some(id) = dialog["id"].as_i64().and_then(|id| i32::try_from(id).ok()) {
+            self.link.def(id, &dialog);
+        }
         self.menus();
     }
 
@@ -2221,10 +2219,9 @@ impl App {
     fn close_dialog(&mut self) {
         self.prefs_open = false;
         self.envs_open = false;
-        self.link.def(
-            DIALOG_HOLD,
-            &json!({"type": "layout", "w": 0, "h": 0, "margin": 0}),
-        );
+        for id in [PREFS_DIALOG, ENVS_DIALOG] {
+            self.link.set(id, &[("open", json!(0))]);
+        }
         self.menus();
     }
 
@@ -2690,7 +2687,7 @@ mod tests {
     #[test]
     fn a_file_form_is_inside_its_window() {
         let ids = form(FILE_BASE);
-        for id in [ids.stack, ids.dialog, ids.save, ids.discard, ids.cancel] {
+        for id in [ids.dialog, ids.save, ids.discard, ids.cancel] {
             assert!((FILE_BASE + 3..FILE_BASE + FILE_SPARE).contains(&id));
         }
     }

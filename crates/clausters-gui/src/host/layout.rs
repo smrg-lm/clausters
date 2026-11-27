@@ -350,7 +350,13 @@ fn flow_children<'a>(
 ) -> Vec<&'a Widget> {
     let (dialogs, kids): (Vec<&Widget>, Vec<&Widget>) =
         widget.children.iter().partition(|c| c.kind.is_modal());
-    modals.extend(dialogs.into_iter().map(|d| (d, me)));
+    // a dialog that is not up is placed nowhere
+    modals.extend(
+        dialogs
+            .into_iter()
+            .filter(|d| !d.kind.is_closed_dialog())
+            .map(|d| (d, me)),
+    );
     // a child not `shown` takes no room, and its gap goes with it
     kids.into_iter().filter(|c| c.place.shown).collect()
 }

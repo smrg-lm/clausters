@@ -84,6 +84,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                     | "alert"
                     | "wide"
                     | "large"
+                    | "open"
             ) =>
         {
             let applied = group.apply(key, v);

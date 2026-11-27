@@ -65,7 +65,6 @@ impl Call {
                 let close_form = request.get("closeForm").map(|form| {
                     let id = |key: &str| form[key].as_i64().map(|id| id as i32);
                     Some(closing::Ids {
-                        stack: id("stack")?,
                         dialog: id("dialog")?,
                         save: id("save")?,
                         discard: id("discard")?,

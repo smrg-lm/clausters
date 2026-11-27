@@ -551,7 +551,7 @@ impl Widget {
     /// **Every widget of it a reader sees**, in order: visible, and on the
     /// shown page of a stack.
     pub(crate) fn each_read(&self, each: &mut impl FnMut(&Widget)) {
-        if !self.visible {
+        if !self.visible || self.kind.is_closed_dialog() {
             return;
         }
         each(self);

@@ -1255,10 +1255,14 @@ fn the_window_holds_its_dialogs_and_the_bar_opens_them_only_where_there_are() {
     let children = tree["children"].as_array().unwrap();
     assert_eq!(
         children.len(),
-        3,
-        "the scroll, the status line, the dialogs"
+        2 + 6,
+        "the scroll, the status line, and a dialog each form"
     );
-    assert_eq!(children[2]["flow"], "stack");
+    assert!(
+        children[2..]
+            .iter()
+            .all(|d| d["modal"] == true || d["type"] == "file_dialog")
+    );
     assert_eq!(entry(&tree, "Page Text...")["enabled"], true);
     // the door names them for a caller to number
     let names: Value =
@@ -1285,7 +1289,7 @@ fn the_page_text_form_opens_holding_the_header_and_writes_one_entry() {
     ));
     assert_eq!(
         shown.last().map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 1})))
+        Some((i64::from(ids["text"]), json!({"open": 1})))
     );
     assert!(shown.iter().all(|c| c.widget != 10), "no page is engraved");
     // two fields typed, as the host reports them: each change, whole
@@ -1309,7 +1313,7 @@ fn the_page_text_form_opens_holding_the_header_and_writes_one_entry() {
         corrections_of(&out)
             .last()
             .map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 0})))
+        Some((i64::from(ids["text"]), json!({"open": 0})))
     );
     let after = editor.event(&said("text:title", "ignored"), 2);
     assert!(corrections_of(&after).is_empty() && !after.changed);
@@ -1327,8 +1331,8 @@ fn a_form_is_cancelled_by_its_button_and_by_the_dialog_itself() {
         assert_eq!(
             corrections_of(&out),
             vec![Correction {
-                widget: i64::from(ids["stack"]),
-                props: json!({"index": 0}),
+                widget: i64::from(ids["page"]),
+                props: json!({"open": 0}),
             }]
         );
     }
@@ -1357,16 +1361,16 @@ fn a_window_drawn_again_shows_the_form_that_was_up() {
             .iter()
             .find_map(|child| find(child, id))
     }
-    let stack = find(&shown, ids["stack"]).expect("the window holds its stack");
-    assert_eq!(stack["index"], 2);
-    assert_eq!(find(&shown, ids["param"]).unwrap()["title"], "Stretch");
+    let param = find(&shown, ids["param"]).expect("the window holds its dialogs");
+    assert_eq!(param["open"], true);
+    assert_eq!(param["title"], "Stretch");
     assert_eq!(find(&shown, ids["param:label"]).unwrap()["text"], "Factor");
     assert_eq!(find(&shown, ids["param:value"]).unwrap()["value"], "5/4");
     // and it still answers: OK writes what it holds
     let out = editor.event(&said("param:ok", "click"), 1);
     assert_eq!(
         corrections_of(&out).last().map(|c| c.props.clone()),
-        Some(json!({"index": 0}))
+        Some(json!({"open": 0}))
     );
 }
 
@@ -1922,7 +1926,7 @@ fn close_asks_first_only_when_there_is_something_to_lose() {
         corrections_of(&out)
             .last()
             .map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 5})))
+        Some((i64::from(ids["close"]), json!({"open": 1})))
     );
     assert!(
         !editor
@@ -2001,7 +2005,7 @@ fn the_close_mark_asks_as_the_menus_close_does() {
         corrections_of(&out)
             .last()
             .map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 5})))
+        Some((i64::from(ids["close"]), json!({"open": 1})))
     );
 }
 
@@ -2056,7 +2060,7 @@ fn new_and_open_change_the_document_and_ask_as_a_close_asks() {
     assert!(out.file.is_none());
     assert_eq!(
         corrections_of(&out).last().map(|c| c.props.clone()),
-        Some(json!({"index": 5}))
+        Some(json!({"open": 1}))
     );
     let out = editor.event(&stamped(said("close:discard", "click"), 2), 2);
     assert_eq!(out.file, Some(FileChange::New));
@@ -2143,7 +2147,7 @@ fn close_file_asks_first_and_leaves_the_window() {
         corrections_of(&out)
             .last()
             .map(|c| (c.widget, c.props.clone())),
-        Some((i64::from(ids["stack"]), json!({"index": 5})))
+        Some((i64::from(ids["close"]), json!({"open": 1})))
     );
     let out = editor.event(&stamped(said("close:discard", "click"), 2), 2);
     assert!(out.file == Some(FileChange::Close) && !out.close);

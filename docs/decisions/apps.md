@@ -1917,3 +1917,28 @@ shown.
 which every application's file form now is, and `forms::storage` went
 with the forms' chooser: the rule is still decided once, in the host
 (`file_dialog::storage`).
+
+## A dialog is a child of its window held closed, never a page of a stack (2026-11-27)
+
+The dialogs an application may ask in had to be in the window from the
+start, since an editor answers with props and never with nodes. The
+protocol had no place for them but containers, so they sat on the pages of
+a `stack` in the window's flow, with an empty first page, and opening one
+was the stack's `index`; the host's `file_dialog` stood in the same way.
+The stack's `"h": 0` did not make it take no room: a container's floor is
+its largest page's, and an empty page keeps its margins, so every
+application had an empty band over its status bar and a gap above it, and
+the code editor's bar, whose file dialogs stood at its end, lost that width
+too.
+
+A dialog is the window's, as its menu and its status bar are, and nothing
+of it belongs in the window's flow. So a modal `layout` takes **`open`**: a
+dialog defined with `"open": false` is in the tree, numbered and corrected
+like any widget, and is placed nowhere until its `open` is set, when it
+comes up over the window as one defined there does. A dialog, up or not,
+takes no room and no gap. The applications' dialogs (`forms::dialogs`), the
+close form (`closing::held`), the code editor's own and the host's file
+dialog (whose card is the element itself) are children of their window,
+closed; opening one corrects its `open`, and one opened while another is up
+takes that one down first. The stack is a container for pages again and
+holds no dialog; the clients' `dialog` builders take `open` as well.
