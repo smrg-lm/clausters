@@ -315,6 +315,14 @@ code that keeps it lives.
 - **A history step keeps the cursor on the take.** An undo or a redo that
   shortens the take under the position cursor or a selection puts them at its
   new end, and the window is told so with the restored list.
+- **An undo puts the cursor back where the edit found it, and a redo where
+  the edit left it.** The position cursor, and the play cursor with it, is no
+  part of the take, so each half of a history entry carries where it stood:
+  undoing a paste puts it at the paste's position and redoing it at the
+  paste's end, with nothing selected. Undo after undo never leaves it where an
+  edit already taken back had put it (found 2026-11-26: undoing pastes left
+  the cursor at the end of each undone paste, further from the audio it had
+  been placed on with every step).
 - **A pan or a zoom draws from what is held, never from nothing.** A view
   zoomed past its take's summary holds a finer summary, or the samples, over
   what it shows and half a view past either edge, and asks for the next span

@@ -358,6 +358,17 @@ impl Application for AudioEditor {
                             .unwrap_or(self.file.next_revision + 1);
                         draft.file.next_revision =
                             draft.file.next_revision.max(draft.file.revision);
+                        // **a history step puts the cursor where its half
+                        // says**, and the music with it: back where it
+                        // stood before the edit, or where the edit left it
+                        let half = payload.0.get("edit").unwrap_or(&payload.0);
+                        if let Some(at) = half.get("cursor").and_then(Value::as_u64) {
+                            let at = at.min(draft.length());
+                            let secs = draft.secs_at(at as f64);
+                            outcome.cue = Some(at);
+                            outcome.locate = Some(secs);
+                            outcome.selection = Some(json!({ "start": secs, "len": 0.0 }));
+                        }
                         outcome.changed = true;
                         Vec::new()
                     }

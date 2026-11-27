@@ -1793,6 +1793,12 @@ impl AudioEditor {
             self.file.revision = self.file.next_revision;
         }
         self.file.dirty = self.file.revision != self.file.saved_revision;
+        // the cursor goes where the half says, as a walked step puts it
+        let half = payload.get("edit").unwrap_or(payload);
+        if let Some(at) = half.get("cursor").and_then(Value::as_u64) {
+            self.file.presentation.cursor = Some(at.min(self.length()));
+            self.file.presentation.selection = None;
+        }
         self.ensure_envelope();
         true
     }

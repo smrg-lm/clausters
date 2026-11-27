@@ -1136,6 +1136,88 @@ fn a_copy_is_pasted_from_where_the_application_keeps_it() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// **An undo puts the cursor back where the edit found it**, and a redo
+/// where the edit left it: two pastes at the cursor walked back put it
+/// at each paste's position in turn, never further back each time.
+#[test]
+fn an_undo_puts_the_cursor_back_where_the_edit_found_it() {
+    let path = take("undo-cursor", 24_000);
+    let mut host = host();
+    let def_id = opened(&mut host, &path);
+    let widget = widget_of(&host, def_id);
+    let copy = host.event_message(
+        widget,
+        1,
+        vec![
+            OscType::String("copy".into()),
+            OscType::Float(0.0),
+            OscType::Float(6_000.0),
+        ],
+    );
+    assert!(host.deliver(def_id, &copy));
+    until(&mut host, "the copy reached the clipboard", |host| {
+        host.clipboard
+            .doc()
+            .is_some_and(|doc| doc.kind() == "segments")
+    });
+    let doc = host.clipboard.doc().unwrap().to_json();
+    let cursor = |host: &mut Host| {
+        ask(host, def_id, json!({"member": {"verb": "binding"}}))["cursor"]
+            .as_u64()
+            .unwrap()
+    };
+    let mut seq = 2;
+    for at in [12_000.0, 6_000.0] {
+        // the position cursor placed where the paste goes in
+        ask(
+            &mut host,
+            def_id,
+            json!({"do": {"verb": "locate", "at": at / 48_000.0}}),
+        );
+        let frames = parts(&mut host, def_id).len();
+        let paste = host.event_message(
+            widget,
+            seq,
+            vec![
+                OscType::String("paste".into()),
+                OscType::Float(at),
+                OscType::String("segments".into()),
+                OscType::String(doc.clone()),
+            ],
+        );
+        seq += 1;
+        assert!(host.deliver(def_id, &paste));
+        until(&mut host, "the paste landed", |host| {
+            parts(host, def_id).len() > frames
+        });
+        assert_eq!(
+            cursor(&mut host),
+            at as u64 + 6_000,
+            "a paste lands at its end"
+        );
+    }
+    let mut step = |host: &mut Host, verb: &str| {
+        let message = host.event_message(def_id, seq, vec![OscType::String(verb.into())]);
+        seq += 1;
+        let before = parts(host, def_id).len();
+        assert!(host.deliver(def_id, &message));
+        until(host, "the step landed", |host| {
+            parts(host, def_id).len() != before
+        });
+    };
+    step(&mut host, "undo");
+    assert_eq!(
+        cursor(&mut host),
+        6_000,
+        "back where the second paste went in"
+    );
+    step(&mut host, "undo");
+    assert_eq!(cursor(&mut host), 12_000, "back where the first went in");
+    step(&mut host, "redo");
+    assert_eq!(cursor(&mut host), 18_000, "where the first paste left it");
+    let _ = std::fs::remove_file(&path);
+}
+
 /// **The working folder is on disk, and goes with its window**: under the
 /// user's cache rather than the temporary directory, which is memory on
 /// many machines, and removed when the window closes or the host ends.

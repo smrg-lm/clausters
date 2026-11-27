@@ -21,6 +21,25 @@ fn take_payload(take: u64, revision: u64) -> Value {
     json!({"intent": parts::PARTS, "take": take, "contentRevision": revision})
 }
 
+/// **Where each way of an entry puts the position cursor**: an undo puts
+/// it back where it stood before the edit, and a redo where the edit
+/// left it. A cursor is no part of the take, so it rides beside the take
+/// in each half of the entry, and a half that names none leaves the
+/// cursor where it is.
+fn placed(record: &mut Record, before: Option<u64>, after: Option<u64>) {
+    for leg in &mut record.legs {
+        for (half, cursor) in [(&mut leg.backward, before), (&mut leg.forward, after)] {
+            let half = match half.get_mut("edit") {
+                Some(inner) => inner,
+                None => half,
+            };
+            if let (Some(at), Some(fields)) = (cursor, half.as_object_mut()) {
+                fields.insert("cursor".into(), json!(at));
+            }
+        }
+    }
+}
+
 impl AudioEditor {
     /// One gesture onto the take. Answers the reason and the corrections the
     /// acknowledgement carries.
@@ -120,6 +139,7 @@ impl AudioEditor {
         match edited {
             Ok(Some((label, list, steps))) => {
                 let before = self.file.contents.clone();
+                let cursor_before = self.file.presentation.cursor;
                 self.file.contents.parts = list;
                 out.record = Some(self.record(&label, &before));
                 out.planned_steps = steps.clone();
@@ -147,6 +167,9 @@ impl AudioEditor {
                     } else {
                         corrections.extend(self.land_at(at, out));
                     }
+                }
+                if let Some(record) = out.record.as_mut() {
+                    placed(record, cursor_before, self.file.presentation.cursor);
                 }
                 (None, corrections)
             }
