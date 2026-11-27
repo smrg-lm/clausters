@@ -3948,8 +3948,8 @@ export function timeruler(
  * vertical window, the wheel zooms it, and a press on a folded channel's name
  * unfolds it -- the gestures of the view's own strip.
  *
- * It is as wide as its labels, which are the view's: give it a `weight` to
- * stand as tall as the view.
+ * Its width is fixed and its labels shrink to fit it, so a zoom never moves
+ * the view beside it; give it a `weight` to stand as tall as the view.
  */
 export function valueruler(
     rules: number,

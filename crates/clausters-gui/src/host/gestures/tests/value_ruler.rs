@@ -82,22 +82,19 @@ fn a_drag_on_a_value_ruler_pans_the_vertical_of_the_view_it_rules() {
     assert_ne!(y_view(&host).0, before, "the window moved");
 }
 
-/// **A value ruler is as wide as the labels of the view it rules**: the role
-/// over an ordinary axis, and the room its numbers take once the view is
-/// zoomed onto a narrow range -- measured over the view as it was placed,
-/// the way a strip of the view's own is.
+/// **A value ruler is the role's width whatever the view writes**: zoomed
+/// onto a narrow range its labels are longer and shrink into it, so neither
+/// the ruler nor the view beside it moves.
 #[test]
-fn a_value_ruler_widens_to_the_labels_of_a_zoomed_view() {
+fn a_value_ruler_keeps_its_width_over_a_zoomed_view() {
     let host = host_from(RULED);
     let role = host.metrics_for(1).ruler_w;
-    assert_eq!(rects(&host).0.w, role, "the role holds an ordinary axis");
+    let (ruler, view) = rects(&host);
+    assert_eq!(ruler.w, role);
     let zoomed = RULED.replace(
         r#""axes":{"y":{"strip":false}}"#,
         r#""axes":{"y":{"strip":false,"start":0.4995,"len":0.001}}"#,
     );
     let host = host_from(&zoomed);
-    assert!(
-        rects(&host).0.w > role,
-        "the labels of a zoomed axis take room"
-    );
+    assert_eq!(rects(&host), (ruler, view), "nothing moved");
 }

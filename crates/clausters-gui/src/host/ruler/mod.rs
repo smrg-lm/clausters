@@ -25,7 +25,7 @@ mod scale;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use draw::{Look, Shared, TICK_LABEL_TOP, ticks_width};
+pub(crate) use draw::{Look, Shared, TICK_LABEL_TOP};
 pub(crate) use scale::{
     Scale, Tick, TimeUnit, axis_floor, bars_in, display_to_hz, fmt_decimal, hz_to_display,
     note_readout, readout_amp, readout_beats, readout_samples, readout_time, readout_value,
@@ -81,17 +81,17 @@ impl<'a> Ruler<'a> {
         self.scale.ticks(self.along(), window, length_px, m)
     }
 
-    /// **How thick its strip has to be** across its axis, ruling `window` of
-    /// an axis `length_px` long: the strip's role over or under a view, and
-    /// beside one the role or its widest label, whichever is more
-    /// ([`ticks_width`]) -- a label's width is the data's, so a zoomed axis
-    /// asks for the room its labels take.
-    pub(crate) fn thickness(&self, window: (f64, f64), length_px: f64, m: &Metrics) -> f32 {
+    /// **How thick its strip is** across its axis: the `ruler_h` role over
+    /// or under a view, the `ruler_w` role beside one.
+    ///
+    /// **Never the data's.** A strip that grew with the digits its labels
+    /// need moved the picture beside it whenever a zoom or a pan wrote a
+    /// longer number; the labels shrink to fit the strip instead
+    /// (`font::fit_scale`, in the drawing).
+    pub(crate) fn thickness(&self, m: &Metrics) -> f32 {
         match self.along() {
             Along::Horizontal => m.ruler_h,
-            Along::Vertical => m
-                .ruler_w
-                .max(ticks_width(&self.ticks(window, length_px, m), m)),
+            Along::Vertical => m.ruler_w,
         }
     }
 

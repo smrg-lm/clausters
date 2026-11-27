@@ -1015,6 +1015,29 @@ pub fn fits(s: &str, max_w: f32, scale: f32) -> bool {
     fits_in(Family::Ui, s, max_w, scale)
 }
 
+/// **The scale at which every one of `texts` fits `max_w`**: `scale` where
+/// they already do, and smaller in proportion where the widest does not.
+///
+/// It is the rule for **text in a box of a fixed size** -- a ruler's strip, a
+/// clip lamp: the box never grows with what it says, since a box that grows
+/// with its digits moves whatever stands beside it, so the text shrinks to
+/// say it. One scale for the whole set, so a column of labels stays one size
+/// rather than each number its own. `0` where nothing has room.
+pub fn fit_scale<'a>(texts: impl IntoIterator<Item = &'a str>, max_w: f32, scale: f32) -> f32 {
+    if max_w <= 0.0 || scale <= 0.0 {
+        return 0.0;
+    }
+    let widest = texts
+        .into_iter()
+        .map(|t| width(t, scale))
+        .fold(0.0f32, f32::max);
+    if widest <= max_w + FIT_SLACK {
+        scale
+    } else {
+        scale * max_w / widest
+    }
+}
+
 /// [`fits`] in `family`.
 pub fn fits_in(family: Family, s: &str, max_w: f32, scale: f32) -> bool {
     width_in(family, s, scale) <= max_w + FIT_SLACK

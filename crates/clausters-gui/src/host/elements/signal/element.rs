@@ -363,14 +363,6 @@ impl OnAxis for SignalElement {
         SignalElement::gutter(self, m)
     }
 
-    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        SignalElement::measured_gutter(self, rect, m)
-    }
-
-    fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
-        SignalElement::value_ruler_w(self, rect, m)
-    }
-
     fn rows(&self, uploaded: usize) -> usize {
         SignalElement::rows(self, uploaded)
     }

@@ -166,41 +166,11 @@ impl Gaps {
         self.extent(label) + self.clear()
     }
 
-    /// **The 1-2-5 step of a linear axis** whose labels keep clear of each
-    /// other at `px_per_value`: one line of text apart on a vertical axis, and
-    /// on a horizontal one as wide as the widest label the step itself writes
-    /// (`label_at`), found by walking up until the step and its labels agree.
-    fn linear_step(&self, px_per_value: f64, widest: &dyn Fn(f64) -> f64) -> f64 {
-        let mut step = snap_125(self.label_v() / px_per_value);
-        if self.along == Along::Horizontal {
-            for _ in 0..8 {
-                let need = snap_125((widest(step) + self.label) / px_per_value);
-                if need <= step {
-                    break;
-                }
-                step = need;
-            }
-        }
-        step
-    }
-
     /// Minimum device pixels between labels on a vertical axis: one line of
     /// text plus clear space -- the measured-height counterpart of `label`.
     pub(super) fn label_v(&self) -> f64 {
         font::height(self.scale) as f64 + self.gap
     }
-}
-
-/// Snap `x` up to the 1-2-5 progression (1, 2, 5, 10, 20, 50, ...).
-pub(super) fn snap_125(x: f64) -> f64 {
-    let x = x.max(f64::MIN_POSITIVE);
-    let decade = 10f64.powf(x.log10().floor());
-    for m in [1.0, 2.0, 5.0, 10.0] {
-        if m * decade >= x - f64::EPSILON {
-            return m * decade;
-        }
-    }
-    10.0 * decade
 }
 
 /// The ascending 1-2-5 candidate steps for an axis spanning `axis_len` units
@@ -380,18 +350,29 @@ pub(super) fn time_ticks_on(
     };
     let pos = |t: f64| (t - axis_start) / axis_len;
     let min_step = if seconds { 0.0 } else { 1.0 }; // samples are integral
-    let candidates = decimal_steps(axis_len, width_px, min_step, g);
-    let step = fit_step(&candidates, axis_start, axis_len, width_px, &pos, &fmt, g);
-    emit_time_ticks(
-        axis_start,
-        axis_len,
-        width_px,
-        step,
-        step / 5.0,
-        &pos,
-        &fmt,
-        g,
-    )
+    linear_ticks(g, (axis_start, axis_len), width_px, min_step, &pos, &fmt).1
+}
+
+/// **The one spacing rule of a linear axis**, whatever it measures and
+/// whichever way it is laid: the 1-2-5 ladder of steps over `[start, start +
+/// len)` ([`decimal_steps`], floored at `min_step`), the finest whose own
+/// labels -- formatted by `fmt`, placed by `pos`, measured along the axis and
+/// edge-clamped as drawn -- keep clear of each other ([`fit_step`]), and the
+/// minor ticks a fifth of it where they clear the tick gap ([`emit_ticks`]).
+/// Time in seconds or samples, a plain value and an amplitude all space
+/// their ticks so; it answers the step it chose with them.
+pub(super) fn linear_ticks(
+    g: Gaps,
+    (start, len): (f64, f64),
+    length_px: f64,
+    min_step: f64,
+    pos: &dyn Fn(f64) -> f64,
+    fmt: &dyn Fn(f64, f64) -> String,
+) -> (f64, Vec<Tick>) {
+    let candidates = decimal_steps(len, length_px, min_step, g);
+    let step = fit_step(&candidates, start, len, length_px, pos, fmt, g);
+    let ticks = emit_ticks(start, len, length_px, step, step / 5.0, pos, fmt, g);
+    (step, ticks)
 }
 
 /// The `beats` form of the time ruler: the axis converted to beat positions,
@@ -436,7 +417,7 @@ pub(super) fn beat_ticks(
     let fmt = |b: f64, step: f64| fmt_bar_beat(b, quant, step);
     let candidates = beat_steps(blen, width_px, quant, g);
     let step = fit_step(&candidates, b0, blen, width_px, pos, &fmt, g);
-    emit_time_ticks(b0, blen, width_px, step, step / 2.0, pos, &fmt, g)
+    emit_ticks(b0, blen, width_px, step, step / 2.0, pos, &fmt, g)
 }
 
 /// **The `beats` ruler over the page's bars**: the ticks are the bars' own --
@@ -624,12 +605,12 @@ pub(super) fn min_gap_px(
     narrowest
 }
 
-/// Emits the ticks of a horizontal axis: majors (labeled by `fmt`) at
+/// Emits the ticks of an axis: majors (labeled by `fmt`) at
 /// multiples of `step`, minors at multiples of `minor` when they clear the
 /// minimum tick gap. `pos` places an axis value as a fraction of the strip --
 /// a straight line for every unit but the mapped beat.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn emit_time_ticks(
+pub(super) fn emit_ticks(
     axis_start: f64,
     axis_len: f64,
     width_px: f64,
@@ -675,14 +656,15 @@ pub(super) fn fmt_bar_beat(beats: f64, quant: f64, step: f64) -> String {
     format!("{}:{beat:.decimals$}", bar as i64)
 }
 
-/// `secs` as adaptive clock time: `h:mm:ss` / `m:ss` above a minute, plain
-/// seconds below, with just enough decimals for `step` (down to microseconds
-/// at deep zoom).
+/// `secs` as clock time: `h:mm:ss` / `m:ss` above a minute, plain seconds
+/// below, with **three decimals** -- milliseconds, the field's default --
+/// and more only where `step` is finer than a millisecond, so deep zoom never
+/// prints two ticks the same (down to microseconds).
 pub(super) fn fmt_time(secs: f64, step: f64) -> String {
-    let decimals = if step >= 1.0 {
-        0
+    let decimals = if step >= 1e-3 {
+        3
     } else {
-        (-step.log10()).ceil().clamp(1.0, 6.0) as usize
+        (-step.log10()).ceil().clamp(3.0, 6.0) as usize
     };
     let total = secs.max(0.0);
     let h = (total / 3600.0).floor() as u64;
@@ -921,8 +903,44 @@ pub(crate) fn readout_amp(amp: f64, unit: RulerY, bit_depth: u32, amp_per_px: f6
     }
 }
 
+/// **A value tick's label**: a whole number where the step is whole (a
+/// spectrum's decibels, a parameter in tens), two decimals where it is a
+/// fraction (`0.50`, `-0.25`), and scientific notation once the step is
+/// finer than two decimals can tell apart (`2.50e-3`), so a deep zoom never
+/// prints two ticks the same and a label never runs to a row of zeros.
+pub(super) fn label_value(v: f64, step: f64) -> String {
+    if step >= 1.0 && (v - v.round()).abs() < 1e-9 {
+        return zero_unsigned(format!("{}", v.round() as i64));
+    }
+    label_amp(v, step)
+}
+
+/// **An amplitude tick's label**: two decimals (`1.00`, `-0.50`, `0.00`),
+/// and once the step is finer than a hundredth -- which two decimals cannot
+/// tell apart -- the whole ladder in scientific notation (`-1.50e-2`), zero
+/// written `0`, so one axis never mixes the two forms.
+pub(super) fn label_amp(v: f64, step: f64) -> String {
+    if step < 0.01 {
+        if v.abs() < step * 1e-6 {
+            return "0".into();
+        }
+        return format!("{v:.2e}");
+    }
+    zero_unsigned(format!("{v:.2}"))
+}
+
+/// A label that rounded to zero says so without a sign.
+fn zero_unsigned(s: String) -> String {
+    if s.starts_with('-') && s[1..].chars().all(|c| c == '0' || c == '.') {
+        s[1..].to_string()
+    } else {
+        s
+    }
+}
+
 /// A decimal label with just enough decimals for `step` (so deep zoom never
-/// prints two ticks the same), trailing zeros trimmed (`0.5`, `-0.25`, `1`).
+/// prints two ticks the same), trailing zeros trimmed (`0.5`, `-0.25`, `1`):
+/// what a readout writes.
 pub(crate) fn fmt_decimal(v: f64, step: f64) -> String {
     let decimals = if step >= 1.0 {
         0
@@ -1024,41 +1042,25 @@ pub(super) fn amp_ticks_on(
             let label_of = |v: f64, step: f64| match unit {
                 // Signed: 0..100% above the zero line, 0..-100% below it.
                 RulerY::Percent => {
-                    format!("{}%", fmt_decimal(v / full * 100.0, step / full * 100.0))
+                    format!("{}%", label_value(v / full * 100.0, step / full * 100.0))
                 }
                 RulerY::Bits => fmt_samples(v),
-                _ => fmt_decimal(v, step),
+                _ => label_amp(v, step),
             };
-            // The visible value range and its on-screen density decide the
-            // step: the smallest 1-2-5 rung whose labels (one line of text
-            // each) keep clear space.
+            // The visible value range, spaced by the one rule every linear
+            // axis is ([`linear_ticks`]); sample values are whole.
             let amp_at = |d: f64| (2.0 * d - 1.0) / margin;
             let v_lo = (amp_at(y_start) * full).max(-full);
             let v_hi = (amp_at(y_start + y_len) * full).min(full);
+            if v_hi <= v_lo {
+                return Vec::new();
+            }
             let px_per_value = height_px * margin / (2.0 * y_len) / full;
-            let widest = |step: f64| {
-                [v_lo, v_hi]
-                    .map(|v| g.extent(&label_of((v / step).round() * step, step)))
-                    .into_iter()
-                    .fold(0.0, f64::max)
-            };
-            let mut step = g.linear_step(px_per_value, &widest).min(full);
-            if unit == RulerY::Bits {
-                step = step.max(1.0);
-            }
-            let mut out = Vec::new();
-            let mut k = (v_lo / step).ceil() as i64;
-            while k as f64 * step <= v_hi + step * 1e-9 {
-                let v = k as f64 * step;
-                let frac = frac_of((v / full).clamp(-1.0, 1.0));
-                if visible(frac) {
-                    out.push(Tick {
-                        frac: frac.clamp(0.0, 1.0),
-                        label: Some(label_of(v, step)),
-                    });
-                }
-                k += 1;
-            }
+            let pos = |v: f64| frac_of((v / full).clamp(-1.0, 1.0));
+            let min_step = if unit == RulerY::Bits { 1.0 } else { 0.0 };
+            let (step, mut out) =
+                linear_ticks(g, (v_lo, v_hi - v_lo), height_px, min_step, &pos, &label_of);
+            out.retain(|t| visible(t.frac));
             // The full-scale endpoints when the decimal step misses them (a
             // 16-bit axis stepping 10000 still labels +/-32768) and their label
             // clears the nearest stepped one by at least a line of text.
@@ -1085,7 +1087,7 @@ pub(super) fn amp_ticks_on(
 /// tied to an amplitude convention (no margin, no full-scale): the `plot`'s
 /// vertical ruler for arbitrary numeric sequences. The step is the smallest
 /// 1-2-5 rung whose labels (one line of text each) keep clear space over
-/// `height_px`; majors are labeled with [`fmt_decimal`], minors (a fifth of
+/// `height_px`; majors are labeled with [`label_value`], minors (a fifth of
 /// the step) appear when they clear the minimum tick gap. `frac` is 0 at `lo`
 /// (the bottom), 1 at `hi`.
 ///
@@ -1095,32 +1097,8 @@ pub(super) fn value_ticks_on(g: Gaps, lo: f64, hi: f64, height_px: f64) -> Vec<T
     if span <= 0.0 || height_px <= 0.0 {
         return Vec::new();
     }
-    let px_per_value = height_px / span;
-    let widest = |step: f64| {
-        [lo, hi]
-            .map(|v| g.extent(&fmt_decimal((v / step).round() * step, step)))
-            .into_iter()
-            .fold(0.0, f64::max)
-    };
-    let step = g.linear_step(px_per_value, &widest);
-    let minor = step / 5.0;
-    let draw_minors = minor * px_per_value >= g.tick;
-    let fine = if draw_minors { minor } else { step };
-    let mut out = Vec::new();
-    let mut k = (lo / fine).ceil() as i64;
-    loop {
-        let v = k as f64 * fine;
-        if v > hi + fine * 1e-9 {
-            break;
-        }
-        let major = (v / step - (v / step).round()).abs() < 1e-6;
-        out.push(Tick {
-            frac: ((v - lo) / span).clamp(0.0, 1.0),
-            label: major.then(|| fmt_decimal(v, step)),
-        });
-        k += 1;
-    }
-    out
+    let pos = |v: f64| (v - lo) / span;
+    linear_ticks(g, (lo, span), height_px, 0.0, &pos, &label_value).1
 }
 
 /// The cursor-readout form of an arbitrary value on a `[lo, hi]` axis: enough

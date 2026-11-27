@@ -360,47 +360,6 @@ pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKe
     out
 }
 
-/// The gutter each group actually needs once its members have been **placed**,
-/// or `None` when the role-sized `floor` already covers every one of them.
-///
-/// [`super::widget::WidgetKind::gutter`] answers from the kind alone, which is what lets the layout
-/// place a lane's clips -- but a value ruler's width is a property of the
-/// *data*, not of the kind: an amplitude axis zoomed onto a narrow range
-/// formats `-0.0625` where the same axis unzoomed formats `-1.0`, and the step
-/// it labels at depends on how tall the member ended up. That is one pass too
-/// late, hence the second one in [`super::layout::layout_on`] -- taken only when
-/// the answer would change, so a window of ordinary axes lays out once.
-///
-/// Two things it deliberately does not measure. A **hertz** axis is left on the
-/// role: its labels are short and bounded (`20K`, `1.5k`, `440`) and the
-/// frequency they run to is the analysis', not the tree's. And a member is
-/// measured as **one lane**: a stacked view's lanes are shorter than its body
-/// and so step more coarsely, so this asks for at most what a multichannel
-/// member needs and never for less -- a gutter is a reservation, and reserving a
-/// character wide costs pixels where reserving short clamps a label.
-pub(crate) fn measured_indents(
-    placed: &[super::layout::Placed<'_>],
-    floor: &HashMap<GroupKey, f32>,
-) -> Option<HashMap<GroupKey, f32>> {
-    let mut out: Option<HashMap<GroupKey, f32>> = None;
-    for p in placed {
-        let (Some(id), Some(editor)) = (p.widget.id, p.widget.kind.editor()) else {
-            continue;
-        };
-        let Some(want) = p.widget.kind.measured_gutter(p.rect, &p.metrics) else {
-            continue;
-        };
-        let key = group_key(id, editor.link);
-        let have = floor.get(&key).copied().unwrap_or(0.0);
-        if want > have {
-            let table = out.get_or_insert_with(|| floor.clone());
-            let slot = table.entry(key).or_insert(have);
-            *slot = slot.max(want);
-        }
-    }
-    out
-}
-
 /// The chrome band of a member: everything left of the shared body, full
 /// height. A lane draws its header here, a roll its keys, a heavy view its
 /// value ruler -- each into the whole band, so the band's right edge (which is
@@ -2228,12 +2187,11 @@ mod indent_tests {
         Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap()
     }
 
-    /// A value ruler asks for what its **own labels** need. Unzoomed, an
-    /// amplitude axis formats `-1.0` and the role already holds it, so the
-    /// gutter is exactly what it always was; zoomed onto a narrow range it
-    /// formats far longer numbers and asks for the room to draw them.
+    /// **A value ruler's gutter is the role's, zoomed or not**: zoomed onto
+    /// a narrow range the axis writes longer numbers, which shrink into the
+    /// gutter instead of widening it and moving the picture.
     #[test]
-    fn a_zoomed_value_ruler_widens_its_own_gutter() {
+    fn a_zoomed_value_ruler_keeps_its_gutter() {
         let m = Metrics::default();
         let area = Rect::new(0.0, 0.0, 800.0, 400.0);
         let plain = tree(r#"{"id":2,"type":"signal","view":"trace","data":[0.0,1.0]}"#);
@@ -2246,18 +2204,14 @@ mod indent_tests {
                 "y_start":0.4995,"y_len":0.001}"#,
         );
         let placed = layout::layout(area, &zoomed, &m);
-        assert!(
-            placed[0].indent > m.ruler_w,
-            "the gutter stayed at the role ({}) for labels that do not fit",
-            placed[0].indent
-        );
+        assert_eq!(placed[0].indent, m.ruler_w, "the picture does not move");
     }
 
-    /// The group keeps reconciling: two linked views with different label
-    /// widths share **one** gutter, the wider one's, so the same sample still
-    /// sits at the same pixel in both.
+    /// The group keeps reconciling: two linked views, one zoomed onto longer
+    /// labels, share **one** gutter, so the same sample still sits at the
+    /// same pixel in both -- the role's, since labels never widen it.
     #[test]
-    fn linked_views_share_the_wider_gutter() {
+    fn linked_views_share_one_gutter() {
         let root = tree(
             r#"{"type":"window","children":[
                 {"id":1,"type":"signal","view":"trace","data":[0.0,1.0],"link":7},
@@ -2274,7 +2228,7 @@ mod indent_tests {
             .collect();
         assert_eq!(members.len(), 2);
         assert_eq!(members[0], members[1], "one axis, one gutter");
-        assert!(members[0] > m.ruler_w, "and it is the wider member's");
+        assert_eq!(members[0], m.ruler_w, "and it is the role's");
     }
 
     /// A hertz axis stays on the role: its labels are short and bounded, and

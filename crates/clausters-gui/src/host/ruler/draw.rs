@@ -15,7 +15,6 @@ use super::Tick;
 use crate::host::widget::RulerDir;
 use clausters_gui_draw::draw::Draw;
 use clausters_gui_draw::font;
-use clausters_gui_draw::metrics::Metrics;
 use clausters_gui_draw::rect::Rect;
 use clausters_gui_draw::theme::Color;
 
@@ -92,9 +91,9 @@ pub(crate) fn ticks(
     }
 }
 
-/// Writes a label at `(x, y)` as `look` says: plain, or on the text plate.
-fn label(d: &mut Draw, text: &str, x: f32, y: f32, color: Color, look: Look) {
-    let scale = d.m.caption_scale;
+/// Writes a label at `(x, y)` at `scale`, as `look` says: plain, or on the
+/// text plate.
+fn label(d: &mut Draw, text: &str, (x, y): (f32, f32), scale: f32, color: Color, look: Look) {
     if look.plated {
         let w = font::width(text, scale);
         crate::host::graphics::plate_text(d, text, x, y, w, scale, color);
@@ -135,7 +134,7 @@ fn horizontal(d: &mut Draw, strip: Rect, ruled: Rect, ticks: &[Tick], dir: Ruler
         if let Some(text_of) = &tick.label {
             let w = font::width(text_of, scale);
             let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            label(d, text_of, lx, ly, text, look);
+            label(d, text_of, (lx, ly), scale, text, look);
         }
     }
 }
@@ -154,7 +153,15 @@ fn vertical(
     if row.h <= 4.0 {
         return;
     }
-    let scale = d.m.caption_scale;
+    // **The strip is as wide as it is, and its labels fit it**: where a
+    // window's numbers need more digits than the strip holds at the caption's
+    // size, they are written smaller, together, rather than the strip
+    // growing and moving the picture beside it (`font::fit_scale`).
+    let scale = font::fit_scale(
+        ticks.iter().filter_map(|t| t.label.as_deref()),
+        (strip.w - LABEL_GAP).max(0.0),
+        d.m.caption_scale,
+    );
     let line = font::height(scale);
     let tops = label_tops(row, ticks, line, d.m.gap, shared);
     let (ink, text) = (
@@ -189,7 +196,7 @@ fn vertical(
             } else {
                 (edge + LABEL_GAP).min(strip.x + strip.w - lw)
             };
-            label(d, text_of, lx, ty, text, look);
+            label(d, text_of, (lx, ty), scale, text, look);
         }
     }
 }
@@ -230,27 +237,4 @@ pub(super) fn label_tops(
             Some(top.clamp(row.y, row.y + row.h - line))
         })
         .collect()
-}
-
-/// **The width a vertical strip has to be to draw `ticks` in full**: its
-/// widest label plus [`LABEL_GAP`], or `0` when nothing is labelled.
-///
-/// This is what a fixed size role could not express. A label's width is a
-/// property of the *data*: an axis over `[-1, 1]` formats `-1.0` and asks for
-/// no more room than the role always gave it, while one over `[-0.1, 0.1]`
-/// formats `-0.0625` and is clamped against the strip's edge unless it can ask
-/// for the room to draw it. Callers take the role as the **floor**, so an axis
-/// whose labels are narrow looks exactly as it always did.
-pub(crate) fn ticks_width(ticks: &[Tick], metrics: &Metrics) -> f32 {
-    let scale = metrics.caption_scale;
-    let widest = ticks
-        .iter()
-        .filter_map(|t| t.label.as_deref())
-        .map(|l| font::width(l, scale))
-        .fold(0.0f32, f32::max);
-    if widest > 0.0 {
-        widest + LABEL_GAP
-    } else {
-        0.0
-    }
 }

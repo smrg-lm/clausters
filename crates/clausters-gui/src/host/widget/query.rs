@@ -346,18 +346,6 @@ impl WidgetKind {
             .is_some_and(OnAxis::bounds_axis)
     }
 
-    /// [`gutter`](Self::gutter) asked again of a widget that has been
-    /// **placed**, for the chrome whose width is a property of the data rather
-    /// than of the props. `None` -- every container, and most elements -- is a
-    /// widget whose first answer stands.
-    pub fn measured_gutter(
-        &self,
-        rect: clausters_gui_draw::rect::Rect,
-        m: &clausters_gui_draw::metrics::Metrics,
-    ) -> Option<f32> {
-        self.as_element()?.on_axis()?.measured_gutter(rect, m)
-    }
-
     /// **How many rows this widget stacks**, out of the `uploaded` channel
     /// count the front read off its GPU slot -- the divisor for a lane-relative
     /// y gesture. A widget with no slot was given nothing and is one lane.

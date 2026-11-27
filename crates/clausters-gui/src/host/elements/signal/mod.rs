@@ -1253,9 +1253,8 @@ mod tests {
         let linear = axis_for(RulerY::Norm);
         let decibels = axis_for(RulerY::Db);
 
-        // The strip `ruler_y` reserves is as wide as its own labels, so the
-        // two bodies differ in x -- and that is the whole of what the unit may
-        // move. Vertically they are the same rectangle, which is what makes
+        // The strip `ruler_y` reserves is the role's width, so the unit moves
+        // neither body. Vertically they are the same rectangle, which is what makes
         // comparing at one height mean anything.
         assert_eq!(
             (linear.body.y, linear.body.h),

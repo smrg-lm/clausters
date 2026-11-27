@@ -599,10 +599,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
     } else {
         p.window.channels.max(1)
     };
-    // Height first: the x strip takes it, and it is what decides how finely the
-    // value axis steps and therefore how wide the labels the y strip holds are.
     let takes_x = p.ruler && body.h > m.ruler_h * 2.0;
-    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / rows as f32;
     let values = ruler::Ruler::new(
         ruler::Scale::Value {
             lo: p.min as f64,
@@ -618,7 +615,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
         },
         RulerDir::Up,
     );
-    let want_w = values.thickness((0.0, 1.0), row_h as f64, m);
+    let want_w = values.thickness(m);
     let y_strip = (p.ruler_y && body.w > want_w * 2.0).then(|| values.reserve(&mut body, want_w));
     let x_strip = takes_x.then(|| times.reserve(&mut body, m.ruler_h));
     if body.w <= 0.0 || body.h <= 0.0 {
@@ -1683,7 +1680,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             MeterAxis::Linear { .. } => return None,
         };
         let ladder = ladder(floor, dir);
-        let want = ladder.thickness((0.0, 1.0), body.h as f64, m);
+        let want = ladder.thickness(m);
         // **The columns keep their minimum and the ladder takes the rest.** The
         // rule was half the body, which was right while a meter stretched to
         // its cell and wrong the moment it asked for a width of its own: a

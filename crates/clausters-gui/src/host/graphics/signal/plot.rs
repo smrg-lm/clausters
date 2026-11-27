@@ -191,16 +191,13 @@ fn geometry(rect: Rect, p: &PlotParams, m: &Metrics) -> Geom {
         p.channels.max(1).min(frames_of(p).max(1))
     };
     // The x strip only takes height and the y strip only takes width, so the
-    // two reservations are independent - and the height has to be settled
-    // first, because it is what decides how finely the value axis steps and
-    // therefore how wide the labels the y strip must hold are.
+    // two reservations are independent; both are the roles' sizes.
     let takes_x = p.ruler != Ruler::Off && body.h > m.ruler_h * 2.0;
-    let row_h = (if takes_x { body.h - m.ruler_h } else { body.h }) / channels.max(1) as f32;
     let (lo, hi) = match p.view {
         PlotView::Signal => value_range(p),
         PlotView::Spectrum => (p.db_floor, p.db_ceil.max(p.db_floor + 1.0)),
     };
-    let want_w = value_ruler(lo, hi).thickness((0.0, 1.0), row_h as f64, m);
+    let want_w = value_ruler(lo, hi).thickness(m);
     let strip_x = (p.ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -581,11 +578,11 @@ mod tests {
     use clausters_gui_draw::paint::Mesh;
     use clausters_gui_draw::theme::Theme;
 
-    /// An auto-fitted plot over a small range labels `-0.0625` where one over
-    /// `[-1, 1]` labels `-1.0`, so its y strip asks for more room -- and asks
-    /// for exactly what its own ticks need.
+    /// An auto-fitted plot over a small range writes longer labels than one
+    /// over `[-1, 1]`, and its y strip stays the role's width all the same:
+    /// the labels shrink to fit it, so the field never moves.
     #[test]
-    fn an_auto_fitted_plot_widens_its_value_strip() {
+    fn an_auto_fitted_plots_value_strip_keeps_its_width() {
         let m = Metrics::default();
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
         let wide: Vec<f32> = vec![-1.0, 1.0, 0.0, -0.5];
@@ -602,16 +599,9 @@ mod tests {
         );
 
         let g_small = geometry(rect, &params(&small, 1), &m);
-        assert!(
-            g_small.body.x > g_wide.body.x,
-            "the strip stayed at the role for labels that do not fit"
-        );
-        let (lo, hi) = value_range(&params(&small, 1));
-        let ticks = value_ruler(lo, hi).ticks((0.0, 1.0), g_small.body.h as f64, &m);
         assert_eq!(
-            g_small.body.x - g_bare.body.x,
-            ruler::ticks_width(&ticks, &m),
-            "and by exactly what its widest label needs"
+            g_small.body.x, g_wide.body.x,
+            "longer labels shrink into the strip; the field never moves"
         );
     }
 
@@ -760,19 +750,26 @@ mod tests {
     #[test]
     fn stacked_channels_draw_one_row_each() {
         // Two interleaved channels: the stacked draw has a divider and two
-        // traces, so it carries more geometry than the same data as mono.
+        // traces, so it carries more geometry than the same data as mono --
+        // the traces compared, with no ruler whose ladder each row lays out
+        // to its own height.
         let two: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.1).sin()).collect();
+        let bare = |channels| {
+            let mut p = params(&two, channels);
+            p.ruler_y = false;
+            p
+        };
         let mut stacked = Mesh::new();
         draw(
             &mut Draw::new(&mut stacked, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 200.0, 160.0),
-            &params(&two, 2),
+            &bare(2),
         );
         let mut mono = Mesh::new();
         draw(
             &mut Draw::new(&mut mono, &Metrics::default(), &Theme::default()),
             Rect::new(0.0, 0.0, 200.0, 160.0),
-            &params(&two, 1),
+            &bare(1),
         );
         assert!(stacked.vertex_count() > mono.vertex_count());
         // Overlay folds both traces into one row, still drawing both.

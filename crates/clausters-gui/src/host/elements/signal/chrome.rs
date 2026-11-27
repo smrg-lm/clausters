@@ -7,17 +7,12 @@
 //! stacked on one axis. What this file answers is this element's own wish;
 //! reconciling the wishes is the group's ([`crate::host::timeline`]).
 //!
-//! The wish is asked **twice**, which is the only subtlety here. Once from the
-//! props alone, before anything is placed, because the layout needs it to place
-//! a lane's clips at all; and once from the placement, because an amplitude
-//! ruler's width is a property of the data -- the same axis formats `-1.0`
-//! unzoomed and `-0.0625` zoomed in, and the step it labels at depends on how
-//! tall the element ended up.
+//! The wish is the role's width and never the labels': a band that grew with
+//! the digits a zoom writes moved the picture beside it, so the labels shrink
+//! to fit the band instead (`font::fit_scale`, in the ruler's drawing).
 
 use super::SignalElement;
-use crate::host::widget::RulerY;
 use clausters_gui_draw::metrics::Metrics;
-use clausters_gui_draw::rect::Rect;
 
 impl SignalElement {
     /// The band this element reserves left of its body: a value ruler's width,
@@ -28,56 +23,5 @@ impl SignalElement {
         } else {
             0.0
         }
-    }
-
-    /// The band it wants once placed, when the measure is wider than the
-    /// role-sized one -- an **amplitude** ruler, whose labels are the data's.
-    ///
-    /// Two things it deliberately does not measure. A **hertz** axis stays on
-    /// the role: its labels are short and bounded (`20K`, `1.5k`, `440`) and
-    /// the frequency they run to is the analysis', not the tree's. And the
-    /// element is measured as **one row**: a stacked view's rows are shorter
-    /// than its body and so step more coarsely, so this asks for at most what a
-    /// multichannel element needs and never for less -- a gutter is a
-    /// reservation, and reserving a character wide costs pixels where reserving
-    /// short clamps a label.
-    pub fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        if !self.editor.y_strip() {
-            return None;
-        }
-        self.measured_ruler_w(rect, m)
-    }
-
-    /// **How wide a value ruler of this element has to be** placed at `rect`,
-    /// wherever it stands: its own strip or a free-standing ruler beside it.
-    pub fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
-        self.measured_ruler_w(rect, m).unwrap_or(m.ruler_w)
-    }
-
-    /// The measure itself, `None` where the role answers it (see
-    /// [`measured_gutter`](Self::measured_gutter)).
-    fn measured_ruler_w(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        if !self.navigates_time() || matches!(self.editor.ruler_y, RulerY::Off | RulerY::Hz) {
-            return None;
-        }
-        // The gutter is what we are solving for, so it is left out of the body:
-        // it moves the body's x, never its height, which is all the measure
-        // reads.
-        let body =
-            crate::host::frame::timeline_body(rect, &self.editor, self.label().is_some(), 0.0, m);
-        if body.h <= 0.0 {
-            return None;
-        }
-        let scale = crate::host::ruler::Scale::Amplitude {
-            unit: self.editor.ruler_y,
-            bit_depth: self.editor.bit_depth,
-        };
-        Some(
-            crate::host::ruler::Ruler::new(scale, crate::host::widget::RulerDir::Right).thickness(
-                self.editor.y_view(),
-                body.h as f64,
-                m,
-            ),
-        )
     }
 }

@@ -3608,6 +3608,17 @@ column of rulers beside a column of views agrees with them to the pixel
 whatever the two columns' arithmetic does. The same placement answers the
 hand: a hit on the ruler is resolved to the view (a pane's body in hand)
 with the ruler's rectangle as the view's vertical strip, so the gestures are
-the view's own and were not written again. Its width is its labels', which
-are the view's data: the layout widens it after its first pass, as it widens
-a view's own strip.
+the view's own and were not written again.
+
+**A ruler's width is never its labels'** (amended the same day, by the user,
+on the audio editor). The strips first grew with the digits a zoom wrote --
+the layout measured them after a first pass and placed again -- and that
+moved the waveform beside them whenever a number got longer. A strip is now
+its role's width, every view's and every free-standing one, and its labels
+shrink together to fit it (`font::fit_scale`, the rule for text in a box of
+a fixed size, which a meter's clip lamp follows too). Their form is the
+field's: two decimals on an amplitude axis, whole numbers in decibels and
+hertz, milliseconds on a time axis, and scientific notation where the step
+is finer than two decimals tell apart. Every linear axis is spaced by the
+time ruler's one rule (`linear_ticks`: the 1-2-5 ladder, the finest step
+whose own labels clear each other, minors where they fit).

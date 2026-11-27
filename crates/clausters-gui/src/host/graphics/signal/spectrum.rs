@@ -243,15 +243,10 @@ pub(crate) fn regions(
 ) -> SpectrumRegions {
     let mut body = body_rect(rect, label, m);
     // The x strip takes height and the y strip takes width, so the two are
-    // independent - but the height comes first, since it is what decides how
-    // finely the dB axis steps and therefore how wide its labels are.
+    // independent; both are the roles' sizes.
     let takes_x = ruler && body.h > m.ruler_h * 2.0;
-    let lane_h = if takes_x { body.h - m.ruler_h } else { body.h };
-    // The pair as the ticks are drawn from it, not as the *trace* reads it
-    // (which floors the span at a decibel): a strip has to hold the labels the
-    // ruler will actually put in it.
     let (db_floor, db_ceil) = db_window;
-    let want_w = db_ruler(db_floor, db_ceil).thickness((0.0, 1.0), lane_h as f64, m);
+    let want_w = db_ruler(db_floor, db_ceil).thickness(m);
     let strip_y_x = (ruler_y && body.w > want_w * 2.0).then(|| {
         let x = body.x;
         body.x += want_w;
@@ -431,12 +426,11 @@ pub(crate) fn polyline(
 #[cfg(test)]
 mod tests {
 
-    /// The dB strip is as wide as its own labels: the default `[-90, 0]`
-    /// window labels whole decibels the role already holds, so the body starts
-    /// exactly where it always did; a window zoomed onto a fraction of a
-    /// decibel formats decimals and the strip asks for the room to draw them.
+    /// The dB strip is the role's width whatever its window writes: a window
+    /// zoomed onto a fraction of a decibel formats decimals, which shrink into
+    /// the strip, and the body stays where it was.
     #[test]
-    fn the_db_strip_follows_its_window() {
+    fn the_db_strip_keeps_its_width_whatever_its_window() {
         let m = clausters_gui_draw::metrics::Metrics::default();
         let rect = Rect::new(0.0, 0.0, 400.0, 300.0);
         let plain = regions(rect, false, true, true, (-90.0, 0.0), &m);
@@ -448,17 +442,11 @@ mod tests {
         );
 
         let zoomed = regions(rect, false, true, true, (-0.0625, 0.0625), &m);
-        assert!(
-            zoomed.body.x > plain.body.x,
-            "the strip stayed at the role for labels that do not fit"
-        );
-        let ticks = db_ruler(-0.0625, 0.0625).ticks((0.0, 1.0), zoomed.body.h as f64, &m);
         assert_eq!(
-            zoomed.body.x - bare.body.x,
-            crate::host::ruler::ticks_width(&ticks, &m),
-            "and by exactly what its widest label needs"
+            zoomed.body.x, plain.body.x,
+            "longer labels shrink into the strip; the field never moves"
         );
-        // The x strip below is unaffected in height and follows the new body.
+        // The x strip below is unaffected in height and follows the body.
         assert_eq!(zoomed.strip_x.unwrap().h, m.ruler_h);
         assert_eq!(zoomed.strip_x.unwrap().x, zoomed.body.x);
     }

@@ -22,7 +22,7 @@
 //! | the keyboard arms + the host's focused field | [`Element::accepts_focus`] / [`Element::key`] |
 //! | the tree collectors | [`Element::needs`], with [`Samples::tap_frames`] sizing a page's tap subscription |
 //! | a clip's body draw | [`Element::draw_body`], or [`Slotted::slots`] for the one the frame must route to the GPU |
-//! | the shared time axis' chrome | [`OnAxis::gutter`] / [`OnAxis::measured_gutter`] |
+//! | the shared time axis' chrome | [`OnAxis::gutter`] |
 //! | the default drag table | [`Element::gesture_map`] |
 //! | the gesture machine's reads | [`OnAxis::rows`] / [`OnAxis::centres_y_zoom`], and [`Measured::freq_axis`] & co. for an element that measures its own x |
 //!
@@ -1645,12 +1645,6 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **Widens a value ruler to `px`**, the width its labels need over the
-    /// view it rules as that view was placed -- what the layout measures after
-    /// its first pass, since a label's width is the data's. Takes `&self`: the
-    /// layout reads the tree. Nothing for any other element.
-    fn widen(&self, _px: f32) {}
-
     /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
     /// roles and never literals, the way every built-in does; `ctx` carries the
@@ -2667,30 +2661,6 @@ pub trait OnAxis {
     /// rectangle exists.
     fn gutter(&self, _m: &Metrics) -> f32 {
         0.0
-    }
-
-    /// The gutter this element wants once it has been **placed**, or `None`
-    /// (the default) when its wish did not depend on the placement after all.
-    ///
-    /// A ruler's width can be a property of the *data* rather than of the
-    /// props: an amplitude axis zoomed onto a narrow range formats `-0.0625`
-    /// where the same axis unzoomed formats `-1.0`, and the step it labels at
-    /// depends on how tall the element ended up. That is one pass later than
-    /// [`gutter`](OnAxis::gutter), so it is a second question and not the same
-    /// one -- and an element answers `None` unless the measure would actually
-    /// widen the band, since a second layout pass is only taken when one is
-    /// owed.
-    fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
-        None
-    }
-
-    /// **How wide a value ruler of this element's vertical has to be** with
-    /// the element placed at `rect`: the role, or its widest label where that
-    /// is wider. What a free-standing value ruler beside it is widened to,
-    /// and the measure [`measured_gutter`](OnAxis::measured_gutter) asks of a
-    /// strip of its own.
-    fn value_ruler_w(&self, _rect: Rect, m: &Metrics) -> f32 {
-        m.ruler_w
     }
 
     /// **How many rows this element stacks on screen**, given the `uploaded`

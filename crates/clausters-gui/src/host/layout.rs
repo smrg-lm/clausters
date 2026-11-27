@@ -201,63 +201,16 @@ pub fn layout_over<'a>(
     root: &'a Widget,
     metrics: &Metrics,
 ) -> Vec<Placed<'a>> {
-    let floor = timeline::group_indents(root, metrics);
-    // A free-standing value ruler starts at its role, whatever it was widened
-    // to last time: the view it rules may have been zoomed back out.
-    for widget in root.descendants() {
-        if let WidgetKind::Custom(el) = &widget.kind
-            && el.rules_y().is_some()
-        {
-            el.widen(0.0);
-        }
-    }
-    let out = place_all(area, over, root, metrics, floor.clone());
-    // A value ruler's labels are a property of the data, so the width one needs
-    // is only known once its member has a height. That is one pass too late, so
-    // the members are measured and the pass is taken again -- but only when the
-    // measure asks for more than the roles reserved, which an ordinary window
-    // never does. A free-standing one is measured over the view it rules, and
-    // widened, in the same pass.
-    let widened = widen_value_rulers(&out);
-    match timeline::measured_indents(&out, &floor) {
-        Some(indents) => place_all(area, over, root, metrics, indents),
-        None if widened => place_all(area, over, root, metrics, floor),
-        None => out,
-    }
-}
-
-/// **Widens every free-standing value ruler** to what the labels of the view
-/// it rules need as that view was placed, returning whether any grew past its
-/// role. A pane is measured over every body it holds, so handing the ruler
-/// to another body does not move the window.
-fn widen_value_rulers(placed: &[Placed<'_>]) -> bool {
-    let mut widened = false;
-    for q in placed {
-        let WidgetKind::Custom(el) = &q.widget.kind else {
-            continue;
-        };
-        let Some((rules, _)) = el.rules_y() else {
-            continue;
-        };
-        let want = placed
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| {
-                p.widget.id == Some(rules)
-                    || p.pane(placed)
-                        .is_some_and(|(owner, _)| owner.id == Some(rules))
-            })
-            .filter_map(|(_, p)| {
-                let element = p.widget.kind.as_element()?.on_axis()?;
-                Some(element.value_ruler_w(p.rect, &p.metrics))
-            })
-            .fold(0.0f32, f32::max);
-        if want > q.metrics.ruler_w {
-            el.widen(want);
-            widened = true;
-        }
-    }
-    widened
+    // **One pass.** Every gutter is a role's width, never its labels': a
+    // strip that grew with the digits a zoom wrote moved the picture beside
+    // it, so the labels shrink to fit the strip instead (`font::fit_scale`).
+    place_all(
+        area,
+        over,
+        root,
+        metrics,
+        timeline::group_indents(root, metrics),
+    )
 }
 
 /// **The free-standing value ruler of placement `i`**, when one rules it --

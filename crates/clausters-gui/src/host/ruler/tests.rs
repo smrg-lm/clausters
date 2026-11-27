@@ -1,4 +1,4 @@
-use super::draw::{LABEL_GAP, label_tops, ticks_width};
+use super::draw::label_tops;
 use super::scale::*;
 use super::*;
 use crate::host::widget::RulerY;
@@ -36,27 +36,6 @@ fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, row: Rect, ticks: &[Tic
         ticks,
         Shared::default(),
     );
-}
-
-/// How wide a value strip over `[lo, hi]` beside a row `row_h` tall is.
-fn value_strip_w(lo: f64, hi: f64, row_h: f32, m: &Metrics) -> f32 {
-    Ruler::new(Scale::Value { lo, hi }, RulerDir::Right).thickness((0.0, 1.0), row_h as f64, m)
-}
-
-/// How wide an amplitude strip is, over the window `(y_start, y_len)`.
-fn amp_strip_w(
-    unit: RulerY,
-    row_h: f32,
-    bit_depth: u32,
-    y_start: f64,
-    y_len: f64,
-    m: &Metrics,
-) -> f32 {
-    Ruler::new(Scale::Amplitude { unit, bit_depth }, RulerDir::Right).thickness(
-        (y_start, y_len),
-        row_h as f64,
-        m,
-    )
 }
 
 // The generators as they were called before a scale knew its axis: each
@@ -221,51 +200,39 @@ fn a_row_shorter_than_its_own_caption_drops_the_label_and_does_not_panic() {
     );
 }
 
-/// A strip asks for what its own ticks need, floored by the role: an axis
-/// over `[-1, 1]` labels `-1.0` and is exactly as wide as it always was,
-/// while one over `[-0.1, 0.1]` labels `-0.0625` and asks for the room.
+/// **A vertical strip is the role's width whatever it writes, and its
+/// labels shrink to fit it**: a zoom that writes `-0.0625` where `-1.00` was
+/// written neither widens the strip nor runs a label past its edge, so the
+/// picture beside it never moves.
 #[test]
-fn a_value_strip_is_as_wide_as_its_own_labels() {
+fn a_value_strip_keeps_its_width_and_its_labels_fit_it() {
     let m = Metrics::default();
-    let plain = value_strip_w(-1.0, 1.0, 200.0, &m);
-    assert_eq!(plain, m.ruler_w, "the role holds an ordinary axis");
-
-    let narrow = value_strip_w(-0.1, 0.1, 200.0, &m);
-    assert!(
-        narrow > m.ruler_w,
-        "{narrow} did not grow past {}",
-        m.ruler_w
-    );
-    // ...and it grew by exactly what the widest label needs to be drawn.
-    let ticks = value_ticks(-0.1, 0.1, 200.0, &m);
-    assert_eq!(narrow, ticks_width(&ticks, &m));
-    let widest = ticks
-        .iter()
-        .filter_map(|t| t.label.as_deref())
-        .max_by_key(|l| l.len())
-        .unwrap();
-    assert!(
-        font::width(widest, m.caption_scale) + LABEL_GAP <= narrow,
-        "'{widest}' still does not fit"
-    );
-
-    // Unlabelled ticks ask for nothing, so the role stands.
-    assert_eq!(ticks_width(&[], &m), 0.0);
-    assert_eq!(value_strip_w(0.0, 0.0, 200.0, &m), m.ruler_w);
-}
-
-/// The same rule on the amplitude conventions: an unzoomed axis is the
-/// role, a zoomed one is its labels.
-#[test]
-fn an_amp_strip_follows_its_window() {
-    let m = Metrics::default();
-    assert_eq!(
-        amp_strip_w(RulerY::Norm, 200.0, 16, 0.0, 1.0, &m),
-        m.ruler_w
-    );
-    assert!(amp_strip_w(RulerY::Norm, 200.0, 16, 0.4995, 0.001, &m) > m.ruler_w);
-    // An axis that draws nothing keeps the role.
-    assert_eq!(amp_strip_w(RulerY::Off, 200.0, 16, 0.0, 1.0, &m), m.ruler_w);
+    for (lo, hi) in [
+        (-1.0, 1.0),
+        (-0.1, 0.1),
+        (-0.0001, 0.0001),
+        (-12_000.0, 90_000.0),
+    ] {
+        let ruler = Ruler::new(Scale::Value { lo, hi }, RulerDir::Right);
+        assert_eq!(ruler.thickness(&m), m.ruler_w, "[{lo}, {hi}]");
+        let row = Rect::new(100.0, 20.0, 300.0, 240.0);
+        let strip = Rect::new(row.x - m.ruler_w, row.y, m.ruler_w, row.h);
+        let mut mesh = Mesh::new();
+        ruler.draw(
+            &mut Draw::new(&mut mesh, &m, &Theme::default()),
+            strip,
+            row,
+            (0.0, 1.0),
+            Shared::default(),
+        );
+        assert!(!mesh.is_empty(), "[{lo}, {hi}] is drawn");
+        for (x, _) in mesh.positions() {
+            assert!(
+                x >= strip.x - 0.5 && x <= strip.x + strip.w + 0.5,
+                "[{lo}, {hi}]: ink at {x} outside the strip {strip:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -323,19 +290,9 @@ fn assert_no_v_collisions(ticks: &[Tick], height_px: f64, ctx: &str) {
 }
 
 #[test]
-fn snap_follows_the_125_progression() {
-    assert_eq!(snap_125(0.9), 1.0);
-    assert_eq!(snap_125(1.2), 2.0);
-    assert_eq!(snap_125(3.0), 5.0);
-    assert_eq!(snap_125(7.0), 10.0);
-    assert_eq!(snap_125(120.0), 200.0);
-    assert_eq!(snap_125(0.03), 0.05);
-}
-
-#[test]
 fn time_ticks_pick_the_smallest_fitting_step() {
-    // 10 s visible over 800 px at 48 kHz: one-second labels ("0".."10")
-    // fit comfortably; half-second ones ("0.5", ...) collide.
+    // 10 s visible over 800 px at 48 kHz: labels in milliseconds
+    // ("0.000".."10.000"), at the finest step whose labels clear.
     let ticks = time_ticks(
         0.0,
         480_000.0,
@@ -349,10 +306,7 @@ fn time_ticks_pick_the_smallest_fitting_step() {
         assert!((0.0..=1.0).contains(&t.frac));
     }
     let l = labels(&ticks);
-    assert!(
-        l.contains(&"0") && l.contains(&"1") && l.contains(&"10"),
-        "{l:?}"
-    );
+    assert!(l.contains(&"0.000") && l.contains(&"10.000"), "{l:?}");
     assert_no_h_collisions(&ticks, 800.0, "10s/800px");
     // The same window on a narrow strip climbs the ladder.
     let narrow = time_ticks(
@@ -416,12 +370,14 @@ fn sample_steps_stay_integral() {
 
 #[test]
 fn time_labels_use_clock_form_and_millis() {
-    assert_eq!(fmt_time(0.0, 1.0), "0");
-    assert_eq!(fmt_time(75.0, 5.0), "1:15");
-    assert_eq!(fmt_time(3723.0, 60.0), "1:02:03");
-    assert_eq!(fmt_time(1.25, 0.05), "1.25");
+    // three decimals, the field's default, and more only past a millisecond
+    assert_eq!(fmt_time(0.0, 1.0), "0.000");
+    assert_eq!(fmt_time(75.0, 5.0), "1:15.000");
+    assert_eq!(fmt_time(3723.0, 60.0), "1:02:03.000");
+    assert_eq!(fmt_time(1.25, 0.05), "1.250");
     assert_eq!(fmt_time(0.005, 0.005), "0.005");
-    assert_eq!(fmt_time(61.5, 0.5), "1:01.5");
+    assert_eq!(fmt_time(61.5, 0.5), "1:01.500");
+    assert_eq!(fmt_time(0.0005, 0.0001), "0.0005");
 }
 
 #[test]
@@ -436,7 +392,7 @@ fn zoomed_view_offsets_and_subdivides() {
         &Metrics::default(),
     );
     let l = labels(&ticks);
-    assert!(l.contains(&"2.6") && l.contains(&"3.4"), "{l:?}");
+    assert!(l.contains(&"2.600") && l.contains(&"3.400"), "{l:?}");
     // Minors exist between majors (more ticks than labels).
     assert!(ticks.len() > l.len());
     assert_no_h_collisions(&ticks, 800.0, "zoomed 1s/800px");
@@ -771,8 +727,9 @@ fn amp_ticks_norm_and_percent_share_the_geometry() {
     let top = norm.iter().map(|t| t.frac).fold(0.0, f64::max);
     assert!((top - (1.0 + AMP_MARGIN as f64) / 2.0).abs() < 1e-9);
     let l = labels(&norm);
+    // amplitude in two decimals
     assert!(
-        l.contains(&"1") && l.contains(&"0") && l.contains(&"-1"),
+        l.contains(&"1.00") && l.contains(&"0.00") && l.contains(&"-1.00"),
         "{l:?}"
     );
     // Percent is signed: 0..100% above the zero line, 0..-100% below it.
@@ -1146,13 +1103,18 @@ fn value_ticks_fit_any_range() {
         assert!((0.0..=1.0).contains(&t.frac));
     }
     assert_no_v_collisions(&ticks, 400.0, "value 40..4700");
-    // A tiny fractional range refines below 1.
+    // A tiny fractional range refines below a hundredth, in scientific
+    // notation on the whole ladder.
     let fine = value_ticks(-0.02, 0.03, 400.0, &Metrics::default());
     let fl = labels(&fine);
     assert!(
-        fl.contains(&"0") && fl.iter().any(|s| s.contains('.')),
+        fl.contains(&"0") && fl.iter().filter(|s| **s != "0").all(|s| s.contains('e')),
         "{fl:?}"
     );
+    // Two decimals over a fraction of a unit, whole numbers over whole steps.
+    let unit = labels(&value_ticks(0.0, 1.0, 400.0, &Metrics::default())).join(" ");
+    assert!(unit.contains("0.50"), "{unit}");
+    assert!(l.iter().all(|s| !s.contains('.')), "{l:?}");
     assert_no_v_collisions(&fine, 400.0, "value -0.02..0.03");
     // Degenerate span: nothing.
     assert!(value_ticks(1.0, 1.0, 400.0, &Metrics::default()).is_empty());
@@ -1419,7 +1381,7 @@ fn a_value_strip_on_the_right_is_the_mirror_of_one_on_the_left() {
     let m = Metrics::default();
     let row = Rect::new(100.0, 20.0, 300.0, 240.0);
     let scale = Scale::Value { lo: -1.0, hi: 1.0 };
-    let w = Ruler::new(scale, RulerDir::Right).thickness((0.0, 1.0), row.h as f64, &m);
+    let w = Ruler::new(scale, RulerDir::Right).thickness(&m);
     let left = Rect::new(row.x - w, row.y, w, row.h);
     let right = Rect::new(row.x + row.w, row.y, w, row.h);
     let ticks = Ruler::new(scale, RulerDir::Right).ticks((0.0, 1.0), row.h as f64, &m);

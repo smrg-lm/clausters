@@ -17,11 +17,9 @@
 //! it. The drawing is the one ruler's (`host::ruler`), so a ruler here and a
 //! strip of the view's own are the same marks.
 //!
-//! Its width is its labels', which are the data's: the role, or what the
-//! view's labels need as it was placed (`Element::widen`, measured by the
-//! layout after its first pass, the way a view's own strip is measured).
-
-use std::cell::Cell;
+//! Its width is the `ruler_w` role, never its labels': a ruler that grew
+//! with the digits a zoom writes would move the view beside it, so the labels
+//! shrink to fit it instead, as they do in a view's own strip.
 
 use serde_json::{Map, Value};
 
@@ -38,8 +36,6 @@ pub struct ValueRuler {
     pub rules: i32,
     /// The way it faces that view.
     pub dir: RulerDir,
-    /// The width its labels were last measured to need, physical pixels.
-    measured: Cell<f32>,
 }
 
 pub(crate) fn build(
@@ -53,7 +49,6 @@ pub(crate) fn build(
     Ok(Box::new(ValueRuler {
         rules: rules as i32,
         dir: vertical(RulerDir::parse(props, RulerDir::Right)),
-        measured: Cell::new(0.0),
     }))
 }
 
@@ -84,17 +79,13 @@ impl Element for ValueRuler {
     /// this rectangle with the view's rows (`rules_y`).
     fn draw(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
-    /// As wide as its labels, elastic along the view it stands beside.
+    /// The role's width, elastic along the view it stands beside.
     fn natural(&self, m: &Metrics, _scale: f32) -> Natural {
-        (Some(m.ruler_w.max(self.measured.get())), None)
+        (Some(m.ruler_w), None)
     }
 
     fn rules_y(&self) -> Option<(i32, RulerDir)> {
         Some((self.rules, self.dir))
-    }
-
-    fn widen(&self, px: f32) {
-        self.measured.set(px);
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -121,7 +112,7 @@ mod tests {
     use super::*;
 
     /// A `field` naming a view is a value ruler of it, facing the way it
-    /// says, and as wide as its labels once measured.
+    /// says, and as wide as the role whatever it will write.
     #[test]
     fn a_value_ruler_rules_the_view_it_names() {
         let mut props = Map::new();
@@ -131,8 +122,6 @@ mod tests {
         assert_eq!(ruler.rules_y(), Some((12, RulerDir::Left)));
         let m = Metrics::default();
         assert_eq!(ruler.natural(&m, 1.0), (Some(m.ruler_w), None));
-        ruler.widen(m.ruler_w + 9.0);
-        assert_eq!(ruler.natural(&m, 1.0), (Some(m.ruler_w + 9.0), None));
         props.remove("rules");
         assert!(build(&props, &[]).is_err(), "it names what it rules");
     }

@@ -806,9 +806,10 @@ hand. `dir` is again the side its content is on: `left` for a ruler standing
 on the view's right, `right` (the default, where a view's own strip stands)
 for one on its left, each the mirror of the other. To the hand it **is** the
 view's vertical: a drag pans the view's window, the wheel zooms it, a press on
-a folded channel's name unfolds it. It is as wide as its labels, which are the
-view's data — the `ruler_w` role, or more once the view is zoomed onto a narrow
-range — and the view beside it says `y.strip: false`, as the views under a
+a folded channel's name unfolds it. It is the `ruler_w` role's width whatever
+the view writes — **a ruler never widens with its labels**, which would move
+the view beside it; longer labels are drawn smaller to fit, together, as in a
+view's own strip — and the view beside it says `y.strip: false`, as the views under a
 time ruler say `x.strip: false`. The audio editor stands its rulers so, on the
 right of its take and its spectrogram, beside the meter.
 

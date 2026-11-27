@@ -881,33 +881,14 @@ impl OnAxis for Curve {
         Some(points::domain(&self.points, self.duration))
     }
 
-    /// The wish, from the props alone: the ruler role's own width. What the
-    /// band actually needs depends on the labels, which depend on how tall the
-    /// curve ended up -- that is [`OnAxis::measured_gutter`], one pass later.
+    /// The wish, from the props alone: the ruler role's own width, whatever
+    /// its labels -- they shrink to fit it.
     fn gutter(&self, m: &Metrics) -> f32 {
         if !self.editor.y_strip() {
             0.0
         } else {
             m.ruler_w
         }
-    }
-
-    /// The value strip measured against its **own** labels, once the placement
-    /// is known: a BPM axis over `[30, 90]` formats three characters where an
-    /// amplitude axis formats six, and the step it labels at follows the
-    /// height. `None` while the role-sized wish already covers it, so the
-    /// second layout pass is taken only when one is owed.
-    fn measured_gutter(&self, rect: Rect, m: &Metrics) -> Option<f32> {
-        if !self.editor.y_strip() {
-            return None;
-        }
-        let want = self.value_ruler_w(rect, m);
-        (want > m.ruler_w).then_some(want)
-    }
-
-    fn value_ruler_w(&self, rect: Rect, m: &Metrics) -> f32 {
-        let field = self.regions(rect, 0.0, m).field;
-        self.value_ruler().thickness((0.0, 1.0), field.h as f64, m)
     }
 }
 

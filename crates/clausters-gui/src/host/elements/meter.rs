@@ -490,7 +490,7 @@ impl Element for Meter {
         // label it can write, and only on a decibel axis.
         let ladder = match (self.ruler, self.axis) {
             (Some(dir), MeterAxis::Decibels { floor_db }) => {
-                meters::ladder(floor_db, dir).thickness((0.0, 1.0), 4096.0, m)
+                meters::ladder(floor_db, dir).thickness(m)
             }
             _ => 0.0,
         };
@@ -925,11 +925,7 @@ mod tests {
         let MeterAxis::Decibels { floor_db } = meter.axis else {
             panic!("a decibel meter");
         };
-        let strip = meters::ladder(floor_db, crate::host::widget::RulerDir::Right).thickness(
-            (0.0, 1.0),
-            body.h as f64,
-            &m,
-        );
+        let strip = meters::ladder(floor_db, crate::host::widget::RulerDir::Right).thickness(&m);
         assert!(
             body.w - strip >= widest,
             "columns of {} hold a reading of {widest}",

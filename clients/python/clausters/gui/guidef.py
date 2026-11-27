@@ -3407,9 +3407,9 @@ def valueruler(rules: int, *, dir: str | None = None, theme: dict | None = None,
 
     ``dir`` says **which side its view is on**, so the marks hug that edge:
     ``"left"`` for a ruler standing on the view's right, ``"right"`` (the
-    default, where a view's own strip stands) for one on its left. It is as
-    wide as its labels, which are the view's: give it a ``weight`` to stand
-    as tall as the view::
+    default, where a view's own strip stands) for one on its left. Its width
+    is fixed and its labels shrink to fit it, so a zoom never moves the view
+    beside it; give it a ``weight`` to stand as tall as the view::
 
         panel(waveform(data=take, id=3, axes={"y": {"strip": False}}, weight=1),
               valueruler(3, dir="left"),

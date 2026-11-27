@@ -250,7 +250,7 @@ fn lu_ruler(d: &mut Draw, body: Rect, domain: (f32, f32), target: f64, y: (f64, 
         plated: true,
     });
     // a strip inside the body's right edge, its marks along that edge
-    let w = ruler.thickness((0.0, 1.0), body.h as f64, d.m).min(body.w);
+    let w = ruler.thickness(d.m).min(body.w);
     let strip = Rect::new(body.x + body.w - w, body.y, w, body.h);
     ruler.draw(d, strip, body, (0.0, 1.0), ruler::Shared::default());
 }
