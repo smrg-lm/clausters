@@ -969,7 +969,8 @@ code that keeps it lives.
   drag sweeps a time range.
 - **A value ruler is the same ruler on the other axis, and stands where the
   window reads it.** The audio editor stands its take's and its
-  spectrogram's value rulers on the right of the views, beside the meter;
+  spectrogram's value rulers on the right of the views, beside the meter,
+  whose decibel ladder stands on its right too;
   the views keep no strip of their own, so the take starts at the window's
   edge of the views and its first sample sits there. Each ruler draws its
   view's own unit, window and rows, at the heights of the view's rows -- a

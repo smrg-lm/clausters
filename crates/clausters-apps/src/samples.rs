@@ -301,6 +301,8 @@ pub fn window(w: &Window<'_>) -> Value {
             // A control bus reads linearly unless told: this one carries an
             // amplitude, read in decibels with its ladder.
             "scale": "db",
+            // its ladder on its right too, as the views' value rulers stand
+            "ruler": "right",
             "channels": meter.channels,
         }));
     }
@@ -465,6 +467,8 @@ mod tests {
         let row = &def["children"][0]["children"];
         let (views, rulers, meter) = (&row[0], &row[1], &row[2]);
         assert_eq!(meter["type"], "meter", "the meter stays last");
+        assert_eq!(meter["ruler"], "right", "its ladder on the right too");
+        assert_eq!(meter["ruler"], "right", "its ladder on the right too");
         assert_eq!(rulers["hug"], true, "as wide as its rulers");
         let column = rulers["children"].as_array().unwrap();
         assert_eq!(column[0]["axes"]["y"]["rules"], 8, "the pane's");
