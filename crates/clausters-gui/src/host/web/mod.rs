@@ -1158,6 +1158,18 @@ impl WebApp {
         self.advance_dock_timers();
         // **A tick that found the page settled stops itself**: a meter that
         // fell, a transport that stood still after its push.
+        self.retick();
+    }
+
+    /// **The tick started or stopped as the page needs it, and each
+    /// canvas's demand noted with it.** The two are decided together:
+    /// a window paced by the display asks for its next frame while its
+    /// noted demand holds a moving playhead, so a tick stopped with the
+    /// demand left as it was kept a window that stood drawing at the
+    /// display's rate (found 2026-11-26: after a paste, a transport's
+    /// answer stopped the tick and the window drew whole frames for as
+    /// long as the take had left to play).
+    fn retick(&mut self) {
         self.ensure_tick(self.tick_wanted());
         self.note_demand();
     }
