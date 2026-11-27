@@ -885,6 +885,41 @@ mod tests {
         );
     }
 
+    /// **Every lamp of a meter writes its figure at one size**: two figures
+    /// of as many characters whose digits the face draws at different widths
+    /// (`+6.00`, `+7.01`) stand as tall as each other side by side, where
+    /// fitting each to its own lamp wrote them at two sizes.
+    #[test]
+    fn the_lamps_figures_are_one_size() {
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let cell = Rect::new(0.0, 0.0, 14.0, 20.0);
+        let height_of = |peak: f32| {
+            let mut mesh = Mesh::new();
+            let scale = lamp_scale(cell, &m);
+            draw_lamp(
+                &mut Draw::new(&mut mesh, &m, &theme),
+                cell,
+                Some(peak),
+                Some(scale),
+            );
+            // the figure's ink: what is not the lamp's own corners
+            let ys: Vec<f32> = mesh
+                .positions()
+                .filter(|(_, y)| *y > cell.y + 0.01 && *y < cell.y + cell.h - 0.01)
+                .map(|(_, y)| y)
+                .collect();
+            assert!(!ys.is_empty(), "the figure is drawn");
+            ys.iter().copied().fold(f32::MIN, f32::max)
+                - ys.iter().copied().fold(f32::MAX, f32::min)
+        };
+        let six = 10f32.powf(6.0 / 20.0);
+        let seven = 10f32.powf(7.01 / 20.0);
+        assert_eq!(lamp_text(six).as_deref(), Some("+6.00"));
+        assert_eq!(lamp_text(seven).as_deref(), Some("+7.01"));
+        assert!((height_of(six) - height_of(seven)).abs() < 1e-3);
+    }
+
     /// **Each lamp says its own channel's over**, inside it, as the clip
     /// lights of a desk: a second channel lit writes a second number, and
     /// the number is the decibels past full scale.
@@ -1728,12 +1763,9 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             &paint,
         );
         if let Some(lamp) = lamp {
-            draw_lamp(
-                d,
-                Rect::new(x, lamp.y, column, lamp.h),
-                ch.clipped,
-                view.readout,
-            );
+            let cell = Rect::new(x, lamp.y, column, lamp.h);
+            let scale = lamp_scale(cell, d.m);
+            draw_lamp(d, cell, ch.clipped, view.readout.then_some(scale));
         }
     }
     if let Some((strip, ladder)) = strip {
@@ -1770,10 +1802,11 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
 
 /// **The lamp over one column**: dark while nothing has clipped, lit red once
 /// something has, and left lit until a hand puts it out. A `numbered` lamp
-/// says inside it how far past full scale its channel went, in decibels: the
-/// server works in floating point, so a signal past unity is not lost -- it is
-/// a signal that has to come down by this much before anything converts it.
-fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
+/// says inside it how far past full scale its channel went, in decibels, at
+/// the size `numbered` gives -- the meter's one ([`lamp_scale`]): the server
+/// works in floating point, so a signal past unity is not lost -- it is a
+/// signal that has to come down by this much before anything converts it.
+fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: Option<f32>) {
     if cell.w <= 0.0 || cell.h <= 0.0 {
         return;
     }
@@ -1784,15 +1817,11 @@ fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
         theme.meter_field
     };
     mesh.rect(cell, fill);
-    let Some(text) = clipped.filter(|_| numbered).and_then(lamp_text) else {
+    let (Some(text), Some(scale)) = (clipped.and_then(lamp_text), numbered) else {
         return;
     };
-    // **A lamp is a box of a fixed size**: its number is written smaller to
-    // fit it rather than widening the meter (`font::fit_scale`), and no
-    // taller than the lamp.
-    let room = (cell.w - m.divider_w * 2.0).max(0.0);
-    let scale = font::fit_scale([text.as_str()], room, m.caption_scale)
-        .min(m.caption_scale * cell.h / font::height(m.caption_scale).max(1.0));
+    // an over past a hundred decibels shrinks further, alone
+    let scale = font::fit_scale([text.as_str()], lamp_room(cell, m), scale);
     if scale <= 0.0 {
         return;
     }
@@ -1806,6 +1835,28 @@ fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
         scale,
         theme.text_on(fill),
     );
+}
+
+/// The width a lamp's figure is written in: the lamp less a hairline each side.
+fn lamp_room(cell: Rect, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
+    (cell.w - m.divider_w * 2.0).max(0.0)
+}
+
+/// **The one size every lamp of a meter writes its figure at.** A lamp is a
+/// box of a fixed size, so its figure is written smaller to fit it rather
+/// than widening the meter (`font::fit_scale`), and no taller than the lamp.
+/// The size is fitted to **the widest figure a lamp writes** -- `+DD.DD` in
+/// whichever digit the face draws widest -- and not to each lamp's own
+/// number: the face's digits are not all one width, so two figures of as
+/// many characters fitted one by one came out at two sizes side by side.
+fn lamp_scale(cell: Rect, m: &clausters_gui_draw::metrics::Metrics) -> f32 {
+    let widest: Vec<String> = ('0'..='9').map(|d| format!("+{d}{d}.{d}{d}")).collect();
+    font::fit_scale(
+        widest.iter().map(String::as_str),
+        lamp_room(cell, m),
+        m.caption_scale,
+    )
+    .min(m.caption_scale * cell.h / font::height(m.caption_scale).max(1.0))
 }
 
 /// **What a lit lamp says**: how far past full scale the loudest level since
