@@ -649,6 +649,58 @@ try {
     check(JSON.stringify(layout) === JSON.stringify(before), "in the same panel, the dock as it was");
   }
 
+  // A window's canvas pastes without asking the browser for its clipboard:
+  // a browser that fires no `paste` on a canvas answers a read with a button
+  // the person has to press, so Ctrl+V on a take must not read. Last, since
+  // it leaves a window with a change in it.
+  {
+    await evaluate(`(async () => {
+      const rate = 48000, frames = rate;
+      const data = new Int16Array(frames * 2);
+      for (let i = 0; i < data.length; i++) data[i] = Math.round(Math.sin(i * 0.01) * 8000);
+      const bytes = new Uint8Array(44 + data.byteLength);
+      const v = new DataView(bytes.buffer);
+      const w = (o, s) => { for (let i = 0; i < 4; i++) bytes[o + i] = s.charCodeAt(i); };
+      w(0, "RIFF"); v.setUint32(4, 36 + data.byteLength, true); w(8, "WAVE"); w(12, "fmt ");
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 4, true); v.setUint16(32, 4, true);
+      v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, data.byteLength, true);
+      bytes.set(new Uint8Array(data.buffer), 44);
+      const f = await (await navigator.storage.getDirectory()).getFileHandle("e2e-take.wav", { create: true });
+      const s = await f.createWritable(); await s.write(bytes); await s.close();
+      // what the host writes and reads of the browser's clipboard, counted
+      const clip = navigator.clipboard;
+      const write = clip.writeText.bind(clip), read = clip.readText.bind(clip);
+      globalThis.__written = null; globalThis.__reads = 0;
+      clip.writeText = (t) => { globalThis.__written = t; return write(t).catch(() => {}); };
+      clip.readText = () => { globalThis.__reads++; return read(); };
+      return true;
+    })()`);
+    const take = await host(`return await host.openApp("audio", { path: "/e2e-take.wav" }, 60)`);
+    const history = () => host(`return await host.callApp(${take}, { query: "history" }, 30)`);
+    for (let i = 0; i < 100 && (await host(`return (await host.callApp(${take}, { query: "actions" }, 30))?.save?.pending`)); i++) {
+      await sleep(100);
+    }
+    await sleep(500);
+    await host(`host.verb(${take}, "select_all"); host.verb(${take}, "copy"); return true`);
+    let copied = null;
+    for (let i = 0; i < 50 && !copied; i++) {
+      await sleep(100);
+      copied = await evaluate("globalThis.__written");
+    }
+    await page.click(700, 450);
+    await sleep(300);
+    const before = (await history()).version;
+    await page.paste(copied ?? "");
+    let after = before;
+    for (let i = 0; i < 50 && after === before; i++) {
+      await sleep(100);
+      after = (await history()).version;
+    }
+    check(after !== before, "Ctrl+V on a take's window pastes the take's copy");
+    check((await evaluate("globalThis.__reads")) === 0, "and asks the browser for no read of its clipboard");
+  }
+
   console.log(failures ? `${failures} failed` : "all passed");
   await finish(failures ? 1 : 0);
 } catch (error) {

@@ -410,7 +410,7 @@ impl WebApp {
         slot.composer = compose::Composer::attach(self.id, def_id);
         slot.paster = window.canvas().and_then(|c| {
             let to = super::clipboard::PasteTo::Window(def_id);
-            super::clipboard::Paster::attach(self.id, to, c.into())
+            super::clipboard::Paster::attach(self.id, to, c.into(), true)
         });
         self.canvases.insert(def_id, slot);
         log(&format!(

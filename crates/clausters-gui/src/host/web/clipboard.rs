@@ -78,14 +78,28 @@ impl SystemClipboard for PageClipboard {
 /// the keyboard goes to (a canvas, or a text widget's field): the key is
 /// kept from the shell, which would cancel it, so the browser fires its
 /// `paste`; and the `paste` hands its text to the host.
+///
+/// **A canvas pastes through a field of its own.** Some browsers fire no
+/// `paste` on an element that is not editable, and a page that does not
+/// get one has to ask for the text, which such a browser answers with a
+/// button the person must press (found 2026-11-26: every Ctrl+V in a
+/// window of a page in Firefox waited, then offered a lone "Paste"). So
+/// the paste key aims the keyboard at a hidden field for the moment of the
+/// paste: the browser pastes into it, its `paste` hands the text over, and
+/// the keyboard goes back to the canvas.
 pub(super) struct Paster {
     canvas: web_sys::EventTarget,
     _keys: Closure<dyn FnMut(web_sys::KeyboardEvent)>,
-    _paste: Closure<dyn FnMut(web_sys::Event)>,
+    _paste: Listener,
+    /// The field a canvas's paste lands in, and its `paste` listener.
+    catcher: Option<(web_sys::HtmlElement, Listener)>,
 }
 
 impl Drop for Paster {
     fn drop(&mut self) {
+        if let Some((field, _)) = &self.catcher {
+            field.remove();
+        }
         let _ = self.canvas.remove_event_listener_with_callback_and_bool(
             "keydown",
             self._keys.as_ref().unchecked_ref(),
@@ -109,9 +123,65 @@ pub(super) fn is_paste_key(event: &web_sys::KeyboardEvent) -> bool {
         && event.key().eq_ignore_ascii_case("v")
 }
 
+/// A listener of a DOM event, held for as long as it listens.
+type Listener = Closure<dyn FnMut(web_sys::Event)>;
+
+/// The field a canvas's paste lands in, made in the document: hidden as the
+/// composition field is (`compose`), and emptied by its `paste` being
+/// cancelled.
+fn catcher_field() -> Option<web_sys::HtmlElement> {
+    let document = web_sys::window()?.document()?;
+    let field = document.create_element("textarea").ok()?;
+    for (name, value) in [
+        ("aria-hidden", "true"),
+        ("tabindex", "-1"),
+        ("style", super::compose::HIDDEN),
+    ] {
+        field.set_attribute(name, value).ok()?;
+    }
+    let field: web_sys::HtmlElement = field.dyn_into().ok()?;
+    document.body()?.append_child(&field).ok()?;
+    Some(field)
+}
+
+/// **The browser's `paste`, handed to the host** as the paste of `to`; the
+/// keyboard goes back to `back` after it, where it was aimed away for it.
+fn on_paste(host: HostId, to: PasteTo, back: Option<web_sys::HtmlElement>) -> Listener {
+    Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+        event.prevent_default();
+        let data = field(&event, "clipboardData");
+        let text = js_sys::Reflect::get(&data, &JsValue::from_str("getData"))
+            .ok()
+            .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+            .and_then(|f| f.call1(&data, &JsValue::from_str("text/plain")).ok())
+            .and_then(|t| t.as_string());
+        if let Some(back) = &back {
+            let _ = back.focus();
+        }
+        if let Some(proxy) = web_proxy() {
+            let _ = proxy.send_event(HostEvent::To(host, WebEvent::Pasted { to, text }));
+        }
+    })
+}
+
 impl Paster {
-    /// The listeners on `canvas`, for the paste of `to` on host `host`.
-    pub(super) fn attach(host: HostId, to: PasteTo, canvas: web_sys::EventTarget) -> Option<Self> {
+    /// The listeners on `canvas`, for the paste of `to` on host `host`. A
+    /// canvas pastes through a field of its own (`catch`); an element that
+    /// is a field already does not.
+    pub(super) fn attach(
+        host: HostId,
+        to: PasteTo,
+        canvas: web_sys::EventTarget,
+        catch: bool,
+    ) -> Option<Self> {
+        let back: Option<web_sys::HtmlElement> = canvas.clone().dyn_into().ok();
+        let catcher = catch.then(catcher_field).flatten().map(|field| {
+            let listener = on_paste(host, to, back.clone());
+            let _ =
+                field.add_event_listener_with_callback("paste", listener.as_ref().unchecked_ref());
+            (field, listener)
+        });
+        let field_for_key = catcher.as_ref().map(|(field, _)| field.clone());
         // the key, before the shell's own listener: kept from it, so nothing
         // cancels the browser's paste
         let keys = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
@@ -120,25 +190,35 @@ impl Paster {
                     return;
                 }
                 event.stop_immediate_propagation();
-                // a browser that fires no `paste` here still pastes: the
-                // paste goes on by a read once the browser's turn is over
+                // **the paste lands in the field**, aimed at for it; should
+                // the browser make none, the keyboard comes back as the late
+                // paste is made
+                if let (Some(field), Some(back)) = (&field_for_key, &back) {
+                    let _ = field.focus();
+                    let (field, back) = (field.clone(), back.clone());
+                    let again = Closure::once_into_js(move || {
+                        let active = web_sys::window()
+                            .and_then(|w| w.document())
+                            .and_then(|d| d.active_element());
+                        if active.as_deref() == Some(field.as_ref()) {
+                            let _ = back.focus();
+                        }
+                    });
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            again.unchecked_ref(),
+                            PASTE_WAIT_MS,
+                        );
+                    }
+                }
+                // a browser that fires no `paste` still pastes: the paste
+                // goes on by a read once the browser's turn is over
                 if let Some(proxy) = web_proxy() {
                     let _ = proxy.send_event(HostEvent::To(host, WebEvent::PasteKey { to }));
                 }
             },
         );
-        let paste = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
-            event.prevent_default();
-            let data = field(&event, "clipboardData");
-            let text = js_sys::Reflect::get(&data, &JsValue::from_str("getData"))
-                .ok()
-                .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
-                .and_then(|f| f.call1(&data, &JsValue::from_str("text/plain")).ok())
-                .and_then(|t| t.as_string());
-            if let Some(proxy) = web_proxy() {
-                let _ = proxy.send_event(HostEvent::To(host, WebEvent::Pasted { to, text }));
-            }
-        });
+        let paste = on_paste(host, to, None);
         canvas
             .add_event_listener_with_callback_and_bool(
                 "keydown",
@@ -153,6 +233,7 @@ impl Paster {
             canvas,
             _keys: keys,
             _paste: paste,
+            catcher,
         })
     }
 }

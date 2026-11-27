@@ -151,7 +151,7 @@ impl WebApp {
         let listener = watch_buttons(&window, &buttons, &mods);
         let paster = window.canvas().and_then(|c| {
             let to = super::clipboard::PasteTo::Shell(which);
-            super::clipboard::Paster::attach(self.id, to, c.into())
+            super::clipboard::Paster::attach(self.id, to, c.into(), true)
         });
         let scale = window.scale_factor() as f32;
         let metrics = self.host.metrics.resolved(scale);

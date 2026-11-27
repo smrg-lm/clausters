@@ -78,7 +78,7 @@ impl Drop for Composer {
 /// and an element that cannot take focus composes nothing. One pixel, fully
 /// transparent, out of the way of the pointer, and `position: fixed` so
 /// focusing it never scrolls the page to it.
-const HIDDEN: &str = "position:fixed;top:0;left:0;width:1px;height:1px;\
+pub(super) const HIDDEN: &str = "position:fixed;top:0;left:0;width:1px;height:1px;\
                       opacity:0;padding:0;border:0;outline:none;\
                       pointer-events:none;z-index:-1";
 
@@ -206,6 +206,7 @@ impl Composer {
             host,
             super::clipboard::PasteTo::Window(def_id),
             target.clone(),
+            false,
         );
         target
             .add_event_listener_with_callback("beforeinput", typed.as_ref().unchecked_ref())
