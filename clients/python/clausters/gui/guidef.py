@@ -2648,7 +2648,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           bits: int | None = None, hold: float | None = None,
           decay: float | None = None, clip: int | None = None,
           ruler: "bool | str | None" = None, readout: bool | None = None,
-          peak: str | None = None,
+          reading: bool | None = None, peak: str | None = None,
           min: float | None = None,
           max: float | None = None,
           zones: "bool | list[tuple[float, str] | tuple[float, str, str | float]] | None" = None,
@@ -2698,6 +2698,10 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     two together are a **bare column**, which is a meter and not a degraded one:
     it is what a strip of them down the edge of a track header is, where there
     is no room for either and the picture is the whole of what it has to say.
+    The level at the foot is written only where ``reading=True`` asks for it:
+    the columns and the ladder already say it. A lamp is a box of a fixed
+    size, so its figure (two decimals, ``+1.11``) is written smaller to fit
+    it rather than widening the meter, as a ruler's labels are.
 
     **Sample peak or true peak.** ``peak`` says what the level on the bus is:
     ``"sample"`` (the default, the block's largest sample, which is what an
@@ -2739,6 +2743,8 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
                        min=min, max=max, label=label, color=color)
     if readout is not None:
         extra["readout"] = 1 if readout else 0
+    if reading is not None:
+        extra["reading"] = 1 if reading else 0
     if isinstance(zones, bool):
         extra["zones"] = 1 if zones else 0
     elif zones is not None:

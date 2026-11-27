@@ -86,6 +86,11 @@ pub struct Meter {
     /// and no figures, because there is no room for either and the picture is
     /// the whole of what it has to say.
     pub readout: bool,
+    /// **Whether the level is also written at the foot** (the `reading`
+    /// prop), under the columns: off unless asked for, since the columns and
+    /// the ladder already say it and the number took a strip of the meter's
+    /// height and a width of its own. Read only where `readout` is on.
+    pub reading: bool,
     /// **What the level on the bus is** -- the largest sample, or the true peak
     /// of the reconstructed signal a `TruePeak` UGen writes.
     pub peak: Peak,
@@ -193,6 +198,10 @@ fn from_props(props: &Map<String, Value>) -> Meter {
         clip: props.get("clip").and_then(Value::as_i64).map(|b| b as i32),
         ruler: ruler_of(props, axis),
         readout: props.get("readout").and_then(parse::truthy).unwrap_or(true),
+        reading: props
+            .get("reading")
+            .and_then(parse::truthy)
+            .unwrap_or(false),
         peak: props
             .get("peak")
             .and_then(Value::as_str)
@@ -329,6 +338,7 @@ impl Meter {
                 channels: &reads,
                 axis: self.axis,
                 readout: self.readout,
+                reading: self.readout && self.reading,
                 label: self.label.as_deref(),
                 ruler: self.ruler,
                 zones: &self.zones,
@@ -412,6 +422,13 @@ impl Element for Meter {
                 }
                 None => false,
             },
+            "reading" => match parse::truthy(v) {
+                Some(b) => {
+                    self.reading = b;
+                    true
+                }
+                None => false,
+            },
             "zones" => match Zones::parse(v) {
                 Some(zones) => {
                     self.zones = zones;
@@ -461,10 +478,11 @@ impl Element for Meter {
         let column = (m.box_side * 0.5).max(3.0);
         let columns =
             self.channels as f32 * column + (self.channels.saturating_sub(1)) as f32 * m.divider_w;
-        // **The reading is written over the columns**, so the columns are
-        // as wide as it is: a pair of thin columns under a five-character
-        // number left it cut to `-...`.
-        let reading = if self.readout {
+        // **The reading is written under the columns**, so the columns are
+        // as wide as it is where it is asked for: a pair of thin columns under
+        // a five-character number left it cut to `-...`. A lamp's number sets
+        // no width: it is written smaller to fit its lamp (`font::fit_scale`).
+        let reading = if self.readout && self.reading {
             self.axis
                 .widest_readouts()
                 .iter()
@@ -473,18 +491,7 @@ impl Element for Meter {
         } else {
             0.0
         };
-        // **Each column's lamp says its own number**, so each column is as
-        // wide as one.
-        let lamps = if self.readout && matches!(self.axis, MeterAxis::Decibels { .. }) {
-            let one = clausters_gui_draw::font::width(
-                crate::host::graphics::meters::WIDEST_LAMP,
-                m.caption_scale,
-            );
-            self.channels as f32 * one + (self.channels.saturating_sub(1)) as f32 * m.divider_w
-        } else {
-            0.0
-        };
-        let columns = columns.max(reading).max(lamps);
+        let columns = columns.max(reading);
         // The ladder the drawing takes (`meters::draw_meter_view`): the
         // strip its labels want, read at a height tall enough to carry every
         // label it can write, and only on a decibel axis.
@@ -901,13 +908,26 @@ mod tests {
         assert!(ruled > one_w, "the ladder asks for its strip too");
     }
 
-    /// **The reading fits over the columns it is written on**: a stereo
-    /// meter at its natural width, ladder and all, leaves the columns the
-    /// width of its widest reading, so the number is not cut to `-...`.
+    /// **The reading fits under the columns it is written under**, where it
+    /// is asked for: a stereo meter at its natural width, ladder and all,
+    /// leaves the columns the width of its widest reading, so the number is
+    /// not cut to `-...`. Unasked, the meter is its thin columns and its
+    /// ladder: the lamps' numbers shrink to fit them and set no width.
     #[test]
     fn a_meter_is_as_wide_as_its_reading() {
         let m = Metrics::default();
-        let meter = from_props(&props(r#"{"channels":2,"scale":"db"}"#));
+        let bare = from_props(&props(r#"{"channels":2,"scale":"db"}"#));
+        assert!(!bare.reading, "off unless asked for");
+        let column = (m.box_side * 0.5).max(3.0);
+        assert_eq!(
+            bare.natural(&m, 1.0).0.unwrap(),
+            clausters_gui_draw::metrics::snap_px(
+                2.0 * column + m.divider_w + m.ruler_w + 2.0 * m.pad,
+                1.0
+            ),
+            "two columns and the ladder"
+        );
+        let meter = from_props(&props(r#"{"channels":2,"scale":"db","reading":true}"#));
         let width = meter.natural(&m, 1.0).0.unwrap();
         let widest = meter
             .axis

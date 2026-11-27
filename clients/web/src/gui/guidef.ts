@@ -3455,6 +3455,10 @@ export function plot(
  * two together are a **bare column**, which is a meter and not a degraded one:
  * it is what a strip of them down the edge of a track header is, where there is
  * no room for either and the picture is the whole of what it has to say.
+ * The level at the foot is written only where `reading` of `true` asks for
+ * it: the columns and the ladder already say it. A lamp is a box of a fixed
+ * size, so its figure (two decimals, `+1.11`) is written smaller to fit it
+ * rather than widening the meter, as a ruler's labels are.
  *
  * **Sample peak or true peak.** `peak` says what the level on the bus is:
  * `"sample"` (the default, the block's largest sample, which is what an audio
@@ -3503,6 +3507,7 @@ export function meter(
         clip?: number;
         ruler?: boolean | "left" | "right";
         readout?: boolean;
+        reading?: boolean;
         peak?: "sample" | "true";
         min?: number;
         max?: number;
@@ -3521,6 +3526,7 @@ export function meter(
         clip,
         ruler,
         readout,
+        reading,
         peak,
         min,
         max,
@@ -3542,6 +3548,7 @@ export function meter(
             ["clip", clip],
             ["ruler", strip(ruler)],
             ["readout", flag(readout)],
+            ["reading", flag(reading)],
             ["peak", peak],
             ["min", min],
             ["max", max],

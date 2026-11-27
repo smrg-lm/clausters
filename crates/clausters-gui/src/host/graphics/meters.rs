@@ -866,6 +866,7 @@ mod tests {
                     channels: &channels,
                     axis: MeterAxis::Decibels { floor_db: -60.0 },
                     readout: true,
+                    reading: true,
                     label: None,
                     ruler,
                     zones: &Zones::Auto,
@@ -889,8 +890,9 @@ mod tests {
     /// the number is the decibels past full scale.
     #[test]
     fn each_lit_lamp_says_its_own_over() {
-        assert_eq!(lamp_text(1.0).as_deref(), Some("+0.0"));
-        assert_eq!(lamp_text(1.4).as_deref(), Some("+2.9"));
+        assert_eq!(lamp_text(1.0).as_deref(), Some("+0.00"));
+        assert_eq!(lamp_text(1.4).as_deref(), Some("+2.92"));
+        assert_eq!(lamp_text(4.0).as_deref(), Some("+12.04"));
         assert_eq!(lamp_text(0.0), None);
         let m = Metrics::default();
         let theme = Theme::default();
@@ -903,6 +905,7 @@ mod tests {
                     channels,
                     axis: MeterAxis::Decibels { floor_db: -60.0 },
                     readout: true,
+                    reading: true,
                     label: None,
                     ruler: None,
                     zones: &Zones::Auto,
@@ -943,6 +946,7 @@ mod tests {
                     channels: &channels,
                     axis: MeterAxis::Decibels { floor_db: -60.0 },
                     readout,
+                    reading: readout,
                     label: None,
                     ruler: None,
                     zones: &Zones::Auto,
@@ -1183,6 +1187,7 @@ mod tests {
                     }],
                     axis,
                     readout: false,
+                    reading: false,
                     label: None,
                     ruler: None,
                     zones: &Zones::Auto,
@@ -1595,6 +1600,8 @@ pub(crate) struct MeterView<'a> {
     /// the foot and the figure a lit lamp raises. Off is a bare column, which
     /// is what a strip of meters in a header is.
     pub readout: bool,
+    /// Whether the level is written at the foot, under the columns.
+    pub reading: bool,
     pub label: Option<&'a str>,
     /// Which way the ladder faces the columns, or `None` for a meter with no
     /// ladder: `Right` stands it on their left.
@@ -1669,7 +1676,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
     // number belongs under the **columns**, not under the ladder's last label.
     let value = {
         let h = super::controls::readout_h(m.caption_scale, m);
-        (view.readout && body.h > h * 4.0).then(|| {
+        (view.reading && body.h > h * 4.0).then(|| {
             body.h -= h;
             body.y + body.h
         })
@@ -1780,11 +1787,16 @@ fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
     let Some(text) = clipped.filter(|_| numbered).and_then(lamp_text) else {
         return;
     };
-    let scale = m.caption_scale;
-    let w = font::width(&text, scale);
-    if w > cell.w || font::height(scale) > cell.h {
+    // **A lamp is a box of a fixed size**: its number is written smaller to
+    // fit it rather than widening the meter (`font::fit_scale`), and no
+    // taller than the lamp.
+    let room = (cell.w - m.divider_w * 2.0).max(0.0);
+    let scale = font::fit_scale([text.as_str()], room, m.caption_scale)
+        .min(m.caption_scale * cell.h / font::height(m.caption_scale).max(1.0));
+    if scale <= 0.0 {
         return;
     }
+    let w = font::width(&text, scale);
     let y = cell.y + (cell.h - font::height(scale)) * 0.5;
     font::text(
         mesh,
@@ -1797,12 +1809,9 @@ fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
 }
 
 /// **What a lit lamp says**: how far past full scale the loudest level since
-/// it lit went, in decibels, or nothing for a level that is not a number.
+/// it lit went, in decibels with two decimals (`+1.11`, `+11.11`), or nothing
+/// for a level that is not a number.
 pub(crate) fn lamp_text(peak: f32) -> Option<String> {
     let over = db_of(peak);
-    over.is_finite().then(|| format!("{:+.1}", over.max(0.0)))
+    over.is_finite().then(|| format!("{:+.2}", over.max(0.0)))
 }
-
-/// The widest a lamp's number is written: what the meter's natural width
-/// gives each column room for.
-pub(crate) const WIDEST_LAMP: &str = "+48.0";
