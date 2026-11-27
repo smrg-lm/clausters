@@ -308,7 +308,10 @@ fn a_mono_file_under_a_stereo_list_is_drawn_on_both_channels() {
 /// **An edit is drawn from the peaks already held**: a paste shifts the tail
 /// off the file's grid, and at a coarse bucket only the fades and the cuts
 /// are read from samples. Each column holds what its samples hold and
-/// reaches at most a thirty-second of itself past its span.
+/// reaches at most a thirty-second of itself past its span, or a base
+/// bucket where that is more -- an eighth of a column of eight base
+/// buckets, the finest that is folded so (a take of minutes seen whole in a
+/// wide window is drawn at sixteen).
 #[test]
 fn a_paste_is_drawn_from_peaks_and_its_seams() {
     let dir = scratch("paste");
@@ -326,29 +329,37 @@ fn a_paste_is_drawn_from_peaks_and_its_seams() {
             part(&path, Some(&peaks), 300_017, frames - 300_017, (1, frames)),
         ],
     );
-    let mut answerer = Answerer::default();
-    let mut io = Disk::default();
-    answerer.define(-3, l.clone());
-    let bucket = 1 << 14;
-    let stats = summary(&mut answerer, &mut io, -3, bucket, 1);
-    // Two fades of 64 and the cut edges of four bodies, a base bucket each
-    // at most.
-    assert!(
-        answerer.samples_read <= 2 * 64 + 4 * 256,
-        "{} samples read",
-        answerer.samples_read
-    );
-    let slack = bucket / 32;
-    for i in 0..l.frames / bucket {
-        let (a, b) = (i * bucket, (i + 1) * bucket);
-        let inside = direct(&l, &[&data], 1, 0, a, b);
-        let around = direct(&l, &[&data], 1, 0, a.saturating_sub(slack), b + slack);
-        let got = &stats[i * 3..][..3];
-        // The column's own samples are inside what it draws, and what it
-        // draws is inside what the list holds a thirty-second either side:
-        // a column's edge is rounded within its part, and a cut is exact.
-        assert!(got[0] <= inside.min && got[1] >= inside.max, "bucket {i}");
-        assert!(got[0] >= around.min && got[1] <= around.max, "bucket {i}");
+    for bucket in [1 << 11, 1 << 12, 1 << 14] {
+        let mut answerer = Answerer::default();
+        let mut io = Disk::default();
+        answerer.define(-3, l.clone());
+        let stats = summary(&mut answerer, &mut io, -3, bucket, 1);
+        // Two fades of 64 and the cut edges of four bodies, a base bucket
+        // each at most.
+        assert!(
+            answerer.samples_read <= 2 * 64 + 4 * 256,
+            "{} samples read at {bucket}",
+            answerer.samples_read
+        );
+        let slack = (bucket / 32).max(256);
+        for i in 0..l.frames / bucket {
+            let (a, b) = (i * bucket, (i + 1) * bucket);
+            let inside = direct(&l, &[&data], 1, 0, a, b);
+            let around = direct(&l, &[&data], 1, 0, a.saturating_sub(slack), b + slack);
+            let got = &stats[i * 3..][..3];
+            // The column's own samples are inside what it draws, and what
+            // it draws is inside what the list holds the slack either side:
+            // a column's edge is rounded within its part, and a cut is
+            // exact.
+            assert!(
+                got[0] <= inside.min && got[1] >= inside.max,
+                "bucket {i} at {bucket}"
+            );
+            assert!(
+                got[0] >= around.min && got[1] <= around.max,
+                "bucket {i} at {bucket}"
+            );
+        }
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

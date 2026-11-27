@@ -3102,10 +3102,14 @@ cut leaves a bucket's edge off the source's grid, it reads that partial bucket
 from the samples. After a paste every column's edges are off the grid, so the
 exact rule makes the overview of an edited take of hours read two partial
 buckets of samples per column per channel, scattered across the file. Here a
-column of 32 base buckets or more has its edges rounded to a level a
-thirty-second of its width, so it draws at most a thirty-second of itself past
-its own span, of the same part's material — invisible at the width it is drawn
-at — and an edited take is drawn from peaks. What stays exact is what a reader
+column of 8 base buckets or more has its edges rounded to a level a
+thirty-second of its width, or to the base level where no level is that fine,
+so it draws at most an eighth of itself past its own span, of the same part's
+material — a summary's bucket is never wider than the column it is drawn in,
+so this is under a pixel — and an edited take is drawn from peaks. *(The bound
+was 32 base buckets until 2026-11-26: a take of a few minutes seen whole in a
+wide window is drawn at 16, and a paste at a clicked frame read a hundred
+blocks of samples for its overview, a third of a second in a page.)* What stays exact is what a reader
 could see: a part's own edges (a cut, the end of a fade), since past a cut is
 material the list does not hold; the fades, which are the list's own samples;
 and every edge of a finer column, where a bucket is wide enough to be seen.

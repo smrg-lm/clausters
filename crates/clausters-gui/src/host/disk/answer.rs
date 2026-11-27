@@ -71,6 +71,14 @@ const MAX_REPLY_BYTES: usize = 256 * 1024;
 /// always comes back.
 const READ_BUDGET: usize = 1 << 17;
 
+/// **Base buckets from which a column is folded from the peaks alone**, its
+/// edges rounded to a level's grid rather than read from the samples. At 32,
+/// a take of a few minutes seen whole in a wide window (columns of 16 base
+/// buckets) read two partial buckets of samples per column after a paste
+/// moved its parts off their files' grid: a hundred blocks of samples, and
+/// the paste's picture a third of a second late in a page.
+const COARSE_BASES: usize = 8;
+
 /// A peaks file is trusted when it is no older than this, in seconds, before
 /// its samples: the peaks UGen and the writer of the samples close their
 /// files in either order at the end of one render.
@@ -1549,7 +1557,10 @@ impl FileSamples<'_> {
     /// the largest aligned block of the levels at each position, with what
     /// is left at the edges read from the samples. An edge that is not one
     /// of the part's own is first rounded to the grid of a level a
-    /// thirty-second of the bucket wide, when the bucket is that coarse.
+    /// thirty-second of the bucket wide, or of the base level where none
+    /// is that fine, when the bucket is [`COARSE_BASES`] base buckets or
+    /// wider: at most an eighth of the bucket, which is no wider than the
+    /// column it is drawn in.
     fn fold(
         &mut self,
         path: &Arc<str>,
@@ -1561,7 +1572,7 @@ impl FileSamples<'_> {
     ) -> SpanStats {
         let base = head.base;
         let frames = head.frames;
-        let coarse = self.bucket >= 32 * base;
+        let coarse = self.bucket >= COARSE_BASES * base;
         let mut fine = base;
         while coarse && fine * 2 <= self.bucket / 32 {
             fine *= 2;
