@@ -1224,8 +1224,6 @@ impl AudioEditor {
         {
             return Err(format!("this pane has no '{name}' body"));
         }
-        let relabel =
-            self.file.presentation.edit_layer.starts_with("points") || name.starts_with("points");
         self.file.presentation.edit_layer = name.into();
         Ok(self
             .window_state
@@ -1233,11 +1231,7 @@ impl AudioEditor {
             .into_iter()
             .map(|id| Correction {
                 widget: i64::from(id),
-                props: if relabel {
-                    json!({"layer": name, "label": self.pane_label()})
-                } else {
-                    json!({"layer": name})
-                },
+                props: json!({"layer": name}),
             })
             .collect())
     }
@@ -1537,12 +1531,10 @@ impl AudioEditor {
         });
         // only a meter the window draws is corrected afterwards
         self.window_state.meter_widget = meter.map(|m| m.widget);
-        let label = self.pane_label();
         let segments = self.segments();
         let spectrogram = self.window_state.settings.props();
         let mut tree = window(&Window {
             channels: self.file.channels,
-            name: Some(&label),
             layers: &self.file.presentation.layers,
             rate: self.file.rate,
             widget,

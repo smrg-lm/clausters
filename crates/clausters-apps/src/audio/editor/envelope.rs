@@ -12,15 +12,6 @@ use clausters_editing::points;
 const GAIN_MAX: f64 = 1.0;
 
 impl AudioEditor {
-    pub(super) fn pane_label(&self) -> String {
-        let take = crate::samples::label(self.take_name().as_deref());
-        if self.file.presentation.edit_layer.starts_with("points") {
-            format!("{take} -- gain 0..{GAIN_MAX}")
-        } else {
-            take
-        }
-    }
-
     pub(super) fn ensure_envelope(&mut self) {
         if self.file.contents.automation.is_empty() {
             let mut curve = Automation::new(
@@ -308,12 +299,11 @@ impl AudioEditor {
         (None, corrections)
     }
 
-    /// **The pane as the editor's state has it**: its label, the body the
-    /// hand edits, and whether the gain curve is shown over the take.
+    /// **The pane as the editor's state has it**: the body the hand edits,
+    /// and whether the gain curve is shown over the take.
     pub(super) fn pane_correction(&self) -> Option<Correction> {
         let pane = self.window_state.pane?;
-        let mut props = json!({"label": self.pane_label(),
-            "layer": self.file.presentation.edit_layer});
+        let mut props = json!({"layer": self.file.presentation.edit_layer});
         if self.window_state.envelope_widget.is_some() {
             let shown = self
                 .file
@@ -496,10 +486,6 @@ mod tests {
         };
         assert_eq!(e.file.presentation.edit_layer, "take");
         assert!(!e.file.contents.automation[0].visible);
-        assert_eq!(
-            e.pane_label(),
-            crate::samples::label(e.take_name().as_deref())
-        );
         assert!(editing.step(Direction::Undo).stepped);
         let Some(Member::Audio(e)) = editing.member(id) else {
             panic!("audio");

@@ -6,8 +6,10 @@
 //! what it held inside that (`rms`) -- and edited with the catalogue's
 //! three-gesture plan (a drag selects, Alt draws, Ctrl grabs one sample). The
 //! picture is the catalogue's (`crate::view::catalogue`); what is
-//! the application's is the window it stands in, the measures it stacks, the
-//! label a take is shown under and the correction a write answers with.
+//! the application's is the window it stands in, the measures it stacks and
+//! the correction a write answers with. **The take's name is not part of the
+//! view**: the window's title and the list of open files say which file it is,
+//! and a strip over the picture pushed it below the meter beside it.
 //!
 //! # The measures are one prop, not a pile of widgets
 //!
@@ -45,8 +47,8 @@ pub fn measures<S: AsRef<str>>(stack: &[S]) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// What the header of a take is labelled: its name, or `untitled` when it
-/// has none.
+/// What a take is called where it is named (a client's binding): its name,
+/// or `untitled` when it has none.
 pub fn label(name: Option<&str>) -> String {
     match name {
         Some(name) if !name.is_empty() => name.to_string(),
@@ -58,8 +60,6 @@ pub fn label(name: Option<&str>) -> String {
 pub struct Window<'a> {
     /// Its interleaved channel count.
     pub channels: u32,
-    /// The take's name, when it has one.
-    pub name: Option<&'a str>,
     /// What the picture measures, innermost last, already checked
     /// (the shared layer validator).
     pub layers: &'a Stack,
@@ -141,7 +141,6 @@ pub fn window(w: &Window<'_>) -> Value {
         measure: w.layers.to_wire(),
         ruler: w.unit.prop().into(),
         sample_rate: w.rate,
-        label: label(w.name),
         // The application decides whether this file reads the transport.
         // Rebuilding a view must not re-enable another file's play cursor.
         cursor: Some(0.0),
@@ -212,7 +211,6 @@ pub fn window(w: &Window<'_>) -> Value {
     let ruled = lane.is_none();
     let picture = if let Some(pane) = w.pane {
         let axes = picture.remove("axes").unwrap_or(Value::Null);
-        let label = picture.remove("label");
         // Only the horizontal axis moves to the pane. The body's vertical
         // scale is still its own, including the visual stack's domain.
         if let Some(y) = axes.get("y") {
@@ -220,7 +218,7 @@ pub fn window(w: &Window<'_>) -> Value {
         }
         let x = axes.get("x").cloned().unwrap_or_else(|| json!({}));
         let mut pane = json!({"type": "pane", "id": pane, "weight": 1, "layer": w.layer,
-            "label": label, "axes": {"x": x}, "children": [picture]});
+            "axes": {"x": x}, "children": [picture]});
         match (&ruler, pane.as_object_mut()) {
             (Some(ruler), Some(pane)) => ruler.rule(pane),
             (None, _) if !ruled => pane["axes"]["x"]["ruler"] = json!(false),
@@ -345,11 +343,10 @@ pub fn measures_json(request: &str) -> String {
 mod tests {
     use super::*;
 
-    fn compose(name: Option<&str>) -> Value {
+    fn compose() -> Value {
         let layers = Stack::checked(&json!(["peak", "rms"])).unwrap();
         window(&Window {
             channels: 2,
-            name,
             layers: &layers,
             rate: 48_000.0,
             widget: 9,
@@ -375,7 +372,7 @@ mod tests {
     /// time ruler, with the three gestures and both measures.
     #[test]
     fn the_window_is_one_waveform_over_the_take() {
-        let def = compose(Some("glide"));
+        let def = compose();
         assert_eq!(def["type"], "window");
         assert_eq!(def["flow"], "col");
         assert_eq!(def["keys"], json!(["audio"]));
@@ -406,7 +403,7 @@ mod tests {
             take["axes"]["x"]["playhead_at"], 0.0,
             "the play cursor, anchored"
         );
-        assert_eq!(take["label"], "glide");
+        assert!(take.get("label").is_none(), "the view carries no name");
         assert_eq!(take["axes"]["x"]["unit"], "time");
         assert!(
             take["axes"]["x"].get("tempo").is_none(),
@@ -418,11 +415,12 @@ mod tests {
         );
     }
 
-    /// A take with no name is shown as untitled.
+    /// A take with no name is called untitled.
     #[test]
     fn a_nameless_take_is_untitled() {
-        assert_eq!(compose(None)["children"][0]["label"], "untitled");
-        assert_eq!(compose(Some(""))["children"][0]["label"], "untitled");
+        assert_eq!(label(None), "untitled");
+        assert_eq!(label(Some("")), "untitled");
+        assert_eq!(label(Some("glide")), "glide");
     }
 
     /// **A correction is "read it again"**, whichever widget it names.

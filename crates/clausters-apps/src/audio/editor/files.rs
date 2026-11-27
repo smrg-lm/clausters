@@ -414,13 +414,6 @@ impl AudioEditor {
         self.file.untitled()
     }
 
-    /// **What the take is called** in its pane: the name the caller gave it,
-    /// else its file's name, `untitled` for a file not written yet, and none
-    /// for a take that is a buffer.
-    pub(super) fn take_name(&self) -> Option<String> {
-        self.file.take_name()
-    }
-
     /// The name of the dialog widget `widget` is, when it is one.
     pub(super) fn dialog_name(&self, widget: i64) -> Option<String> {
         self.window_state.dialogs.name(widget).map(str::to_string)
@@ -696,15 +689,7 @@ impl AudioEditor {
                 forms::corrections(self.window_state.dialogs.refused()),
             );
         }
-        let mut corrections = forms::corrections(self.window_state.dialogs.hide());
-        // a file saved under a new path is called by it from now on
-        if let (Form::Depth, Some(pane)) = (open.form, self.window_state.pane) {
-            corrections.push(Correction {
-                widget: i64::from(pane),
-                props: json!({"label": self.pane_label()}),
-            });
-        }
-        (None, corrections)
+        (None, forms::corrections(self.window_state.dialogs.hide()))
     }
 
     /// **The file the take is**, as a client reads it: its path (`null` for
