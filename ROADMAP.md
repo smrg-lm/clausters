@@ -128,6 +128,10 @@ already carry it.
   *(`crates/clausters-apps/PLAN.md`, Found by use)*. Once, 70 minutes; the
   wait it hung in is bounded now, and the next failure says where.
 
+- ⬜ **A client's `locate` moves the audio editor's cursor but not its
+  window's** *(`crates/clausters-apps/PLAN.md`, Found by use)*. The window
+  keeps its cursor, and a keyboard paste lands there; `span` likewise.
+
 ## 2. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

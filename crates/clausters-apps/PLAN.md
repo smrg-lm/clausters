@@ -3538,3 +3538,12 @@ finished work, where a pending item reads as done.
   same file at once (both used `app-engine-switch-<pid>.wav` in parallel,
   and one removed it while the other ran). What is open is the cause: the
   next failure prints it.
+
+- ⬜ **A client's `locate` moves the audio editor's cursor but not its
+  window's** *(found 2026-11-26, measuring a paste in the page)*.
+  `AudioTransport.locate` (both clients) reaches the door's `locate`, which
+  sets the file's position cursor and answers the frame, and tells the window
+  nothing: the window keeps drawing the cursor where it was, and a paste from
+  the keyboard goes in there, while the editor's binding names the new
+  position. The door's `span` sets the selection the same way. Either call
+  should leave the window drawing what the editor holds, as a click does.
