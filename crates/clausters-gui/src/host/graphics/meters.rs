@@ -880,6 +880,45 @@ mod tests {
         );
     }
 
+    /// **Each lamp says its own channel's over**, inside it, as the clip
+    /// lights of a desk: a second channel lit writes a second number, and
+    /// the number is the decibels past full scale.
+    #[test]
+    fn each_lit_lamp_says_its_own_over() {
+        assert_eq!(lamp_text(1.0).as_deref(), Some("+0.0"));
+        assert_eq!(lamp_text(1.4).as_deref(), Some("+2.9"));
+        assert_eq!(lamp_text(0.0), None);
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let draw_with = |channels: &[ChannelRead]| {
+            let mut mesh = Mesh::new();
+            draw_meter_view(
+                &mut Draw::new(&mut mesh, &m, &theme),
+                Rect::new(0.0, 0.0, 120.0, 200.0),
+                &MeterView {
+                    channels,
+                    axis: MeterAxis::Decibels { floor_db: -60.0 },
+                    readout: true,
+                    label: None,
+                    ruler: None,
+                    zones: &Zones::Auto,
+                },
+            );
+            mesh.vertex_count()
+        };
+        let over = |clipped| ChannelRead {
+            level: 0.5,
+            mark: 0.5,
+            clipped,
+        };
+        let one = draw_with(&[over(Some(1.4)), over(None)]);
+        let two = draw_with(&[over(Some(1.4)), over(Some(2.0))]);
+        assert!(
+            two > one,
+            "the second lamp writes its own number: {two} vs {one}"
+        );
+    }
+
     /// **`readout` off is a bare column**, which is what a strip of meters in a
     /// track header is: no ladder, no figures, and the height that would have
     /// held them given back to the column.
@@ -1597,12 +1636,22 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
     if body.w <= 0.0 || body.h <= 0.0 || view.channels.is_empty() {
         return;
     }
+    // **A lamp per channel, apart from its column**, as the clip lights of
+    // a desk: a meter that writes numbers lights a lamp tall enough to say,
+    // inside it, how far past full scale its channel went; a bare meter's is
+    // a thin mark. A gap keeps it from reading as the column's top.
     let lamps = matches!(view.axis, MeterAxis::Decibels { .. });
     let lamp = lamps.then(|| {
-        let h = lamp_h(body.h, m).min(body.h * 0.5);
-        body.y += h;
-        body.h -= h;
-        Rect::new(body.x, body.y - h, body.w, h)
+        let h = if view.readout {
+            super::controls::readout_h(m.caption_scale, m)
+        } else {
+            lamp_h(body.h, m)
+        }
+        .min(body.h * 0.25);
+        let gap = m.gap.min(h);
+        body.y += h + gap;
+        body.h -= h + gap;
+        Rect::new(body.x, body.y - h - gap, body.w, h)
     });
     // **The reading gets a strip of its own, at the bottom.** It used to be
     // written in the body's top corner, where the lamp's number also goes, so
@@ -1678,12 +1727,11 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             draw_lamp(
                 d,
                 Rect::new(x, lamp.y, column, lamp.h),
-                ch.clipped.is_some(),
+                ch.clipped,
+                view.readout,
             );
         }
     }
-    let (mesh, m, theme) = d.parts();
-    mesh.border(body, m.divider_w, theme.accent);
     if let (Some((strip, side)), MeterAxis::Decibels { floor_db }) = (strip, view.axis) {
         let ticks = crate::host::ruler::db_ticks(floor_db as f64, body.h as f64, d.m);
         let edge = match side {
@@ -1691,20 +1739,6 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             crate::host::ruler::Side::Right => body.x + body.w,
         };
         crate::host::ruler::draw_ticks_v_side(d, edge, strip, body, &ticks, side);
-    }
-    // **The lamps are per channel; the number is one, and it is written over
-    // the columns.** Which channel was flattened is worth a lamp of its own,
-    // but *how far past full scale* is a question about the signal -- and a
-    // column is a few pixels wide, so a number per column would be a number
-    // nobody can read and a column wide enough for one would be width spent on
-    // nothing.
-    if view.readout && lamp.is_some() {
-        let worst = view
-            .channels
-            .iter()
-            .filter_map(|c| c.clipped)
-            .fold(f32::NEG_INFINITY, f32::max);
-        draw_lamp_number(d, body, worst);
     }
     // The reading is the loudest channel's: one number for the widget, which is
     // the question a glance asks of a stereo pair. On a centred axis that is
@@ -1735,54 +1769,48 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
     }
 }
 
-/// The lamp over one column: dark while nothing has clipped, lit red once
-/// something has, and left lit until a hand puts it out.
-fn draw_lamp(d: &mut Draw, cell: Rect, lit: bool) {
-    let (mesh, _, theme) = d.parts();
+/// **The lamp over one column**: dark while nothing has clipped, lit red once
+/// something has, and left lit until a hand puts it out. A `numbered` lamp
+/// says inside it how far past full scale its channel went, in decibels: the
+/// server works in floating point, so a signal past unity is not lost -- it is
+/// a signal that has to come down by this much before anything converts it.
+fn draw_lamp(d: &mut Draw, cell: Rect, clipped: Option<f32>, numbered: bool) {
     if cell.w <= 0.0 || cell.h <= 0.0 {
         return;
     }
-    mesh.rect(
-        cell,
-        if lit {
-            theme.meter_clip
-        } else {
-            theme.meter_field
-        },
+    let (mesh, m, theme) = d.parts();
+    let fill = if clipped.is_some() {
+        theme.meter_clip
+    } else {
+        theme.meter_field
+    };
+    mesh.rect(cell, fill);
+    let Some(text) = clipped.filter(|_| numbered).and_then(lamp_text) else {
+        return;
+    };
+    let scale = m.caption_scale;
+    let w = font::width(&text, scale);
+    if w > cell.w || font::height(scale) > cell.h {
+        return;
+    }
+    let y = cell.y + (cell.h - font::height(scale)) * 0.5;
+    font::text(
+        mesh,
+        &text,
+        cell.x + (cell.w - w) * 0.5,
+        y,
+        scale,
+        theme.text_on(fill),
     );
 }
 
-/// **How far past full scale it went**, written over the columns -- and nothing
-/// at all while nothing is lit.
-///
-/// In decibels *over* full scale rather than the level itself, because that is
-/// the question a lit lamp raises: the server works in floating point, so a
-/// signal that passed unity is not lost -- it is a signal that has to come down
-/// by this much before anything converts it.
-fn draw_lamp_number(d: &mut Draw, body: Rect, peak: f32) {
+/// **What a lit lamp says**: how far past full scale the loudest level since
+/// it lit went, in decibels, or nothing for a level that is not a number.
+pub(crate) fn lamp_text(peak: f32) -> Option<String> {
     let over = db_of(peak);
-    if !over.is_finite() {
-        return;
-    }
-    let text = format!("{:+.1}", over.max(0.0));
-    // The caption scale on the translucent plate, centred at the top of the
-    // column where the loud end of the scale is: the same line every other
-    // drawing in this host writes over a picture. Not inside the lamp -- a lamp
-    // big enough to hold a number is a panel, and a number scaled to a lamp is
-    // the one part of a meter that changes size for no reason a reader could
-    // name.
-    let (scale, w, pad) = {
-        let m = d.m;
-        (
-            m.caption_scale,
-            font::width(&text, m.caption_scale),
-            m.divider_w * 2.0,
-        )
-    };
-    if w > body.w || font::height(scale) > body.h {
-        return;
-    }
-    let x = body.x + (body.w - w) * 0.5;
-    let color = d.theme.text;
-    super::plate_text(d, &text, x, body.y + pad, body.w, scale, color);
+    over.is_finite().then(|| format!("{:+.1}", over.max(0.0)))
 }
+
+/// The widest a lamp's number is written: what the meter's natural width
+/// gives each column room for.
+pub(crate) const WIDEST_LAMP: &str = "+48.0";

@@ -470,7 +470,18 @@ impl Element for Meter {
         } else {
             0.0
         };
-        let columns = columns.max(reading);
+        // **Each column's lamp says its own number**, so each column is as
+        // wide as one.
+        let lamps = if self.readout && matches!(self.axis, MeterAxis::Decibels { .. }) {
+            let one = clausters_gui_draw::font::width(
+                crate::host::graphics::meters::WIDEST_LAMP,
+                m.caption_scale,
+            );
+            self.channels as f32 * one + (self.channels.saturating_sub(1)) as f32 * m.divider_w
+        } else {
+            0.0
+        };
+        let columns = columns.max(reading).max(lamps);
         // The ladder the drawing takes (`meters::draw_meter_view`): the
         // strip its labels want, read at a height tall enough to carry every
         // label it can write, and only on a decibel axis.
