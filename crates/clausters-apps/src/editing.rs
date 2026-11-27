@@ -284,6 +284,10 @@ pub enum Effect {
         member: MemberId,
         /// The edited file's playback projection, independent of view focus.
         file: audio::PlaybackFile,
+        /// The frame the step put the position cursor on, which the music
+        /// goes to as it does for a placed cursor.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cue: Option<u64>,
     },
     /// A notes editor applied the step to the sequence it shares: its holder
     /// reads the change through its own handle, and there is nothing to carry
@@ -1470,17 +1474,21 @@ impl Editing {
                         let target = object.map_or(editor.focused_file(), |object| object.id);
                         if let Some((before, result)) = editor.over_file(target, |editor| {
                             let before = editor.before_step();
-                            let result = payloads
-                                .last()
-                                .is_some_and(|p| editor.apply(&p.0))
-                                .then(|| editor.playback_file());
+                            let result = payloads.last().and_then(|p| {
+                                editor
+                                    .apply(&p.0)
+                                    .then(|| (editor.playback_file(), editor.step_cursor(&p.0)))
+                            });
                             (before, result)
                         }) {
                             kept.push((id, Kept::Audio(target, before)));
-                            if let Some(file) = result {
+                            if let Some((file, cue)) = result {
                                 stepped = true;
-                                out.effects
-                                    .extend(file.map(|file| Effect::Audio { member, file }));
+                                out.effects.extend(file.map(|file| Effect::Audio {
+                                    member,
+                                    file,
+                                    cue,
+                                }));
                             }
                         }
                     }

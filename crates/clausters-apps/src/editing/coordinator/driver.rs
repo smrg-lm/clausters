@@ -225,7 +225,12 @@ impl Editing {
             return freed;
         }
         for effect in stepped.effects {
-            let super::super::Effect::Audio { member: at, file } = effect else {
+            let super::super::Effect::Audio {
+                member: at,
+                file,
+                cue,
+            } = effect
+            else {
                 continue;
             };
             let mut nested = Ran::default();
@@ -239,6 +244,23 @@ impl Editing {
                 ids,
                 &mut nested,
             );
+            // **the music goes where the step put the cursor**, as it goes
+            // where a hand places it: rolling, it goes on from there, and
+            // stopped, it stands there
+            if let Some(frame) = cue.filter(|_| file.rate > 0.0) {
+                self.audio_start(
+                    at,
+                    AudioAction::Locate {
+                        at: frame as f64 / file.rate,
+                    },
+                    false,
+                    None,
+                    true,
+                    caller,
+                    ids,
+                    &mut nested,
+                );
+            }
             ran.effects.extend(nested.effects);
         }
         freed

@@ -1138,11 +1138,26 @@ fn a_copy_is_pasted_from_where_the_application_keeps_it() {
 
 /// **An undo puts the cursor back where the edit found it**, and a redo
 /// where the edit left it: two pastes at the cursor walked back put it
-/// at each paste's position in turn, never further back each time.
+/// at each paste's position in turn, never further back each time. The
+/// music goes with it: the transport stands where the cursor does.
 #[test]
 fn an_undo_puts_the_cursor_back_where_the_edit_found_it() {
     let path = take("undo-cursor", 24_000);
-    let mut host = host();
+    let (engine, mut processed) = AppEngine::detached(48_000.0, 2);
+    let mut host = Host::new();
+    host.hold_audio_engine(Arc::new(Mutex::new(engine)));
+    // the device a detached engine has not got
+    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let device = {
+        let running = Arc::clone(&running);
+        std::thread::spawn(move || {
+            let mut out = vec![0.0f32; clausters_app_engine::BLOCK_SIZE * 2];
+            while running.load(std::sync::atomic::Ordering::Relaxed) {
+                processed.process_block(&mut out);
+                std::thread::sleep(std::time::Duration::from_micros(200));
+            }
+        })
+    };
     let def_id = opened(&mut host, &path);
     let widget = widget_of(&host, def_id);
     let copy = host.event_message(
@@ -1165,6 +1180,16 @@ fn an_undo_puts_the_cursor_back_where_the_edit_found_it() {
         ask(host, def_id, json!({"member": {"verb": "binding"}}))["cursor"]
             .as_u64()
             .unwrap()
+    };
+    // where the window's play cursor is drawn from: its transport's position
+    let music = |host: &Host| {
+        let source = host.source_of(def_id)?;
+        let transport = *host.transports_drawn(def_id).first()?;
+        source.transport_reading(transport).map(|r| r.position)
+    };
+    let together = |host: &mut Host, at: u64, what: &str| {
+        assert_eq!(cursor(host), at, "{what}");
+        until(host, what, |h| music(h) == Some(at));
     };
     let mut seq = 2;
     for at in [12_000.0, 6_000.0] {
@@ -1206,15 +1231,13 @@ fn an_undo_puts_the_cursor_back_where_the_edit_found_it() {
         });
     };
     step(&mut host, "undo");
-    assert_eq!(
-        cursor(&mut host),
-        6_000,
-        "back where the second paste went in"
-    );
+    together(&mut host, 6_000, "back where the second paste went in");
     step(&mut host, "undo");
-    assert_eq!(cursor(&mut host), 12_000, "back where the first went in");
+    together(&mut host, 12_000, "back where the first went in");
     step(&mut host, "redo");
-    assert_eq!(cursor(&mut host), 18_000, "where the first paste left it");
+    together(&mut host, 18_000, "where the first paste left it");
+    running.store(false, std::sync::atomic::Ordering::Relaxed);
+    device.join().unwrap();
     let _ = std::fs::remove_file(&path);
 }
 

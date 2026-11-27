@@ -1793,14 +1793,23 @@ impl AudioEditor {
             self.file.revision = self.file.next_revision;
         }
         self.file.dirty = self.file.revision != self.file.saved_revision;
-        // the cursor goes where the half says, as a walked step puts it
-        let half = payload.get("edit").unwrap_or(payload);
-        if let Some(at) = half.get("cursor").and_then(Value::as_u64) {
-            self.file.presentation.cursor = Some(at.min(self.length()));
+        // the cursor goes where the half says
+        if let Some(at) = self.step_cursor(payload) {
+            self.file.presentation.cursor = Some(at);
             self.file.presentation.selection = None;
         }
         self.ensure_envelope();
         true
+    }
+
+    /// **Where a step's half puts the position cursor**, on the take as it
+    /// stands: back where an undone edit found it, or where a redone one
+    /// left it. `None` for a half that names no cursor.
+    pub fn step_cursor(&self, payload: &Value) -> Option<u64> {
+        let half = payload.get("edit").unwrap_or(payload);
+        half.get("cursor")
+            .and_then(Value::as_u64)
+            .map(|at| at.min(self.length()))
     }
 
     /// **One message from the host**, read and answered ([`turn::turn`]).

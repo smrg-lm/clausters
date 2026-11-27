@@ -319,10 +319,13 @@ code that keeps it lives.
   the edit left it.** The position cursor, and the play cursor with it, is no
   part of the take, so each half of a history entry carries where it stood:
   undoing a paste puts it at the paste's position and redoing it at the
-  paste's end, with nothing selected. Undo after undo never leaves it where an
-  edit already taken back had put it (found 2026-11-26: undoing pastes left
-  the cursor at the end of each undone paste, further from the audio it had
-  been placed on with every step).
+  paste's end, with nothing selected, and the music goes there as it does for
+  a placed cursor. Undo after undo never leaves it where an edit already
+  taken back had put it (found 2026-11-26: undoing pastes left the cursor at
+  the end of each undone paste, further from the audio it had been placed on
+  with every step; then the position cursor came back and the play cursor
+  stayed, since a step is applied apart from the outcome that cues the
+  music).
 - **A pan or a zoom draws from what is held, never from nothing.** A view
   zoomed past its take's summary holds a finer summary, or the samples, over
   what it shows and half a view past either edge, and asks for the next span
@@ -521,9 +524,12 @@ code that keeps it lives.
   back to the start afterwards moves the cursor and plays nothing, since the
   roll, the page and the multitrack, like the audio editor, no longer
   believe their transport rolls.
-- **The cursor moves the music.** A click placing the position cursor, or a
-  selection let go (whose start the cursor goes to), moves the play cursor
-  there too: a stopped transport stands on it, and a file playing goes on
+- **The cursor moves the music.** In every application with a cursor, the
+  play cursor follows the position cursor whenever the position cursor moves,
+  whatever moved it: a click, a selection let go (whose start the cursor goes
+  to), an edit landing, an undo or a redo, a client's locate. The play cursor
+  moves on its own only while it plays. A stopped transport stands on the
+  position cursor, and a file playing goes on
   from it, its pass ending as the loop switch says from there. What sounded
   is cut, and what starts on the place it lands on sounds, as a stop, a
   rewind and a play would have it. The two

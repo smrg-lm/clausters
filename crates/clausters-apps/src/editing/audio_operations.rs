@@ -456,7 +456,11 @@ impl Editing {
                             let file = editor
                                 .over_file(object, |editor| editor.playback_file())
                                 .flatten();
-                            previews.extend(file.map(|file| Effect::Audio { member, file }));
+                            previews.extend(file.map(|file| Effect::Audio {
+                                member,
+                                file,
+                                cue: None,
+                            }));
                             plans.push((member, plan));
                         }
                         _ => {
