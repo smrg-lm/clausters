@@ -788,3 +788,40 @@ fn a_lists_columns_are_analyzed_through_the_window_asked_for() {
     assert_ne!(hann, blackman, "two windows, two pictures");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **Reads that lie close together in one file are read as one slice**:
+/// near blocks join whatever order they were asked in, a gap past the
+/// bound or another file starts a slice of its own, and a stat is none.
+#[test]
+fn near_reads_of_one_file_are_joined() {
+    use crate::host::disk::answer::{Need, What};
+    use crate::host::disk::{JOIN_GAP, joined};
+    let read = |path: &str, offset: u64| Need::Read {
+        path: path.into(),
+        offset,
+        len: 8192,
+        what: What::Samples { block: 0 },
+    };
+    let needs = vec![
+        read("a", 16_384),
+        read("a", 0),
+        read("b", 0),
+        Need::Stat { path: "a".into() },
+        read("a", 8192 + 16_384 + JOIN_GAP + 1),
+    ];
+    assert_eq!(
+        joined(&needs),
+        vec![
+            ("a", (0, 16_384 + 8192), vec![1, 0]),
+            (
+                "a",
+                (
+                    8192 + 16_384 + JOIN_GAP + 1,
+                    2 * 8192 + 16_384 + JOIN_GAP + 1
+                ),
+                vec![4]
+            ),
+            ("b", (0, 8192), vec![2]),
+        ]
+    );
+}

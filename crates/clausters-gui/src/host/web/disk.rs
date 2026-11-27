@@ -7,9 +7,17 @@
 //! through the proxy as a server's reply does and is read by the same code.
 //! Two asks may be under way at once, and neither holds the answerer across a
 //! read.
+//!
+//! **A round's reads go out together, and the near ones as one.** One answer
+//! can need a hundred blocks of one peaks file, and a promise awaited after
+//! another made a round of them last over a second, where natively each is a
+//! read on a thread. Each file is looked up once a round, blocks that lie
+//! close together in it are read as one slice, and the slices are asked at
+//! once. An ask the same as one under way is not asked again, since the one
+//! under way answers it.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -35,6 +43,9 @@ thread_local! {
 pub(super) struct WebDisk {
     host: HostId,
     answerer: Rc<RefCell<Answerer>>,
+    /// The asks under way, as their bytes: a frame clock that asks again
+    /// for a summary still being read would start the same reads twice.
+    under_way: Rc<RefCell<HashSet<Vec<u8>>>>,
 }
 
 impl WebDisk {
@@ -42,6 +53,7 @@ impl WebDisk {
         Self {
             host,
             answerer: Rc::new(RefCell::new(Answerer::default())),
+            under_way: Rc::default(),
         }
     }
 }
@@ -56,7 +68,18 @@ impl DiskLink for WebDisk {
     }
 
     fn ask(&self, msg: OscMessage) {
-        wasm_bindgen_futures::spawn_local(drive(self.host, Rc::clone(&self.answerer), msg));
+        let Ok(key) = encode(&OscPacket::Message(msg.clone())) else {
+            return;
+        };
+        if !self.under_way.borrow_mut().insert(key.clone()) {
+            return;
+        }
+        let (host, answerer) = (self.host, Rc::clone(&self.answerer));
+        let under_way = Rc::clone(&self.under_way);
+        wasm_bindgen_futures::spawn_local(async move {
+            drive(host, answerer, msg).await;
+            under_way.borrow_mut().remove(&key);
+        });
     }
 }
 
@@ -82,9 +105,10 @@ async fn drive(host: HostId, answerer: Rc<RefCell<Answerer>>, msg: OscMessage) {
             }
             Answer::None => return,
             Answer::Need(needs) => {
-                for need in needs {
-                    let got = read(&need).await;
-                    answerer.borrow_mut().deliver(&need, got);
+                let got = read_all(&needs).await;
+                let mut answerer = answerer.borrow_mut();
+                for (need, got) in needs.iter().zip(got) {
+                    answerer.deliver(need, got);
                 }
             }
         }
@@ -127,42 +151,94 @@ async fn file(path: &str) -> Result<JsValue, String> {
     })
 }
 
-/// Reads what `need` names out of the page's storage.
-async fn read(need: &Need) -> Result<Got, String> {
-    let file = file(need.path()).await?;
-    match need {
-        Need::Stat { .. } => Ok(Got::Stat(Stat {
-            len: field(&file, "size").as_f64().unwrap_or(0.0) as u64,
-            // Milliseconds since the epoch, as the native clock's seconds.
-            modified: field(&file, "lastModified").as_f64().map(|ms| ms / 1000.0),
-        })),
-        Need::Read {
-            path, offset, len, ..
-        } => {
-            let end = *offset + *len as u64;
-            let slice = call(
-                &file,
-                "slice",
-                &[
-                    JsValue::from_f64(*offset as f64),
-                    JsValue::from_f64(end as f64),
-                ],
-            )
-            .await?;
-            let buffer = call(&slice, "arrayBuffer", &[]).await?;
-            let bytes = js_sys::Uint8Array::new(
-                buffer
-                    .dyn_ref::<js_sys::ArrayBuffer>()
-                    .ok_or_else(|| format!("{path}: a read that is not bytes"))?,
-            )
-            .to_vec();
-            if bytes.len() < *len {
-                return Err(format!(
-                    "{path}: {} bytes where {len} were asked",
-                    bytes.len()
-                ));
-            }
-            Ok(Got::Bytes(bytes))
+/// What one need's read brought, or why it brought nothing.
+type Read = Result<Got, String>;
+
+/// **Reads every need of a round at once**: each file looked up once, the
+/// reads that lie close together in it joined into one slice
+/// ([`joined`](crate::host::disk::joined)),
+/// every slice asked together, and the answers in the order of `needs`.
+async fn read_all(needs: &[Need]) -> Vec<Read> {
+    let mut files: HashMap<&str, Result<JsValue, String>> = HashMap::new();
+    for need in needs {
+        if !files.contains_key(need.path()) {
+            files.insert(need.path(), file(need.path()).await);
         }
     }
+    let got: Rc<RefCell<Vec<Option<Read>>>> =
+        Rc::new(RefCell::new(needs.iter().map(|_| None).collect()));
+    let asked = js_sys::Array::new();
+    for (path, (from, to), members) in crate::host::disk::joined(needs) {
+        let file = files[path].clone();
+        let got = Rc::clone(&got);
+        let lens: Vec<(usize, u64, usize)> = members
+            .iter()
+            .map(|&at| match &needs[at] {
+                Need::Read { offset, len, .. } => (at, *offset - from, *len),
+                Need::Stat { .. } => unreachable!("a stat is never joined"),
+            })
+            .collect();
+        let path = path.to_string();
+        asked.push(&wasm_bindgen_futures::future_to_promise(async move {
+            let bytes = match file {
+                Ok(file) => slice(&file, &path, from, to).await,
+                Err(e) => Err(e),
+            };
+            let mut got = got.borrow_mut();
+            for (at, offset, len) in lens {
+                got[at] = Some(match &bytes {
+                    Ok(bytes) => {
+                        let start = offset as usize;
+                        bytes
+                            .get(start..start + len)
+                            .map(|b| Got::Bytes(b.to_vec()))
+                            .ok_or_else(|| {
+                                format!(
+                                    "{path}: {} bytes where {len} were asked",
+                                    bytes.len().saturating_sub(start)
+                                )
+                            })
+                    }
+                    Err(e) => Err(e.clone()),
+                });
+            }
+            Ok(JsValue::UNDEFINED)
+        }));
+    }
+    for (at, need) in needs.iter().enumerate() {
+        if let Need::Stat { path } = need {
+            let stat = match &files[&**path] {
+                Ok(file) => Ok(Got::Stat(Stat {
+                    len: field(file, "size").as_f64().unwrap_or(0.0) as u64,
+                    // Milliseconds since the epoch, as the native clock's
+                    // seconds.
+                    modified: field(file, "lastModified").as_f64().map(|ms| ms / 1000.0),
+                })),
+                Err(e) => Err(e.clone()),
+            };
+            got.borrow_mut()[at] = Some(stat);
+        }
+    }
+    let _ = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::all(&asked)).await;
+    got.take()
+        .into_iter()
+        .map(|g| g.unwrap_or_else(|| Err("a read that never finished".into())))
+        .collect()
+}
+
+/// Bytes `from..to` of `file`, the `File` at `path`.
+async fn slice(file: &JsValue, path: &str, from: u64, to: u64) -> Result<Vec<u8>, String> {
+    let slice = call(
+        file,
+        "slice",
+        &[JsValue::from_f64(from as f64), JsValue::from_f64(to as f64)],
+    )
+    .await?;
+    let buffer = call(&slice, "arrayBuffer", &[]).await?;
+    Ok(js_sys::Uint8Array::new(
+        buffer
+            .dyn_ref::<js_sys::ArrayBuffer>()
+            .ok_or_else(|| format!("{path}: a read that is not bytes"))?,
+    )
+    .to_vec())
 }

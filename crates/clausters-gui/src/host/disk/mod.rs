@@ -57,6 +57,48 @@ pub fn is_list_key(n: i32) -> bool {
     n <= FIRST_LIST_KEY
 }
 
+/// Bytes between two reads of one file under which a front that pays for
+/// each read (a page, whose storage answers with promises) reads them as
+/// one slice: a gap costs less to read than a read does to wait for.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // the page's reads only
+pub(crate) const JOIN_GAP: u64 = 64 << 10;
+
+/// Bytes one joined slice holds at most.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // the page's reads only
+pub(crate) const JOIN_MAX: u64 = 8 << 20;
+
+/// **The reads of `needs` gathered into slices**: by file and offset, a read
+/// within [`JOIN_GAP`] of the slice before joins it while the slice stays
+/// under [`JOIN_MAX`]. Each slice is its file, its byte range and the needs
+/// it answers, by their place in `needs`.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // the page's reads only
+pub(crate) fn joined(needs: &[answer::Need]) -> Vec<(&str, (u64, u64), Vec<usize>)> {
+    let mut reads: Vec<(&str, u64, u64, usize)> = needs
+        .iter()
+        .enumerate()
+        .filter_map(|(at, need)| match need {
+            answer::Need::Read {
+                path, offset, len, ..
+            } => Some((&**path, *offset, *offset + *len as u64, at)),
+            answer::Need::Stat { .. } => None,
+        })
+        .collect();
+    reads.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let mut out: Vec<(&str, (u64, u64), Vec<usize>)> = Vec::new();
+    for (path, from, to, at) in reads {
+        match out.last_mut() {
+            Some((p, (start, end), members))
+                if *p == path && from <= *end + JOIN_GAP && to.max(*end) - *start <= JOIN_MAX =>
+            {
+                *end = (*end).max(to);
+                members.push(at);
+            }
+            _ => out.push((path, (from, to), vec![at])),
+        }
+    }
+    out
+}
+
 /// The take key a fetch-machine message names, when it names a list: the
 /// message is the host's to answer and never goes to a server.
 pub fn list_key_of(msg: &OscMessage) -> Option<i32> {
